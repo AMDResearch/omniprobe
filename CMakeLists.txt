@@ -117,40 +117,18 @@ set(LIB_VERSION_STRING "${LIB_VERSION_MAJOR}.${LIB_VERSION_MINOR}.${LIB_VERSION_
 message("-- LIB-VERSION STRING: ${LIB_VERSION_STRING}")
 
 # Build subprojects
-include(fetch)
+include(ext_proj_add)
 
-
-fetch_project(
-    NAME dh_comms
-    GIT_REPOSITORY git@github.com:AARInternal/dh_comms.git
-    GIT_TAG kerneldb_support
+ext_proj_add(
+    NAME kerneldb
     INCLUDE_DIRS
 )
-
-# TB: This hairy if/else should be able to be removed once ROCm upgrades clang to > 18.1
-# (https://stackoverflow.com/questions/71740678/cmake-error-in-findterminfo-with-clang-15-on-macos)
-
-# 1) Check for user provided `ROCM_LLVM` variable
-if(DEFINED ENV{ROCM_LLVM})
-    set(LLVM_INSTALL_DIR $ENV{ROCM_LLVM})
-# 2) Check for install on .local/
-elseif(DEFINED ENV{WORK})
-    set(LLVM_INSTALL_DIR $ENV{WORK}/.local)
-# 3) Check for ROCm installed LLVM
-elseif(DEFINED ${ROCM_PATH}/llvm)
-    set (LLVM_INSTALL_DIR ${ROCM_PATH}/llvm)
-else()
-    message(FATAL_ERROR "LLVM_INSTALL not defined")
-endif()
-message(STATUS "LLVM_INSTALL: ${LLVM_INSTALL_DIR}")
-
-fetch_project(
-    NAME instrument-kernels
-    GIT_REPOSITORY git@github.com:CRobeck/instrument-amdgpu-kernels.git
-    GIT_TAG main
-    CMAKE_ARGS 
-        -DCMAKE_C_COMPILER=${ROCM_PATH}/llvm/bin/clang
-        -DCMAKE_CXX_COMPILER=${ROCM_PATH}/llvm/bin/clang++
+ext_proj_add(
+    NAME dh_comms
+    INCLUDE_DIRS
+)
+ext_proj_add(
+    NAME instrument-amdgpu-kernels
 )
 
 # Set target and root/lib/test directory
