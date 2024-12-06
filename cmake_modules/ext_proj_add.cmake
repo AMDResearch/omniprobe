@@ -12,7 +12,7 @@ function(ext_proj_add)
         message(STATUS "Including directory: ${EXTERNAL_PROJ_DIR}/include")
     endif()
     add_subdirectory(${EXTERNAL_PROJ_DIR})
-    set("${EXT_PROJ_ADD_NAME}_INCLUDE" ${EXTERNAL_PROJ_DIR}/include PARENT_SCOPE)
+    set("${EXT_PROJ_ADD_NAME}_INCLUDE_DIRS" ${EXTERNAL_PROJ_DIR}/include PARENT_SCOPE)
     set("${EXT_PROJ_ADD_NAME}_LIBRARIES"  ${CMAKE_CURRENT_BINARY_DIR}/external/${EXT_PROJ_ADD_NAME}/lib PARENT_SCOPE)
     
 endfunction()

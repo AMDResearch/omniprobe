@@ -40,7 +40,7 @@ THE SOFTWARE.
 #include "utils.h"
 #include "dh_comms.h"
 #include "memory_heatmap.h"
-#include "kerneldb/kernelDB.h"
+#include "kernelDB.h"
 
 
 typedef struct pool_specs

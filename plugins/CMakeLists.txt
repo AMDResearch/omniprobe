@@ -58,7 +58,7 @@ target_include_directories (
     ${ROOT_DIR}
     ${HSA_RUNTIME_INC_PATH}
     ${HSA_KMT_LIB_PATH}/..
-    ${DH_COMMS_INCLUDE}
+    ${dh_comms_INCLUDE_DIRS}
     ${Python_INCLUDE_DIRS}
 )
 
@@ -71,7 +71,7 @@ target_include_directories (
     ${ROOT_DIR}
     ${HSA_RUNTIME_INC_PATH}
     ${HSA_KMT_LIB_PATH}/..
-    ${DH_COMMS_INCLUDE}
+    ${dh_comms_INCLUDE_DIRS}
     ${Python_INCLUDE_DIRS}
 )
 
@@ -84,7 +84,7 @@ target_include_directories (
     ${ROOT_DIR}
     ${HSA_RUNTIME_INC_PATH}
     ${HSA_KMT_LIB_PATH}/..
-    ${DH_COMMS_INCLUDE}
+    ${dh_comms_INCLUDE_DIRS}
     ${Python_INCLUDE_DIRS}
 )
 
@@ -95,7 +95,7 @@ target_link_libraries(
     c
     stdc++
     stdc++fs
-    ${dh_comms_LOCATION}/build/lib/libdh_comms.so
+    ${dh_comms_LIBRARIES}/libdh_comms.so
     kernelDB64
 )
 
@@ -106,7 +106,7 @@ target_link_libraries(
     c
     stdc++
     stdc++fs
-    ${dh_comms_LOCATION}/build/lib/libdh_comms.so
+    ${dh_comms_LIBRARIES}/libdh_comms.so
     kernelDB64
 )
 
@@ -117,7 +117,7 @@ target_link_libraries(
     c
     stdc++
     stdc++fs
-    ${dh_comms_LOCATION}/build/lib/libdh_comms.so
+    ${dh_comms_LIBRARIES}/libdh_comms.so
     kernelDB64
 )
 

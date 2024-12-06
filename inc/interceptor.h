@@ -41,7 +41,7 @@ THE SOFTWARE.
 #include "dh_comms.h"
 #include "hsa_mem_mgr.h"
 #include "comms_mgr.h"
-#include "kerneldb/kernelDB.h"
+#include "kernelDB.h"
 
 class hsaInterceptor;
 void signal_runner();
