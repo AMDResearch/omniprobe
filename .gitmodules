@@ -1,0 +1,9 @@
+[submodule "external/dh_comms"]
+	path = external/dh_comms
+	url = git@github.com:AARInternal/dh_comms.git
+[submodule "external/kerneldb"]
+	path = external/kerneldb
+	url = git@github.com:AARInternal/kerneldb.git
+[submodule "external/instrument-amdgpu-kernels"]
+	path = external/instrument-amdgpu-kernels
+	url = git@github.com:CRobeck/instrument-amdgpu-kernels.git
