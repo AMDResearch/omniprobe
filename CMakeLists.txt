@@ -129,6 +129,8 @@ ext_proj_add(
 )
 ext_proj_add(
     NAME instrument-amdgpu-kernels
+    C_COMPILER ${ROCM_PATH}/llvm/bin/clang
+    CXX_COMPILER ${ROCM_PATH}/llvm/bin/clang++
 )
 
 # Set target and root/lib/test directory
