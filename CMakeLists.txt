@@ -40,7 +40,7 @@ get_version("1.0.0")
 if(DEFINED ENV{ROCM_PATH})
     set(ROCM_PATH $ENV{ROCM_PATH})
 else()
-    # Set a default value if FOO_PATH is not set
+    # Set a default value if ROCM_PATH is not set
     set(ROCM_PATH "/opt/rocm")
 endif()
 
