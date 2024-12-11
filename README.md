@@ -68,14 +68,15 @@ General omniprobe arguments:
   -- [ ...]                   	Provide command for instrumenting after a double dash.
 ```
 ## Building  
-This project now depends on the [dh_comms](https://github.com/AARInternal/dh_comms) library and the [instrument-amdgpu-kernels](https://github.com/CRobeck/instrument-amdgpu-kernels) tool. By default, both of these dependencies will be pulled into this project via CMake's [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html) module.
+This project has several [dependencies](#dependencies) that are included as submodules. To build these dependencies, you need to call out the location of LLVM on your system.
 
 ```shell
   git clone https://github.com/AARInternal/logduration.git
   cd logduration
+  git submodule update --init --recursive
   mkdir build
   cd build
-  cmake ..
+  cmake -DLLVM_INSTALL_DIR=/llvm/install ..
   make
 ```
 
