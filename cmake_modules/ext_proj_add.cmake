@@ -40,7 +40,8 @@ function(ext_proj_add)
     endif()
     
     # Track include and lib directories
-    set("${EXT_PROJ_ADD_NAME}_INCLUDE_DIRS" ${EXTERNAL_PROJ_DIR}/include PARENT_SCOPE)
-    set("${EXT_PROJ_ADD_NAME}_LIBRARIES"  ${CMAKE_CURRENT_BINARY_DIR}/external/${EXT_PROJ_ADD_NAME}/lib PARENT_SCOPE)
+    string(TOUPPER "${EXT_PROJ_ADD_NAME}" CAPS_NAME)
+    set("${CAPS_NAME}_INCLUDE_DIR" ${EXTERNAL_PROJ_DIR}/include PARENT_SCOPE)
+    set("${CAPS_NAME}_LIBRARIES"  ${CMAKE_CURRENT_BINARY_DIR}/external/${EXT_PROJ_ADD_NAME}/lib PARENT_SCOPE)
     
 endfunction()

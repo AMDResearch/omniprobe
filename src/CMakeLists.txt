@@ -101,7 +101,7 @@ target_include_directories (
     ${ROOT_DIR}
     ${HSA_RUNTIME_INC_PATH}
     ${HSA_KMT_LIB_PATH}/..
-    ${dh_comms_INCLUDE_DIRS}
+    ${DH_COMMS_INCLUDE_DIR}
     ${CMAKE_INSTALL_PREFIX}/include
     ${Python_INCLUDE_DIRS}
 )
@@ -113,7 +113,7 @@ target_link_libraries(
     c
     stdc++
     stdc++fs
-    ${dh_comms_LIBRARIES}/libdh_comms.so
+    ${DH_COMMS_LIBRARIES}/libdh_comms.so
     kernelDB64
     amd_comgr
 )
@@ -129,7 +129,7 @@ target_link_libraries(
     ${STRESSTEST_NAME}
   PRIVATE
     ${ROCM_PATH}/lib/libhiprtc.so
-    ${dh_comms_LIBRARIES}/libdh_comms.so
+    ${DH_COMMS_LIBRARIES}/libdh_comms.so
 )
 
 target_include_directories (
@@ -140,7 +140,7 @@ target_include_directories (
     ${CMAKE_INSTALL_PREFIX}/include
     ${ROOT_DIR}
     ${HSA_RUNTIME_INC_PATH}
-    ${dh_comms_INCLUDE_DIRS}
+    ${DH_COMMS_INCLUDE_DIR}
 )
 target_link_options (
     ${STRESSTEST_NAME}
@@ -160,7 +160,7 @@ target_link_libraries(
     ${HEATMAP_EXAMPLE}
   PRIVATE
     ${ROCM_PATH}/lib/libhiprtc.so
-    ${dh_comms_LIBRARIES}/libdh_comms.so
+    ${DH_COMMS_LIBRARIES}/libdh_comms.so
 )
 
 target_include_directories (
@@ -171,7 +171,7 @@ target_include_directories (
     ${ROCM_ROOT_DIR}/include
     ${CMAKE_INSTALL_PREFIX}/include
     ${HSA_RUNTIME_INC_PATH}
-    ${dh_comms_INCLUDE_DIRS}
+    ${DH_COMMS_INCLUDE_DIR}
 )
 target_link_options (
     ${HEATMAP_EXAMPLE}
