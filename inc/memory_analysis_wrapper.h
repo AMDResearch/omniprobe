@@ -12,6 +12,7 @@ public:
   virtual ~memory_analysis_wrapper_t() = default;
   virtual bool handle(const dh_comms::message_t &message) override;
   virtual bool handle(const dh_comms::message_t &message, const std::string& kernel, kernelDB::kernelDB& kdb) override;
+  virtual void report(const std::string& kernel_name, kernelDB::kernelDB& kdb) override;
   virtual void report() override;
   virtual void clear() override;
 
