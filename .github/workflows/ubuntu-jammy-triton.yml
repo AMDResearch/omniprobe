@@ -1,0 +1,173 @@
+name: Ubuntu 22.04 (Triton LLVM)
+run-name: triton-llvm
+
+on:
+  push:
+    branches: [ main, ci]
+  pull_request:
+    branches: [ main, ci]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-llvm-install:
+    runs-on: ubuntu-22.04
+    outputs:
+      needs-rebuild: ${{ steps.check.outputs.needs-rebuild }}
+      artifact-run-id: ${{ steps.get-run-id.outputs.result }}
+    steps:
+      - name: Clone Triton
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          export TRITON_BUILD_WITH_CLANG_LLD=true &&
+          export TRITON_BUILD_WITH_CCACHE=true &&
+          git clone https://github.com/triton-lang/triton.git ~/triton
+
+      - name: Get latest artifact id
+        uses: actions/github-script@v7
+        id: get-run-id
+        continue-on-error: true 
+        with:
+          result-encoding: string
+          script: |  
+            const workflowRuns = await github.rest.actions.listWorkflowRuns({  
+              owner: context.repo.owner,  
+              repo: context.repo.repo,  
+              workflow_id: 'ubuntu-jammy-triton.yml', 
+              per_page: 100 // Adjust as needed to check more runs  
+            });  
+  
+            for (const run of workflowRuns.data.workflow_runs) {  
+              const jobs = await github.rest.actions.listJobsForWorkflowRun({  
+                owner: context.repo.owner,  
+                repo: context.repo.repo,  
+                run_id: run.id  
+              });
+  
+              const artifactJob = jobs.data.jobs.find(job => job.name === 'trigger-llvm-build / build');
+  
+              if (artifactJob && artifactJob.conclusion === 'success') {  
+                return run.id;  
+              }  
+            }  
+  
+            throw new Error('No runs found with a successful artifact job');  
+      
+      - name: Download llvm hash 
+        uses: actions/download-artifact@v4
+        continue-on-error: true  
+        with:
+          name: llvm-hash
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.get-run-id.outputs.result }}
+          path: ~/
+
+      - name: Cross check LLVM versions
+        id: check
+        shell: bash
+        run: |
+          echo "llvm-hash-latest=$(cat  ~/triton/cmake/llvm-hash.txt)" &&
+          if [ ! -f ~/llvm-hash.txt ]; then
+            echo "-1" > ~/llvm-hash.txt
+          fi &&
+          echo "llvm-hash-existing=$(cat ~/llvm-hash.txt)" &&
+          if [ "$(cat ~/triton/cmake/llvm-hash.txt)" == "$(cat ~/llvm-hash.txt)" ]; then
+            echo "needs-rebuild=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs-rebuild=true" >> "$GITHUB_OUTPUT"
+          fi
+          
+  trigger-llvm-build:
+    if: ${{ needs.check-llvm-install.outputs.needs-rebuild == 'true' }}
+    needs: check-llvm-install
+    uses: ./.github/workflows/build-triton-llvm.yml
+
+  
+  triton-llvm-tests:
+    runs-on: ubuntu-22.04
+    needs: [trigger-llvm-build, check-llvm-install]
+    if: ${{ always() && !failure() && !cancelled() }}
+    container:
+      image: dgaliffiamd/rocprofiler-systems:ci-base-ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        rocm-version: ['6.1.2', '6.2.3', '6.3']
+        llvm-install: ['~/.triton/llvm/llvm-ubuntu-x64']
+        compiler: ['clang']
+        build-type: ['Release']
+    steps:
+      - name: Download Triton artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: triton-assets
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ needs.check-llvm-install.outputs.artifact-run-id }}
+          path: ~/
+
+      - name: Unzip Triton assets
+        run: |
+          tar -xzvf ~/triton_assets.tar.gz -C ~/ &&
+          ls -la ~/
+        
+      - name: Check Triton download
+        run: |
+          ls -la ~/ &&
+          ls -Ra ~/.triton
+
+      - name: Clone repo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CLONE_TOKEN }}
+
+      - name: Install packages
+        timeout-minutes: 25
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 25
+          max_attempts: 5
+          command: |
+            apt-get update &&
+            apt-get install -y software-properties-common &&
+            apt-get upgrade -y &&
+            apt-get install -y build-essential git wget ${{ matrix.compiler }} lld libzstd-dev libomp-dev ccache &&
+            python3 -m pip install --upgrade pip &&
+            python3 -m pip install 'cmake==3.22'
+        
+      - name: Install ROCm Packages
+        timeout-minutes: 25
+        if: ${{ matrix.rocm-version != '0.0' }}
+        uses: nick-fields/retry@v3
+        with:
+          retry_wait_seconds: 30
+          timeout_minutes: 25
+          max_attempts: 5
+          shell: bash
+          command: |
+            wget -q -O - https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add -
+            echo "deb [arch=amd64] https://repo.radeon.com/rocm/apt/${{ matrix.rocm-version }}/ jammy main" | tee /etc/apt/sources.list.d/rocm.list
+            apt-get update
+            ROCM_VERSION=$(apt-cache search rocm-dev[0-9] | awk '{print $1}' | sed 's/rocm-dev//g')
+            apt-get install -y {rocm-dev,rocm-hip-runtime-dev,rocm-smi-lib,rocminfo}${ROCM_VERSION}
+            echo "/opt/rocm/bin" >> $GITHUB_PATH
+            echo "ROCM_PATH=/opt/rocm" >> $GITHUB_ENV
+            echo "LD_LIBRARY_PATH=/opt/rocm/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+
+      - name: Check disk space
+        run: |
+          df -h
+
+      - name: Build and install
+        timeout-minutes: 25
+        shell: bash
+        run: |
+          git config --global --add safe.directory ${PWD} &&
+          cmake --version &&
+          mkdir -p build &&
+          cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DLLVM_INSTALL_DIR=${{ matrix.llvm-install }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build &&
+          cmake --build build --target install
+      

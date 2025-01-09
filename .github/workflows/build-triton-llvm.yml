@@ -1,0 +1,71 @@
+name: Build Triton LLVM
+run-name: build-triton-llvm
+
+on: 
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    container:
+      image: dgaliffiamd/rocprofiler-systems:ci-base-ubuntu-22.04
+    steps:
+      - name: Install packages
+        timeout-minutes: 25
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 25
+          max_attempts: 5
+          command: |
+            apt-get update &&
+            apt-get install -y software-properties-common &&
+            apt-get upgrade -y &&
+            apt-get install -y build-essential git wget clang lld libzstd-dev libomp-dev ccache &&
+            python3 -m pip install --upgrade pip &&
+            python3 -m pip install 'cmake==3.22'
+            python3 -m pip install --upgrade ninja wheel pybind11 setuptools
+      
+      - name: Clone Triton
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          export TRITON_BUILD_WITH_CLANG_LLD=true &&
+          export TRITON_BUILD_WITH_CCACHE=true &&
+          git clone https://github.com/triton-lang/triton.git ~/triton
+          cd ~/triton &&
+          cat cmake/llvm-hash.txt > ~/llvm-hash.txt
+            
+      - name: Upload LLVM version
+        uses: actions/upload-artifact@v4
+        with:
+          name: llvm-hash
+          path: ~/llvm-hash.txt
+          
+      - name: Build Triton
+        timeout-minutes: 35
+        shell: bash
+        run: |
+          cd ~/triton &&
+          python3 -m pip install -vvv -e python
+
+      - name: Check for install
+        run: |
+          ls -la ~/.triton
+        
+      - name: Compress Triton assets
+        run: |
+          cd ~/ &&
+          tar -czvf triton_assets.tar.gz ./.triton
+
+      - name: Upload required Triton assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: triton-assets
+          if-no-files-found: error
+          include-hidden-files: true
+          path: ~/triton_assets.tar.gz
