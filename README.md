@@ -1,4 +1,8 @@
 # logduration
+
+[![Ubuntu 22.04 (w/ ROCm LLVM)](https://github.com/AARInternal/logduration/actions/workflows/ubuntu-jammy-rocm.yml/badge.svg)](https://github.com/AARInternal/logduration/actions/workflows/ubuntu-jammy-rocm.yml)
+[![Ubuntu 22.04 (w/ Triton LLVM)](https://github.com/AARInternal/logduration/actions/workflows/ubuntu-jammy-triton.yml/badge.svg)](https://github.com/AARInternal/logduration/actions/workflows/ubuntu-jammy-triton.yml)
+
 logduration is a project that originally started simply to provide a quick and easy way to observe all kernel
 durations within an application, without having to run the profiler and be saddled with all of the application
 perturbation profiling involves (e.g. kernels are serialized). It's going to end up doing more than that though.
