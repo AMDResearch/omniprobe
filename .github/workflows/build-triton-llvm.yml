@@ -53,9 +53,10 @@ jobs:
           cd ~/triton &&
           python3 -m pip install -vvv -e python
 
-      - name: Check for install
+      - name: Check for install and remove clone
         run: |
-          ls -la ~/.triton
+          ls -la ~/.triton &&
+          rm -rf ~/triton
         
       - name: Compress Triton assets
         run: |
