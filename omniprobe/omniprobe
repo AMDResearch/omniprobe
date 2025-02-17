@@ -177,27 +177,37 @@ def get_local_isa():
             return "gfx90a"
     return None
 
+
+install_path = get_install_path()
+if install_path[0] == "install":
+    base_inst_functions_file = os.path.join(install_path[1])
+    base_llvm_pass_plugin = os.path.join(install_path[1], "lib64")
+    base_hsa_tools_lib = os.path.join(install_path[1], "lib", "logDuration")
+else:
+    base_inst_functions_file = os.path.join(install_path[1], "external", "dh_comms")
+    base_llvm_pass_plugin = os.path.join(install_path[1], "external", "instrument-amdgpu-kernels", "build", "lib")
+    base_hsa_tools_lib = os.path.join(install_path[1])
+
 triton_config = {"TRITON_LOGGER_LEVEL": "3",
                  "TRITON_ALWAYS_COMPILE": "1",
                  "TRITON_DISABLE_LINE_INFO": "0",
                  "TRITON_HIP_LLD_PATH": f"{get_rocm_path()}/llvm/bin/ld.lld",
-                 "AMDCGN_INSTRUMENTATION_FUNCTIONS_FILE": f"{get_omniprobe_home()}/triton/dh_comms_dev.co4.{get_local_isa()}.bc",
-                 "LLVM_PASS_PLUGIN_PATH": f"{get_omniprobe_home()}/triton/libAMDGCNMemTrace.so"
+                 "AMDCGN_INSTRUMENTATION_FUNCTIONS_FILE": os.path.join(base_inst_functions_file, "lib", f"dh_comms_dev.co4.{get_local_isa()}.bc"),
+                 "LLVM_PASS_PLUGIN_PATH": os.path.join(base_llvm_pass_plugin, "libAMDGCNMemTrace.so")
                  }
 config_path = os.path.dirname(__file__) + "/config"
 rocm_path = get_rocm_path()
 
 analytics_config = {}
-
-op_run_env = {"LOGDUR_INSTRUMENTED": "false", "HSA_TOOLS_LIB": f"{os.path.dirname(__file__)}/../../lib/logDuration/liblogDuration64.so"}
+op_run_env = {"LOGDUR_INSTRUMENTED": "false", "HSA_TOOLS_LIB": os.path.join(base_hsa_tools_lib, "liblogDuration64.so")}
 
 def validate_triton_config():
     global triton_config
     if 'TRITON_HIP_LLD_PATH' not in triton_config or 'AMDCGN_INSTRUMENTATION_FUNCTIONS_FILE' not in triton_config or 'LLVM_PASS_PLUGIN_PATH' not in triton_config:
         print("You are missing some required configuration parameters in your triton environment. You need to specify all of the following environment variables:")
         print(f"\tTRITON_HIP_LLD_PATH (usually located whereever rocm is installed (e.g. {get_rocm_path()}/llvm/bin/ld.lld)")
-        print(f"\tAMDCGN_INSTRUMENTATION_FUNCTIONS_FILE (should be located in {get_omniprobe_home()}/triton.")
-        print(f"\tLLVM_PASS_PLUGIN_PATH (should be located {get_omniprobe_home()}/triton.")
+        print(f"\tAMDCGN_INSTRUMENTATION_FUNCTIONS_FILE (should be located in {base_inst_functions_file}.")
+        print(f"\tLLVM_PASS_PLUGIN_PATH (should be located {base_llvm_pass_plugin}")
         return False
     else:
         if not os.path.exists(triton_config['TRITON_HIP_LLD_PATH']):
@@ -205,7 +215,7 @@ def validate_triton_config():
             return False
         if not os.path.exists(triton_config['AMDCGN_INSTRUMENTATION_FUNCTIONS_FILE']):
             print(f"The file pointed to by AMDCGN_INSTRUMENTATION_FUNCTIONS_FILE ({triton_config['AMDCGN_INSTRUMENTATION_FUNCTIONS_FILE']}) is missing")
-            print(f"\tIt should be in {get_omniprobe_home()}/triton")
+            print(f"\tIt should be in {base_inst_functions_file}")
             return False
         if not os.path.exists(triton_config['LLVM_PASS_PLUGIN_PATH']):
             print(f"The file pointed to by LLVM_PASS_PLUGIN_PATH ({triton_config['LLVM_PASS_PLUGIN_PATH']}) is missing")
@@ -314,6 +324,7 @@ def add_general_group(parser):
     general_group = parser.add_argument_group("General omniprobe arguments")
 
     global analytics_config
+    global install_path
 
     names = []
     for rec in analytics_config.keys():
@@ -410,7 +421,7 @@ def add_general_group(parser):
         help="\tThe location where all of your data should be logged. By default it will be to the console."
     )
 
-
+    default_handlers = [os.path.join(install_path[1], "lib", "libdefaultMessageHandlers64.so")] if install_path[0] == "install" else [os.path.join(install_path[1], "libdefaultMessageHandlers64.so")]
     general_group.add_argument (
         "-a",
         "--analyzers",
@@ -418,8 +429,9 @@ def add_general_group(parser):
         metavar="",
         dest="handlers",
         required=False,
+        choices = names,
         nargs='+',
-        default=[f"{get_omniprobe_home()}/lib/libdefaultMessageHandlers64.so"],
+        default=default_handlers,
         help=f"\tThe analyzer(s) to use for processing data being streamed from instrumented kernels. \n\tValid values are {names} or a reference to any shared library that implements an omniprobe message handler.\n"
     )
 
