@@ -103,6 +103,45 @@ def capture_subprocess_output(subprocess_args, handler=None, new_env=None):
     # Get process return code
 
 
+runtime_env = None
+def get_install_path() -> tuple:
+    """
+    Load the install path from the config file. If the config file is not found, the program will exit.
+    Note runtime type and update global
+    """
+    config_search_paths = [
+        os.path.join(os.path.dirname(__file__), "../build/config.txt"),
+        os.path.join(os.path.dirname(__file__), "config.txt"),
+    ]
+    install_dir = ""
+    build_dir = ""
+    global runtime_env
+    # Iterate over search paths for the config file, and load the paths into the program.
+    # The runtime type (triton or hip) is also loaded globally to trigger the Triton configuration
+    for path in config_search_paths:
+        path = os.path.abspath(path)
+        if os.path.exists(path):
+            print(f"Found config file at {path}")
+            with open(path, "r") as f:
+                for line in f:
+                    if line.startswith("build_dir="):
+                        build_dir = line.strip().split("=")[1]
+                    elif line.startswith("install_dir="):
+                        install_dir = line.strip().split("=")[1]
+                    elif line.startswith("runtime="):
+                        runtime_env = line.strip().split("=")[1]  
+                    else:
+                        print(f"Invalid line in {path}: {line}")
+                        sys.exit(1)
+            break
+        else:
+            print(f"Config file not. Ensure this is being saved from root CMakeLists file")
+            sys.exit(1)
+    
+    if os.path.abspath(os.path.join(install_dir, "bin", "logDuration"))  == os.path.abspath(os.path.dirname(__file__)):
+        return ("install", install_dir)
+    else:
+        return ("build", build_dir)
 
 def get_default_cache_location():
     return str(Path.home()) + "/.triton/cache"
@@ -176,6 +215,7 @@ def validate_triton_config():
 def setup_env(parms):
     env_dump = {}
     global op_run_env
+    global runtime_env
     env = os.environ
     if len(parms.log_location):
         if parms.log_location != "console":
@@ -213,12 +253,13 @@ def setup_env(parms):
     if parms.instrumented == True:
         env['LOGDUR_INSTRUMENTED'] = "true"
         env_dump['LOGDUR_INSTRUMENTED'] = "true"
-#        if validate_triton_config():
-#            for key in triton_config:
-#                env[key] = triton_config[key]
-#                env_dump[key] = triton_config[key]
-#        else:
-#            sys.exit(1)
+        if runtime_env == "triton":
+            if validate_triton_config():
+                for key in triton_config:
+                    env[key] = triton_config[key]
+                    env_dump[key] = triton_config[key]
+            else:
+                sys.exit(1)
 
     if len(parms.kernels):
         if parms.instrumented == False:
