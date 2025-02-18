@@ -113,8 +113,8 @@ def get_install_path() -> tuple:
         tuple: (str, str) - The install type and the path to the project directory
     """
     config_search_paths = [
-        os.path.join(os.path.dirname(__file__), "../build/config.txt"),
-        os.path.join(os.path.dirname(__file__), "config.txt"),
+        os.path.join(os.path.dirname(__file__), "../build/runtime_config.txt"),
+        os.path.join(os.path.dirname(__file__), "runtime_config.txt"),
     ]
     install_dir = ""
     build_dir = ""

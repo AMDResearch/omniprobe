@@ -99,9 +99,9 @@ set(RUNTIME_ENV "hip")
 if(DEFINED LLVM_INSTALL_DIR AND LLVM_INSTALL_DIR MATCHES "triton")
     set(RUNTIME_ENV "triton")
 endif()
-file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/config.txt "runtime=${RUNTIME_ENV}\n")
-file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/config.txt "build_dir=${CMAKE_BINARY_DIR}\n")
-file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/config.txt "install_dir=${CMAKE_INSTALL_PREFIX}\n")
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/runtime_config.txt "runtime=${RUNTIME_ENV}\n")
+file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/runtime_config.txt "build_dir=${CMAKE_BINARY_DIR}\n")
+file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/runtime_config.txt "install_dir=${CMAKE_INSTALL_PREFIX}\n")
 
 # Set build environment
 include ( env )
@@ -196,7 +196,7 @@ install(TARGETS ${INTERCEPTOR_TARGET} LIBRARY DESTINATION lib/${DEST_NAME})
 install(PROGRAMS ${ROOT_DIR}/omniprobe/omniprobe DESTINATION bin/${DEST_NAME})
 install(DIRECTORY ${ROOT_DIR}/omniprobe/config DESTINATION bin/${DEST_NAME} FILES_MATCHING PATTERN "*")
 
-install(FILES "${CMAKE_BINARY_DIR}/config.txt" DESTINATION bin/${DEST_NAME})
+install(FILES "${CMAKE_BINARY_DIR}/runtime_config.txt" DESTINATION bin/${DEST_NAME})
 
 # Packaging directives
 set(CPACK_GENERATOR "DEB" "RPM" "TGZ")
