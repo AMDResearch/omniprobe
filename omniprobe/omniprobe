@@ -330,8 +330,7 @@ def add_general_group(parser):
     general_group.add_argument (
         "-v",
         "--verbose",
-        type=bool,
-        metavar="",
+        action="store_true",
         dest="verbose",
         required=False,
         default=False,
