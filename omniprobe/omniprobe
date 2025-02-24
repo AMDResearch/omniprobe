@@ -100,6 +100,11 @@ def capture_subprocess_output(subprocess_args, handler=None, new_env=None):
             callback = key.data
             callback(key.fileobj, mask)
 
+    remaining = process.stdout.read()
+    if remaining:
+        buf.write(remaining)
+        for line in remaining.splitlines():
+            console_warning(line.strip())
     # Get process return code
 
 
