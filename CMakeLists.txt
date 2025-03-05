@@ -94,6 +94,10 @@ else()
     set(CMAKE_CXX_EXTENSIONS OFF)
 endif()
 
+# Generate a configuration file
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/runtime_config.txt "build_dir=${CMAKE_BINARY_DIR}\n")
+file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/runtime_config.txt "install_dir=${CMAKE_INSTALL_PREFIX}\n")
+
 # Set build environment
 include ( env )
 
@@ -186,6 +190,7 @@ message("-----------Dest-name: ${DEST_NAME}")
 install(TARGETS ${INTERCEPTOR_TARGET} LIBRARY DESTINATION lib/${DEST_NAME})
 install(PROGRAMS ${ROOT_DIR}/omniprobe/omniprobe DESTINATION bin/${DEST_NAME})
 install(DIRECTORY ${ROOT_DIR}/omniprobe/config DESTINATION bin/${DEST_NAME} FILES_MATCHING PATTERN "*")
+install(FILES "${CMAKE_BINARY_DIR}/runtime_config.txt" DESTINATION bin/${DEST_NAME})
 
 # Packaging directives
 set(CPACK_GENERATOR "DEB" "RPM" "TGZ")
