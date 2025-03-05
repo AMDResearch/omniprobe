@@ -194,7 +194,7 @@ triton_config = {"TRITON_LOGGER_LEVEL": "3",
                  "TRITON_DISABLE_LINE_INFO": "0",
                  "TRITON_HIP_LLD_PATH": f"{get_rocm_path()}/llvm/bin/ld.lld",
                  "AMDCGN_INSTRUMENTATION_FUNCTIONS_FILE": os.path.join(base_inst_functions_file, "lib", f"dh_comms_dev.co4.{get_local_isa()}.bc"),
-                 "LLVM_PASS_PLUGIN_PATH": os.path.join(base_llvm_pass_plugin, "libAMDGCNMemTrace-rocm.so")
+                 "LLVM_PASS_PLUGIN_PATH": os.path.join(base_llvm_pass_plugin, "libAMDGCNMemTrace-triton.so")
                 }
 config_path = os.path.dirname(__file__) + "/config"
 rocm_path = get_rocm_path()
