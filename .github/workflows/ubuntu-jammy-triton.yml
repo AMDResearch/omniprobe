@@ -3,9 +3,15 @@ run-name: triton-llvm
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, colramos/self-hosted-runner ]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
   pull_request:
-    branches: [ main ]
+    branches: [ main, colramos/self-hosted-runner ]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -86,8 +92,7 @@ jobs:
     uses: ./.github/workflows/build-triton-llvm.yml
 
   
-  triton-llvm-tests:
-    runs-on: ubuntu-22.04
+  ubuntu-jammy-triton-llvm-tests:
     needs: [trigger-llvm-build, check-llvm-install]
     if: ${{ always() && !failure() && !cancelled() }}
     container:
@@ -98,7 +103,10 @@ jobs:
         rocm-version: ['6.1.2', '6.2.3', '6.3']
         llvm-install: ['~/.triton/llvm/llvm-ubuntu-x64']
         compiler: ['clang']
-        build-type: ['Release']
+        build-type: ['Release', 'Debug']
+    runs-on: [mi100]
+
+    name: ubuntu-jammy-triton-${{ matrix.rocm-version }}-${{ matrix.compiler }}-${{ matrix.build-type }}
     steps:
       - name: Download Triton artifact
         uses: actions/download-artifact@v4

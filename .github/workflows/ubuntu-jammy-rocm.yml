@@ -3,17 +3,22 @@ run-name: rocm-llvm
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, colramos/self-hosted-runner ]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
   pull_request:
-    branches: [ main ]
+    branches: [ main, colramos/self-hosted-runner ]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  rocm-llvm-tests:
-    runs-on: ubuntu-22.04
+  ubuntu-jammy-rocm-llvm-tests:
     container:
       image: dgaliffiamd/rocprofiler-systems:ci-base-ubuntu-22.04
     strategy:
@@ -22,8 +27,10 @@ jobs:
         rocm-version: ['6.1.2', '6.2.3', '6.3']
         llvm-install: ['/opt/rocm/llvm']
         compiler: ['clang']
-        build-type: ['Release']
+        build-type: ['Release', 'Debug']
+    runs-on: [mi100]
 
+    name: ubuntu-jammy-rocm-${{ matrix.rocm-version }}-${{ matrix.compiler }}-${{ matrix.build-type }}
     steps:
       - name: Clone repo
         uses: actions/checkout@v4
