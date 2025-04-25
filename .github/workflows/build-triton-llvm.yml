@@ -3,6 +3,10 @@ run-name: build-triton-llvm
 
 on: 
   workflow_call:
+    outputs:
+      artifact-run-id:
+        description: The run ID this workflow
+        value: ${{ github.run_id }}
   workflow_dispatch:
 
 concurrency:

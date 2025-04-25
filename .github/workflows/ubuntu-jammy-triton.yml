@@ -108,12 +108,22 @@ jobs:
 
     name: ubuntu-jammy-triton-${{ matrix.rocm-version }}-${{ matrix.compiler }}-${{ matrix.build-type }}
     steps:
+      - name: Determine artifact-run-id
+        id: determine-artifact
+        shell: bash
+        run: |
+          if [[ "${{ needs.check-llvm-install.outputs.needs-rebuild }}" == "true" ]]; then
+            echo "artifact-run-id=${{ needs.trigger-llvm-build.outputs.artifact-run-id }}" >> $GITHUB_ENV
+          else
+            echo "artifact-run-id=${{ needs.check-llvm-install.outputs.artifact-run-id }}" >> $GITHUB_ENV
+          fi
+
       - name: Download Triton artifact
         uses: actions/download-artifact@v4
         with:
           name: triton-assets
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ needs.check-llvm-install.outputs.artifact-run-id }}
+          run-id: ${{ env.artifact-run-id }}
           path: ~/
 
       - name: Unzip Triton assets
