@@ -29,7 +29,7 @@ jobs:
             apt-get install -y build-essential git wget clang lld libzstd-dev libomp-dev ccache &&
             python3 -m pip install --upgrade pip &&
             python3 -m pip install 'cmake==3.22'
-            python3 -m pip install --upgrade ninja wheel pybind11 setuptools
+            python3 -m pip install --upgrade setuptools
       
       - name: Clone Triton
         timeout-minutes: 5
@@ -52,7 +52,8 @@ jobs:
         shell: bash
         run: |
           cd ~/triton &&
-          python3 -m pip install -vvv -e python
+          python3 -m pip install -r requirements.txt &&
+          python3 -m pip install -vvv -e .
 
       - name: Check for install and remove clone
         run: |
