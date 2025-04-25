@@ -19,8 +19,7 @@ concurrency:
 
 jobs:
   ubuntu-jammy-rocm-llvm-tests:
-    container:
-      image: dgaliffiamd/rocprofiler-systems:ci-base-ubuntu-22.04
+    runs-on: [mi100]
     strategy:
       fail-fast: false
       matrix:
@@ -28,8 +27,7 @@ jobs:
         llvm-install: ['/opt/rocm/llvm']
         compiler: ['clang']
         build-type: ['Release']
-    runs-on: [mi100]
-
+    
     name: ubuntu-jammy-rocm-${{ matrix.rocm-version }}-${{ matrix.compiler }}-${{ matrix.build-type }}
     steps:
       - name: Clone repo
@@ -37,6 +35,13 @@ jobs:
         with:
           submodules: recursive
           token: ${{ secrets.CLONE_TOKEN }}
+      
+      - name: Start Container
+        run: |
+          .github/scripts/start-gpu-container.sh \
+            -n "${{ job.name }}"
+            -i "dgaliffiamd/rocprofiler-systems:ci-base-ubuntu-22.04" \
+            -m "${{ github.workspace }}"
 
       - name: Install packages
         timeout-minutes: 25
@@ -45,12 +50,12 @@ jobs:
           timeout_minutes: 25
           max_attempts: 5
           command: |
-            apt-get update &&
-            apt-get install -y software-properties-common &&
-            apt-get upgrade -y &&
-            apt-get install -y build-essential git wget ${{ matrix.compiler }} lld libzstd-dev libomp-dev ccache &&
-            python3 -m pip install --upgrade pip &&
-            python3 -m pip install 'cmake==3.22'
+            docker exec "${{ job.name }}" bash -c "apt-get update &&
+                  apt-get install -y software-properties-common &&
+                  apt-get upgrade -y &&
+                  apt-get install -y build-essential git wget ${{ matrix.compiler }} lld libzstd-dev libomp-dev ccache &&
+                  python3 -m pip install --upgrade pip &&
+                  python3 -m pip install 'cmake==3.22'"
         
       - name: Install ROCm Packages
         timeout-minutes: 25
@@ -62,26 +67,22 @@ jobs:
           max_attempts: 5
           shell: bash
           command: |
-            wget -q -O - https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add -
-            echo "deb [arch=amd64] https://repo.radeon.com/rocm/apt/${{ matrix.rocm-version }}/ jammy main" | tee /etc/apt/sources.list.d/rocm.list
-            apt-get update
-            ROCM_VERSION=$(apt-cache search rocm-dev[0-9] | awk '{print $1}' | sed 's/rocm-dev//g')
-            apt-get install -y {rocm-dev,rocm-llvm-dev,rocm-hip-runtime-dev,rocm-smi-lib,rocminfo}${ROCM_VERSION}
-            echo "/opt/rocm/bin" >> $GITHUB_PATH
-            echo "ROCM_PATH=/opt/rocm" >> $GITHUB_ENV
-            echo "LD_LIBRARY_PATH=/opt/rocm/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
-
-      - name: Check disk space
-        run: |
-          df -h
+            docker exec "${{ job.name }}" bash -c "wget -q -O - https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add - &&
+              echo \"deb [arch=amd64] https://repo.radeon.com/rocm/apt/${{ matrix.rocm-version }}/ jammy main\" | tee /etc/apt/sources.list.d/rocm.list &&
+              apt-get update &&
+              ROCM_VERSION=$(apt-cache search rocm-dev[0-9] | awk '{print $1}' | sed 's/rocm-dev//g') &&
+              apt-get install -y {rocm-dev,rocm-llvm-dev,rocm-hip-runtime-dev,rocm-smi-lib,rocminfo}${ROCM_VERSION} &&
+              echo "/opt/rocm/bin" >> $GITHUB_PATH &&
+              echo "ROCM_PATH=/opt/rocm" >> $GITHUB_ENV &&
+              echo "LD_LIBRARY_PATH=/opt/rocm/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV"
 
       - name: Build and install
         timeout-minutes: 25
         shell: bash
         run: |
-          git config --global --add safe.directory ${PWD} &&
-          cmake --version &&
-          mkdir -p build &&
-          cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DLLVM_INSTALL_DIR=${{ matrix.llvm-install }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build &&
-          cmake --build build --target install
+          docker exec "${{ job.name }}" bash -c "git config --global --add safe.directory ${PWD} &&
+            cmake --version &&
+            mkdir -p build &&
+            cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DLLVM_INSTALL_DIR=${{ matrix.llvm-install }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build &&
+            cmake --build build --target install"
 
