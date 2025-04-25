@@ -24,9 +24,6 @@ jobs:
       needs-rebuild: ${{ steps.check.outputs.needs-rebuild }}
       artifact-run-id: ${{ steps.get-run-id.outputs.result }}
     steps:
-      - name: Clear cache
-        run: |
-          rm -rf ~/triton ~/.triton ~/triton_assets.tar.gz ~/llvm-hash.txt
       - name: Clone Triton
         timeout-minutes: 5
         shell: bash

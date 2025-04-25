@@ -31,15 +31,15 @@ jobs:
             python3 -m pip install 'cmake==3.22'
             python3 -m pip install --upgrade setuptools
       
-      # - name: Clone Triton
-      #   timeout-minutes: 5
-      #   shell: bash
-      #   run: |
-      #     export TRITON_BUILD_WITH_CLANG_LLD=true &&
-      #     export TRITON_BUILD_WITH_CCACHE=true &&
-      #     git clone https://github.com/triton-lang/triton.git ~/triton
-      #     cd ~/triton &&
-      #     cat cmake/llvm-hash.txt > ~/llvm-hash.txt
+      - name: Clone Triton
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          export TRITON_BUILD_WITH_CLANG_LLD=true &&
+          export TRITON_BUILD_WITH_CCACHE=true &&
+          git clone https://github.com/triton-lang/triton.git ~/triton
+          cd ~/triton &&
+          cat cmake/llvm-hash.txt > ~/llvm-hash.txt
             
       - name: Upload LLVM version
         uses: actions/upload-artifact@v4
