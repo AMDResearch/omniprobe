@@ -24,10 +24,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rocm-version: ['6.1.2', '6.2.3', '6.3']
+        rocm-version: ['6.3']
         llvm-install: ['/opt/rocm/llvm']
         compiler: ['clang']
-        build-type: ['Release', 'Debug']
+        build-type: ['Release']
     runs-on: [mi100]
 
     name: ubuntu-jammy-rocm-${{ matrix.rocm-version }}-${{ matrix.compiler }}-${{ matrix.build-type }}

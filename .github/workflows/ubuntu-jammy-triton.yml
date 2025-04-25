@@ -103,10 +103,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rocm-version: ['6.1.2', '6.2.3', '6.3']
+        rocm-version: ['6.3']
         llvm-install: ['~/.triton/llvm/llvm-ubuntu-x64']
         compiler: ['clang']
-        build-type: ['Release', 'Debug']
+        build-type: ['Release']
     runs-on: [mi100]
 
     name: ubuntu-jammy-triton-${{ matrix.rocm-version }}-${{ matrix.compiler }}-${{ matrix.build-type }}
