@@ -17,14 +17,21 @@ function(ext_proj_add)
     
     # Add project as a subdirectory, optionally set custom compiler
     if (EXT_PROJ_ADD_C_COMPILER AND EXT_PROJ_ADD_CXX_COMPILER)
+        # Resolve symlink for LLVM_INSTALL_DIR
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E realpath "${LLVM_INSTALL_DIR}"
+            OUTPUT_VARIABLE LLVM_INSTALL_DIR_RESOLVED
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        set(LLVM_INSTALL_DIR "${LLVM_INSTALL_DIR_RESOLVED}")
+    
         ExternalProject_Add(
             ${EXT_PROJ_ADD_NAME}${EXT_PROJ_ADD_BINARY_SUFFIX}
             PREFIX ${CMAKE_BINARY_DIR}/external/${EXT_PROJ_ADD_NAME}${EXT_PROJ_ADD_BINARY_SUFFIX}
             SOURCE_DIR ${EXTERNAL_PROJ_DIR}
             BINARY_DIR ${CMAKE_BINARY_DIR}/external/${EXT_PROJ_ADD_NAME}${EXT_PROJ_ADD_BINARY_SUFFIX}/build
             CMAKE_ARGS -DLLVM_INSTALL_DIR=${LLVM_INSTALL_DIR} -DCMAKE_C_COMPILER=${EXT_PROJ_ADD_C_COMPILER} -DCMAKE_CXX_COMPILER=${EXT_PROJ_ADD_CXX_COMPILER} -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
-            BUILD_ALWAYS ON
-                
+            BUILD_ALWAYS ON   
         )
     else()
         add_subdirectory(${EXTERNAL_PROJ_DIR})
