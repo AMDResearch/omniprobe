@@ -86,7 +86,7 @@ jobs:
           lsmod | grep amdgpu  &&
           modprobe amdgpu
 
-      - name: Run rocminfo
+      - name: Verify successful install
         continue-on-error: true
         run: |
           rocminfo
