@@ -37,6 +37,10 @@ jobs:
     
     name: ubuntu-jammy-rocm-${{ matrix.rocm-version }}-${{ matrix.compiler }}-${{ matrix.build-type }}
     steps:
+      - name: Check available devices
+        run: |
+          rocminfo
+
       - name: Clone repo
         uses: actions/checkout@v4
         with:
@@ -84,5 +88,5 @@ jobs:
           cmake --version &&
           mkdir -p build &&
           cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DLLVM_INSTALL_DIR=${{ matrix.llvm-install }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build &&
-          cmake --build build --target install"
+          cmake --build build --target install
 
