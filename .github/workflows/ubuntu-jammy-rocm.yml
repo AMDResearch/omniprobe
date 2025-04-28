@@ -32,7 +32,7 @@ jobs:
     steps:
       - name: Start Container
         run: |
-          .github/scripts/start-gpu-container.sh \
+          .github/workflows/scripts/start-gpu-container.sh \
             -n "${{ job.name }}"
             -i "dgaliffiamd/rocprofiler-systems:ci-base-ubuntu-22.04" \
             -m "${{ github.workspace }}"
