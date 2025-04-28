@@ -30,12 +30,6 @@ jobs:
     
     name: ubuntu-jammy-rocm-${{ matrix.rocm-version }}-${{ matrix.compiler }}-${{ matrix.build-type }}
     steps:
-      - name: Clone repo
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          token: ${{ secrets.CLONE_TOKEN }}
-      
       - name: Start Container
         run: |
           .github/scripts/start-gpu-container.sh \
@@ -43,6 +37,14 @@ jobs:
             -i "dgaliffiamd/rocprofiler-systems:ci-base-ubuntu-22.04" \
             -m "${{ github.workspace }}"
 
+      - name: Clone repo
+        uses: actions/checkout@v4
+        with:
+           docker exec "${{ job.name }}" bash -c "
+            git clone --recursive https://github.com/${{ github.repository }} /workspace &&
+            cd /workspace &&
+            git checkout ${{ github.ref }}"
+      
       - name: Install packages
         timeout-minutes: 25
         uses: nick-fields/retry@v3
@@ -51,11 +53,11 @@ jobs:
           max_attempts: 5
           command: |
             docker exec "${{ job.name }}" bash -c "apt-get update &&
-                  apt-get install -y software-properties-common &&
-                  apt-get upgrade -y &&
-                  apt-get install -y build-essential git wget ${{ matrix.compiler }} lld libzstd-dev libomp-dev ccache &&
-                  python3 -m pip install --upgrade pip &&
-                  python3 -m pip install 'cmake==3.22'"
+              apt-get install -y software-properties-common &&
+              apt-get upgrade -y &&
+              apt-get install -y build-essential git wget ${{ matrix.compiler }} lld libzstd-dev libomp-dev ccache &&
+              python3 -m pip install --upgrade pip &&
+              python3 -m pip install 'cmake==3.22'"
         
       - name: Install ROCm Packages
         timeout-minutes: 25

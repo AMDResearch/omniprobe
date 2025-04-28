@@ -39,6 +39,7 @@ fi
 # Run the Docker container
 docker run -d --rm \
   --name "$CONTAINER_NAME" \
+  --user "$(id -u):$(id -g)" \
   --network=host \
   --device=/dev/kfd \
   --device=/dev/dri/renderD128 \
