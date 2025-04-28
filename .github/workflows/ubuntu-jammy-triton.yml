@@ -197,6 +197,10 @@ jobs:
         run: |
           rocminfo
 
+      - name: debug step
+        run: |
+          ls -la ~/.triton/llvm/llvm-ubuntu-x64/include/llvm/
+
       - name: Build and install
         timeout-minutes: 25
         shell: bash
