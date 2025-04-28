@@ -53,7 +53,7 @@ jobs:
             apt-get update &&
             apt-get install -y software-properties-common &&
             apt-get upgrade -y &&
-            apt-get install -y build-essential git wget ${{ matrix.compiler }} lld libzstd-dev libomp-dev ccache &&
+            apt-get install -y build-essential git wget ${{ matrix.compiler }} lld libzstd-dev libomp-dev ccache kmod &&
             python3 -m pip install --upgrade pip &&
             python3 -m pip install 'cmake==3.22'
         
