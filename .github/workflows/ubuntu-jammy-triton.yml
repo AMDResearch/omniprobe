@@ -161,7 +161,7 @@ jobs:
             apt-get upgrade -y &&
             apt-get install -y build-essential git wget ${{ matrix.compiler }} lld libzstd-dev libomp-dev ccache libdwarf-dev &&
             python3 -m pip install --upgrade pip &&
-            python3 -m pip install 'cmake==3.22'
+            python3 -m pip install 'cmake==3.22.1'
         
       - name: Install ROCm Packages
         timeout-minutes: 25
@@ -198,6 +198,7 @@ jobs:
           git config --global --add safe.directory ${PWD} &&
           cmake --version &&
           mkdir -p build &&
+          echo "cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DLLVM_INSTALL_DIR=${{ matrix.llvm-install }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build" &&
           cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DLLVM_INSTALL_DIR=${{ matrix.llvm-install }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build &&
           cmake --build build --target install
       
