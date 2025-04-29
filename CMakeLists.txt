@@ -139,7 +139,6 @@ ext_proj_add(
     NAME dh_comms
     INCLUDE_DIRS
 )
-set(LLVM_INSTALL_DIR ${ROCM_PATH}/llvm)
 ext_proj_add(
     NAME instrument-amdgpu-kernels
     C_COMPILER ${ROCM_PATH}/llvm/bin/clang
@@ -147,7 +146,9 @@ ext_proj_add(
     BINARY_SUFFIX "-rocm"
 )
 
-set(LLVM_INSTALL_DIR ${TRITON_LLVM})
+if(DEFINED TRITON_LLVM)
+    set(LLVM_INSTALL_DIR ${TRITON_LLVM})
+endif()
 ext_proj_add(
     NAME instrument-amdgpu-kernels
     C_COMPILER ${ROCM_PATH}/llvm/bin/clang
