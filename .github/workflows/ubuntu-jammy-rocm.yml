@@ -92,7 +92,6 @@ jobs:
           git config --global --add safe.directory ${PWD} &&
           cmake --version &&
           mkdir -p build &&
-          echo "cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DLLVM_INSTALL_DIR=${{ matrix.llvm-install }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build" &&
-          cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DLLVM_INSTALL_DIR=${{ matrix.llvm-install }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build &&
+          cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build &&
           cmake --build build --target install
 

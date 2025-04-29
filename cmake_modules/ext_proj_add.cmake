@@ -23,6 +23,7 @@ function(ext_proj_add)
             OUTPUT_VARIABLE LLVM_INSTALL_DIR_RESOLVED
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
+        message(status "Original LLVM_INSTALL_DIR: ${LLVM_INSTALL_DIR}")
         set(LLVM_INSTALL_DIR "${LLVM_INSTALL_DIR_RESOLVED}")
         if(NOT EXISTS "${LLVM_INCLUDE_DIR}")
             message(STATUS "LLVM_INSTALL_DIR is NOT valid: ${LLVM_INSTALL_DIR}")
