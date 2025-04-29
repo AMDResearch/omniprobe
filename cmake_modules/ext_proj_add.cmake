@@ -24,6 +24,12 @@ function(ext_proj_add)
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
         set(LLVM_INSTALL_DIR "${LLVM_INSTALL_DIR_RESOLVED}")
+        if(NOT EXISTS "${LLVM_INCLUDE_DIR}")
+            message(STATUS "LLVM_INSTALL_DIR is NOT valid: ${LLVM_INSTALL_DIR}")
+        else()
+            message(STATUS "LLVM_INSTALL_DIR is valid: ${LLVM_INSTALL_DIR}")
+        endif()
+    
     
         ExternalProject_Add(
             ${EXT_PROJ_ADD_NAME}${EXT_PROJ_ADD_BINARY_SUFFIX}
