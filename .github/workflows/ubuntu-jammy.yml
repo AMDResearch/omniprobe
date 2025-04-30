@@ -42,7 +42,7 @@ jobs:
             const workflowRuns = await github.rest.actions.listWorkflowRuns({  
               owner: context.repo.owner,  
               repo: context.repo.repo,  
-              workflow_id: 'ubuntu-jammy-triton.yml', 
+              workflow_id: 'ubuntu-jammy.yml', 
               per_page: 100 // Adjust as needed to check more runs  
             });  
   
