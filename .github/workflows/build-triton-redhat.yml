@@ -28,7 +28,7 @@ jobs:
           max_attempts: 5
           command: |
             yum install -y epel-release &&
-            yum install -y clang lld libzstd-devel libomp-devel ccache python3-pip &&
+            yum install -y clang lld libzstd-devel libomp-devel ccache python3-pip python3-devel cmake ninja-build   &&
             python3 -m pip install --upgrade pip &&
             python3 -m pip install 'cmake==3.22' &&
             python3 -m pip install --upgrade setuptools
