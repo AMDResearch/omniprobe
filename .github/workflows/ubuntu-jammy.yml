@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   check-llvm-install:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     outputs:
       needs-rebuild: ${{ steps.check.outputs.needs-rebuild }}
       artifact-run-id: ${{ steps.get-run-id.outputs.result }}

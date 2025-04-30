@@ -17,7 +17,7 @@ jobs:
   build:
     container:
       image: dgaliffiamd/rocprofiler-systems:ci-base-ubuntu-22.04
-    runs-on: [mi100]
+    runs-on: ubuntu-latest
 
     steps:
       - name: Install packages
