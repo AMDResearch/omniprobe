@@ -101,7 +101,7 @@ jobs:
       fail-fast: false
       matrix:
         rocm-version: ['6.3']
-        llvm-install: ['~/.triton/llvm/llvm-ubuntu-x64']
+        llvm-install: ['$HOME/.triton/llvm/llvm-ubuntu-x64']
         compiler: ['clang']
         build-type: ['Release']
 
