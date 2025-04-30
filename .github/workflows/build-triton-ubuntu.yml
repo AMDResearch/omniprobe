@@ -59,8 +59,8 @@ jobs:
         shell: bash
         run: |
           cd ~/triton &&
-          python3 -m pip install -r python/requirements.txt &&
-          python3 -m pip install -vvv -e .
+          python3 -m pip install ninja cmake wheel pybind11 &&
+          python3 -m pip install -vvv -e python
 
       - name: Check for install and remove clone
         run: |
