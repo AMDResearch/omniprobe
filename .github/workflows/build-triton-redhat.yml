@@ -1,0 +1,78 @@
+name: Build Triton LLVM (RedHat)
+run-name: build-triton-llvm-redhat
+
+on: 
+  workflow_call:
+    outputs:
+      artifact-run-id:
+        description: The run ID this workflow
+        value: ${{ github.run_id }}
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    container:
+      image: dgaliffiamd/rocprofiler-systems:ci-base-rhel-9.4
+    runs-on: [mi100]
+
+    steps:
+      - name: Install packages
+        timeout-minutes: 25
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 25
+          max_attempts: 5
+          command: |
+            yum install -y epel-release &&
+            yum install -y clang lld zstd-devel libomp-devel ccache python3-pip &&
+            python3 -m pip install --upgrade pip &&
+            python3 -m pip install 'cmake==3.22' &&
+            python3 -m pip install --upgrade setuptools
+      
+      - name: Clone Triton if not exists
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          export TRITON_BUILD_WITH_CLANG_LLD=true &&
+          export TRITON_BUILD_WITH_CCACHE=true &&
+          if [ ! -d "~/triton" ]; then
+            git clone https://github.com/triton-lang/triton.git ~/triton &&
+            cd ~/triton &&
+            cat cmake/llvm-hash.txt > ~/llvm-hash.txt
+          fi
+            
+      - name: Upload LLVM version
+        uses: actions/upload-artifact@v4
+        with:
+          name: llvm-hash
+          path: ~/llvm-hash.txt
+          
+      - name: Build Triton
+        timeout-minutes: 45
+        shell: bash
+        run: |
+          cd ~/triton &&
+          python3 -m pip install -r python/requirements.txt &&
+          python3 -m pip install -vvv -e .
+
+      - name: Check for install and remove clone
+        run: |
+          ls -la ~/.triton &&
+          rm -rf ~/triton
+        
+      - name: Compress Triton assets
+        run: |
+          cd ~/ &&
+          tar -czvf triton_assets.tar.gz ./.triton
+
+      - name: Upload required Triton assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: triton-assets
+          if-no-files-found: error
+          include-hidden-files: true
+          path: ~/triton_assets.tar.gz

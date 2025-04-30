@@ -1,0 +1,209 @@
+name: Ubuntu 22.04 (ROCm, LLVM)
+run-name: ubuntu-jammy
+
+on:
+  push:
+    branches: [ main, colramos/self-hosted-runner ]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+  pull_request:
+    branches: [ main, colramos/self-hosted-runner ]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-llvm-install:
+    runs-on: ubuntu-22.04
+    outputs:
+      needs-rebuild: ${{ steps.check.outputs.needs-rebuild }}
+      artifact-run-id: ${{ steps.get-run-id.outputs.result }}
+    steps:
+      - name: Clone Triton
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          export TRITON_BUILD_WITH_CLANG_LLD=true &&
+          export TRITON_BUILD_WITH_CCACHE=true &&
+          git clone https://github.com/triton-lang/triton.git ~/triton
+
+      - name: Get latest artifact id
+        uses: actions/github-script@v7
+        id: get-run-id
+        continue-on-error: true 
+        with:
+          result-encoding: string
+          script: |  
+            const workflowRuns = await github.rest.actions.listWorkflowRuns({  
+              owner: context.repo.owner,  
+              repo: context.repo.repo,  
+              workflow_id: 'ubuntu-jammy-triton.yml', 
+              per_page: 100 // Adjust as needed to check more runs  
+            });  
+  
+            for (const run of workflowRuns.data.workflow_runs) {  
+              const jobs = await github.rest.actions.listJobsForWorkflowRun({  
+                owner: context.repo.owner,  
+                repo: context.repo.repo,  
+                run_id: run.id  
+              });
+  
+              const artifactJob = jobs.data.jobs.find(job => job.name === 'trigger-llvm-build / build');
+  
+              if (artifactJob && artifactJob.conclusion === 'success') {  
+                return run.id;  
+              }  
+            }  
+  
+            throw new Error('No runs found with a successful artifact job');  
+      
+      - name: Download llvm hash 
+        uses: actions/download-artifact@v4
+        continue-on-error: true  
+        with:
+          name: llvm-hash
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.get-run-id.outputs.result }}
+          path: ~/
+
+      - name: Cross check LLVM versions
+        id: check
+        shell: bash
+        run: |
+          echo "llvm-hash-latest=$(cat  ~/triton/cmake/llvm-hash.txt)" &&
+          if [ ! -f ~/llvm-hash.txt ]; then
+            echo "-1" > ~/llvm-hash.txt
+          fi &&
+          echo "llvm-hash-existing=$(cat ~/llvm-hash.txt)" &&
+          if [ "$(cat ~/triton/cmake/llvm-hash.txt)" == "$(cat ~/llvm-hash.txt)" ]; then
+            echo "needs-rebuild=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs-rebuild=true" >> "$GITHUB_OUTPUT"
+          fi
+          
+  trigger-llvm-build:
+    if: ${{ needs.check-llvm-install.outputs.needs-rebuild == 'true' }}
+    needs: check-llvm-install
+    uses: ./.github/workflows/build-triton-ubuntu.yml
+
+  
+  build:
+    needs: [trigger-llvm-build, check-llvm-install]
+    if: ${{ always() && !failure() && !cancelled() }}
+    runs-on: [mi100]
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        rocm-version: ['6.3']
+        llvm-install: [ '/opt/rocm/llvm', '$HOME/.triton/llvm/llvm-ubuntu-x64' ]
+        compiler: ['clang']
+        build-type: ['Release']
+
+    container:
+      image: dgaliffiamd/rocprofiler-systems:ci-base-ubuntu-22.04
+      options: >-
+        --device=/dev/kfd
+        --device=/dev/dri
+        --group-add video 
+    
+    name: ubuntu-jammy-${{ matrix.llvm-install == '/opt/rocm/llvm' && 'rocm' || 'triton' }}-${{ matrix.rocm-version }}-${{ matrix.compiler }}-${{ matrix.build-type }}
+    steps:
+      - name: Determine artifact-run-id
+        id: determine-artifact
+        shell: bash
+        run: |
+          if [[ "${{ needs.check-llvm-install.outputs.needs-rebuild }}" == "true" ]]; then
+            echo "artifact-run-id=${{ needs.trigger-llvm-build.outputs.artifact-run-id }}" >> $GITHUB_ENV
+          else
+            echo "artifact-run-id=${{ needs.check-llvm-install.outputs.artifact-run-id }}" >> $GITHUB_ENV
+          fi
+
+      - name: Download Triton artifact
+        if: ${{ matrix.llvm-install == '$HOME/.triton/llvm/llvm-ubuntu-x64' }}  
+        uses: actions/download-artifact@v4
+        with:
+          name: triton-assets
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.artifact-run-id }}
+          path: ~/
+
+      - name: Unzip Triton assets
+        if: ${{ matrix.llvm-install == '$HOME/.triton/llvm/llvm-ubuntu-x64' }}
+        run: |
+          tar -xzvf ~/triton_assets.tar.gz -C ~/ &&
+          ls -la ~/
+        
+      - name: Check Triton download
+        if: ${{ matrix.llvm-install == '$HOME/.triton/llvm/llvm-ubuntu-x64' }}
+        run: |
+          ls -la ~/ &&
+          ls -Ra ~/.triton
+
+      - name: Clone repo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CLONE_TOKEN }}
+
+      - name: Install packages
+        timeout-minutes: 25
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 25
+          max_attempts: 5
+          command: |
+            apt-get update &&
+            apt-get install -y software-properties-common &&
+            apt-get upgrade -y &&
+            apt-get install -y build-essential git wget ${{ matrix.compiler }} lld libzstd-dev libomp-dev ccache libdwarf-dev &&
+            python3 -m pip install --upgrade pip &&
+            python3 -m pip install 'cmake==3.22'
+        
+      - name: Install ROCm Packages
+        timeout-minutes: 25
+        if: ${{ matrix.rocm-version != '0.0' }}
+        uses: nick-fields/retry@v3
+        with:
+          retry_wait_seconds: 30
+          timeout_minutes: 25
+          max_attempts: 5
+          shell: bash
+          command: |
+            ROCM_VERSION=${{ matrix.rocm-version }}
+            ROCM_MAJOR=$(echo ${ROCM_VERSION} | sed 's/\./ /g' | awk '{print $1}')
+            ROCM_MINOR=$(echo ${ROCM_VERSION} | sed 's/\./ /g' | awk '{print $2}')
+            ROCM_VERSN=$(( (${ROCM_MAJOR}*10000)+(${ROCM_MINOR}*100) ))
+            echo "ROCM_MAJOR=${ROCM_MAJOR} ROCM_MINOR=${ROCM_MINOR} ROCM_VERSN=${ROCM_VERSN}"
+            wget -q https://repo.radeon.com/amdgpu-install/${{ matrix.rocm-version }}/ubuntu/jammy/amdgpu-install_${ROCM_MAJOR}.${ROCM_MINOR}.${ROCM_VERSN}-1_all.deb
+            apt-get install -y ./amdgpu-install_${ROCM_MAJOR}.${ROCM_MINOR}.${ROCM_VERSN}-1_all.deb
+            apt-get update -y
+            apt-get install -y {rocm-dev,rocm-llvm-dev,rocm-hip-runtime-dev,rocm-smi-lib,rocminfo}${ROCM_VERSION} 
+            echo "/opt/rocm/bin" >> $GITHUB_PATH 
+            echo "ROCM_PATH=/opt/rocm" >> $GITHUB_ENV 
+            echo "LD_LIBRARY_PATH=/opt/rocm/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+
+      - name: Verify visible devices
+        continue-on-error: true
+        run: |
+          rocminfo
+
+      - name: Build and install
+        timeout-minutes: 25
+        shell: bash
+        run: |
+          git config --global --add safe.directory ${PWD} &&
+          cmake --version &&
+          mkdir -p build &&
+          if [ "${{ matrix.llvm-install }}" == "/opt/rocm/llvm" ]; then
+          cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build
+          else
+          cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DTRITON_LLVM=${{ matrix.llvm-install }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build
+          fi 
+          cmake --build build --target install
+      

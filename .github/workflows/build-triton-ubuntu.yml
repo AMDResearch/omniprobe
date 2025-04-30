@@ -1,5 +1,5 @@
-name: Build Triton LLVM
-run-name: build-triton-llvm
+name: Build Triton LLVM (Ubuntu)
+run-name: build-triton-llvm-ubuntu
 
 on: 
   workflow_call:
@@ -32,7 +32,7 @@ jobs:
             apt-get upgrade -y &&
             apt-get install -y build-essential git wget clang lld libzstd-dev libomp-dev ccache &&
             python3 -m pip install --upgrade pip &&
-            python3 -m pip install 'cmake==3.22'
+            python3 -m pip install 'cmake==3.22' &&
             python3 -m pip install --upgrade setuptools
       
       - name: Clone Triton if not exists

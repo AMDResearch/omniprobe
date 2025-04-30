@@ -1,5 +1,5 @@
-name: Ubuntu 22.04 (Triton LLVM)
-run-name: triton-llvm
+name: RedHat Linux (ROCm, LLVM)
+run-name: redhat
 
 on:
   push:
@@ -89,10 +89,10 @@ jobs:
   trigger-llvm-build:
     if: ${{ needs.check-llvm-install.outputs.needs-rebuild == 'true' }}
     needs: check-llvm-install
-    uses: ./.github/workflows/build-triton-llvm.yml
+    uses: ./.github/workflows/build-triton-redhat.yml
 
   
-  ubuntu-jammy-triton-llvm-tests:
+  build:
     needs: [trigger-llvm-build, check-llvm-install]
     if: ${{ always() && !failure() && !cancelled() }}
     runs-on: [mi100]
@@ -101,18 +101,19 @@ jobs:
       fail-fast: false
       matrix:
         rocm-version: ['6.3']
+        os-release: [ '9.3', '9.4' ]
         llvm-install: [ '/opt/rocm/llvm', '$HOME/.triton/llvm/llvm-ubuntu-x64' ]
         compiler: ['clang']
         build-type: ['Release']
 
     container:
-      image: dgaliffiamd/rocprofiler-systems:ci-base-ubuntu-22.04
+      image: dgaliffiamd/rocprofiler-systems:ci-base-rhel-${{ matrix.os-release }}
       options: >-
         --device=/dev/kfd
         --device=/dev/dri
         --group-add video 
     
-    name: ubuntu-jammy-${{ matrix.llvm-install == '/opt/rocm/llvm' && 'rocm' || 'triton' }}-${{ matrix.rocm-version }}-${{ matrix.compiler }}-${{ matrix.build-type }}
+    name: redhat-${{ matrix.os-release }}-${{ matrix.llvm-install == '/opt/rocm/llvm' && 'rocm' || 'triton' }}-${{ matrix.rocm-version }}-${{ matrix.compiler }}-${{ matrix.build-type }}
     steps:
       - name: Determine artifact-run-id
         id: determine-artifact
@@ -158,12 +159,9 @@ jobs:
           timeout_minutes: 25
           max_attempts: 5
           command: |
-            apt-get update &&
-            apt-get install -y software-properties-common &&
-            apt-get upgrade -y &&
-            apt-get install -y build-essential git wget ${{ matrix.compiler }} lld libzstd-dev libomp-dev ccache libdwarf-dev &&
             python3 -m pip install --upgrade pip &&
-            python3 -m pip install 'cmake==3.22.1'
+            python3 -m pip install 'cmake==3.22' &&
+            yum install -y epel-release ${{ matrix.compiler }} lld zstd-devel libomp-devel ccache kmod libdwarf-devel
         
       - name: Install ROCm Packages
         timeout-minutes: 25
@@ -175,18 +173,19 @@ jobs:
           max_attempts: 5
           shell: bash
           command: |
+            RPM_TAG=".el${OS_VERSION_MAJOR}"
             ROCM_VERSION=${{ matrix.rocm-version }}
             ROCM_MAJOR=$(echo ${ROCM_VERSION} | sed 's/\./ /g' | awk '{print $1}')
             ROCM_MINOR=$(echo ${ROCM_VERSION} | sed 's/\./ /g' | awk '{print $2}')
             ROCM_VERSN=$(( (${ROCM_MAJOR}*10000)+(${ROCM_MINOR}*100) ))
-            echo "ROCM_MAJOR=${ROCM_MAJOR} ROCM_MINOR=${ROCM_MINOR} ROCM_VERSN=${ROCM_VERSN}"
-            wget -q https://repo.radeon.com/amdgpu-install/${{ matrix.rocm-version }}/ubuntu/jammy/amdgpu-install_${ROCM_MAJOR}.${ROCM_MINOR}.${ROCM_VERSN}-1_all.deb
-            apt-get install -y ./amdgpu-install_${ROCM_MAJOR}.${ROCM_MINOR}.${ROCM_VERSN}-1_all.deb
-            apt-get update -y
-            apt-get install -y {rocm-dev,rocm-llvm-dev,rocm-hip-runtime-dev,rocm-smi-lib,rocminfo}${ROCM_VERSION} 
+            if [ "${OS_VERSION_MAJOR}" -eq 8 ]; then PERL_REPO=powertools; else PERL_REPO=crb; fi
+            dnf -y --enablerepo=${PERL_REPO} install perl-File-BaseDir
+            yum install -y https://repo.radeon.com/amdgpu-install/${{ matrix.rocm-version }}/rhel/${{ matrix.os-release }}/amdgpu-install-${ROCM_MAJOR}.${ROCM_MINOR}.${ROCM_VERSN}-1${RPM_TAG}.noarch.rpm
+            yum install -y {rocm-dev,rocm-llvm-dev,rocm-hip-runtime-dev,rocm-smi-lib,rocminfo}${ROCM_VERSION} 
             echo "/opt/rocm/bin" >> $GITHUB_PATH 
             echo "ROCM_PATH=/opt/rocm" >> $GITHUB_ENV 
             echo "LD_LIBRARY_PATH=/opt/rocm/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+
 
       - name: Verify visible devices
         continue-on-error: true
@@ -201,7 +200,7 @@ jobs:
           cmake --version &&
           mkdir -p build &&
           if [ "${{ matrix.llvm-install }}" == "/opt/rocm/llvm" ]; then
-          cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build 
+          cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build
           else
           cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DTRITON_LLVM=${{ matrix.llvm-install }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build 
           fi 
