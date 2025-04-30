@@ -44,6 +44,7 @@ jobs:
           if [ ! -d "~/triton" ]; then
             git clone https://github.com/triton-lang/triton.git ~/triton &&
             cd ~/triton &&
+            git checkout 368c864e9 &&
             cat cmake/llvm-hash.txt > ~/llvm-hash.txt
           fi
             
