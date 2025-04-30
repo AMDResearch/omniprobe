@@ -101,7 +101,7 @@ jobs:
       fail-fast: false
       matrix:
         rocm-version: ['6.3']
-        llvm-install: [ '/opt/rocm/llvm', '$HOME/.triton/llvm/llvm-ubuntu-x64' ]
+        llvm-install: [ '/opt/rocm/llvm', '$HOME/.triton/llvm/llvm-*' ]
         compiler: ['clang']
         build-type: ['Release']
 
@@ -125,7 +125,7 @@ jobs:
           fi
 
       - name: Download Triton artifact
-        if: ${{ matrix.llvm-install == '$HOME/.triton/llvm/llvm-ubuntu-x64' }}  
+        if: ${{ matrix.llvm-install == '$HOME/.triton/llvm/llvm-*' }}  
         uses: actions/download-artifact@v4
         with:
           name: triton-assets
@@ -134,13 +134,28 @@ jobs:
           path: ~/
 
       - name: Unzip Triton assets
-        if: ${{ matrix.llvm-install == '$HOME/.triton/llvm/llvm-ubuntu-x64' }}
+        if: ${{ matrix.llvm-install == '$HOME/.triton/llvm/llvm-*' }}
         run: |
           tar -xzvf ~/triton_assets.tar.gz -C ~/ &&
           ls -la ~/
-        
+       
+      - name: Resolve LLVM install path
+        if: ${{ matrix.llvm-install == '$HOME/.triton/llvm/llvm-*' }}
+        shell: bash
+        run: |
+          if [[ "${{ matrix.llvm-install }}" == *"llvm-*" ]]; then
+            RESOLVED_PATH=$(find $HOME/.triton/llvm -maxdepth 1 -type d -name "llvm-*ubuntu-x64" | head -n 1)
+            if [[ -z "$RESOLVED_PATH" ]]; then
+              echo "Error: No matching LLVM install path found!" >&2
+              exit 1
+            fi
+            echo "llvm-install=$RESOLVED_PATH" >> $GITHUB_ENV
+          else
+            echo "llvm-install=${{ matrix.llvm-install }}" >> $GITHUB_ENV
+          fi
+
       - name: Check Triton download
-        if: ${{ matrix.llvm-install == '$HOME/.triton/llvm/llvm-ubuntu-x64' }}
+        if: ${{ matrix.llvm-install == '$HOME/.triton/llvm/llvm-*' }}
         run: |
           ls -la ~/ &&
           ls -Ra ~/.triton
@@ -203,7 +218,7 @@ jobs:
           if [ "${{ matrix.llvm-install }}" == "/opt/rocm/llvm" ]; then
           cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build
           else
-          cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DTRITON_LLVM=${{ matrix.llvm-install }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build
+          cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DTRITON_LLVM=${{ env.llvm-install }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build
           fi 
           cmake --build build --target install
       
