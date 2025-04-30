@@ -101,7 +101,7 @@ jobs:
       fail-fast: false
       matrix:
         rocm-version: ['6.3']
-        llvm-install: ['$HOME/.triton/llvm/llvm-ubuntu-x64']
+        llvm-install: [ '/opt/rocm/llvm', '$HOME/.triton/llvm/llvm-ubuntu-x64' ]
         compiler: ['clang']
         build-type: ['Release']
 
@@ -112,8 +112,7 @@ jobs:
         --device=/dev/dri
         --group-add video 
     
-
-    name: ubuntu-jammy-triton-${{ matrix.rocm-version }}-${{ matrix.compiler }}-${{ matrix.build-type }}
+    name: ubuntu-jammy-${{ matrix.llvm-install == '/opt/rocm/llvm' && 'rocm' || 'triton' }}-${{ matrix.rocm-version }}-${{ matrix.compiler }}-${{ matrix.build-type }}
     steps:
       - name: Determine artifact-run-id
         id: determine-artifact
@@ -198,6 +197,10 @@ jobs:
           git config --global --add safe.directory ${PWD} &&
           cmake --version &&
           mkdir -p build &&
+          if [ "${{ matrix.llvm-install }}" == "/opt/rocm/llvm" ]; then
+          cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build
+          else
           cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DTRITON_LLVM=${{ matrix.llvm-install }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build &&
+          fi &&
           cmake --build build --target install
       
