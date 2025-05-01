@@ -276,7 +276,6 @@ int main(int argc, char**argv) {
             hipErrorCheck(hipMemcpyAsync(x_h, x, sz, hipMemcpyDeviceToHost));
             hipErrorCheck(hipDeviceSynchronize());
         }
-        exit(0);
 
         hipErrorCheck(hipMemset(x, 0, sz));
         cpuWork();

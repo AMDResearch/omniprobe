@@ -30,7 +30,6 @@ set ( LIB_SRC
   ${LIB_DIR}/pyHandler.cc
   ${LIB_DIR}/memory_heatmap_wrapper.cc
   ${LIB_DIR}/time_interval_handler_wrapper.cc
-  ${LIB_DIR}/reconfigure.cc
 )
 
 set (HEATMAP_EXAMPLE "example_heatmap")

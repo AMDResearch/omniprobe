@@ -199,27 +199,35 @@ bool hsaInterceptor::loadConfig()
     return true;
 }
 
-std::time_t to_time_t(const std::filesystem::file_time_type& file_time) {
-    auto duration = file_time.time_since_epoch();
-    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
-    return std::time_t(seconds);
-}
     
 bool hsaInterceptor::checkForNewConfig()
 {
     bool bReturn = false;
-    try {
-        auto file_time = std::filesystem::last_write_time(std::filesystem::path(config_file_));
-        std::time_t cftime = to_time_t(file_time);;
+    if (config_file_.size())
+    {
+        try {
+            struct stat fileInfo;
+            if (stat(config_file_.c_str(), &fileInfo) != 0) {
+                // Return false if file doesn't exist or is inaccessible
+                return false;
+            }
+            time_t fileModifiedTime = fileInfo.st_mtime;
+            //std::cout << "Checking " << config_file_ << std::endl;
 
-        if (cftime > last_config_time_)
-        {
-            loadConfig();
-            bReturn = true;
+
+            if (fileModifiedTime > last_config_time_)
+            {
+                loadConfig();
+                bReturn = true;
+            }
+            else
+            {
+                //std::cout << "\tlast_config: " << last_config_time_ << "\tcurrent_modified_time_" << fileModifiedTime << std::endl;
+            }
+
+        } catch (const std::filesystem::filesystem_error& ex) {
+            std::cerr << "Error: " << ex.what() << std::endl;
         }
-
-    } catch (const std::filesystem::filesystem_error& ex) {
-        std::cerr << "Error: " << ex.what() << std::endl;
     }
     return bReturn;
 }
@@ -624,6 +632,7 @@ void signal_runner()
                 curr_sigs.clear();
             }while (me->getPendingSignals(curr_sigs));
         }
+        me->checkForNewConfig();
         if (me->running_)
             usleep(1);
         else
