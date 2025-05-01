@@ -71,20 +71,37 @@ jobs:
           run-id: ${{ steps.get-run-id.outputs.result }}
           path: ~/
 
-      - name: Cross check LLVM versions
+      # NOTE: COMMENTING OUT FOR FIXED TRITON VERSION
+          # - name: Cross check lasest LLVM with artifact version
+      #   id: check
+      #   shell: bash
+      #   run: |
+      #     echo "llvm-hash-latest=$(cat  ~/triton/cmake/llvm-hash.txt)" &&
+      #     if [ ! -f ~/llvm-hash.txt ]; then
+      #       echo "-1" > ~/llvm-hash.txt
+      #     fi &&
+      #     echo "llvm-hash-existing=$(cat ~/llvm-hash.txt)" &&
+      #     if [ "$(cat ~/triton/cmake/llvm-hash.txt)" == "$(cat ~/llvm-hash.txt)" ]; then
+      #       echo "needs-rebuild=false" >> "$GITHUB_OUTPUT"
+      #     else
+      #       echo "needs-rebuild=true" >> "$GITHUB_OUTPUT"
+      #     fi
+
+      - name: Check for (expected) artifact
         id: check
         shell: bash
         run: |
-          echo "llvm-hash-latest=$(cat  ~/triton/cmake/llvm-hash.txt)" &&
-          if [ ! -f ~/llvm-hash.txt ]; then
-            echo "-1" > ~/llvm-hash.txt
-          fi &&
-          echo "llvm-hash-existing=$(cat ~/llvm-hash.txt)" &&
-          if [ "$(cat ~/triton/cmake/llvm-hash.txt)" == "$(cat ~/llvm-hash.txt)" ]; then
-            echo "needs-rebuild=false" >> "$GITHUB_OUTPUT"
+          if [ -f ~/llvm-hash.txt ]; then
+            existing_hash=$(cat ~/llvm-hash.txt)
+            if [ "$existing_hash" != "7ba6768df8181bc270763333969d4a1d6cc2e160" ]; then
+              echo "needs-rebuild=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "needs-rebuild=false" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "needs-rebuild=true" >> "$GITHUB_OUTPUT"
           fi
+          echo "artifact-run-id=${{ steps.get-run-id.outputs.result }}"
           
   trigger-llvm-build:
     if: ${{ needs.check-llvm-install.outputs.needs-rebuild == 'true' }}
