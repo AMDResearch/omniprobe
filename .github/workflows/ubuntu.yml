@@ -1,5 +1,5 @@
-name: Ubuntu 22.04 (ROCm, LLVM)
-run-name: ubuntu-jammy
+name: Ubuntu Linux (ROCm, LLVM)
+run-name: ubuntu
 
 on:
   push:
@@ -42,7 +42,7 @@ jobs:
             const workflowRuns = await github.rest.actions.listWorkflowRuns({  
               owner: context.repo.owner,  
               repo: context.repo.repo,  
-              workflow_id: 'ubuntu-jammy.yml', 
+              workflow_id: 'ubuntu.yml', 
               per_page: 100 // Adjust as needed to check more runs  
             });  
   
@@ -117,19 +117,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rocm-version: ['6.3']
+        rocm-version: [ '6.3', '6.4' ]
+        os-release: [ '22.04', '24.04' ]
         llvm-install: [ '/opt/rocm/llvm', '$HOME/.triton/llvm/llvm-*' ]
         compiler: ['clang']
         build-type: ['Release']
 
     container:
-      image: dgaliffiamd/rocprofiler-systems:ci-base-ubuntu-22.04
+      image: dgaliffiamd/rocprofiler-systems:ci-base-ubuntu-${{ matrix.os-release }}
       options: >-
         --device=/dev/kfd
         --device=/dev/dri
         --group-add video 
     
-    name: ubuntu-jammy-${{ matrix.llvm-install == '/opt/rocm/llvm' && 'rocm' || 'triton' }}-${{ matrix.rocm-version }}-${{ matrix.compiler }}-${{ matrix.build-type }}
+    name: ubuntu-${{ matrix.os-release }}-${{ matrix.llvm-install == '/opt/rocm/llvm' && 'rocm' || 'triton' }}-${{ matrix.rocm-version }}-${{ matrix.compiler }}-${{ matrix.build-type }}
     steps:
       - name: Determine artifact-run-id
         id: determine-artifact
@@ -212,7 +213,15 @@ jobs:
             ROCM_MINOR=$(echo ${ROCM_VERSION} | sed 's/\./ /g' | awk '{print $2}')
             ROCM_VERSN=$(( (${ROCM_MAJOR}*10000)+(${ROCM_MINOR}*100) ))
             echo "ROCM_MAJOR=${ROCM_MAJOR} ROCM_MINOR=${ROCM_MINOR} ROCM_VERSN=${ROCM_VERSN}"
-            wget -q https://repo.radeon.com/amdgpu-install/${{ matrix.rocm-version }}/ubuntu/jammy/amdgpu-install_${ROCM_MAJOR}.${ROCM_MINOR}.${ROCM_VERSN}-1_all.deb
+            if [ "${{ matrix.os-release }}" == "22.04" ]; then
+              OS_CODENAME="jammy"
+            elif [ "${{ matrix.os-release }}" == "24.04" ]; then
+              OS_CODENAME="noble"
+            else
+              echo "Unsupported OS release: ${{ matrix.os-release }}" >&2
+              exit 1
+            fi
+            wget -q https://repo.radeon.com/amdgpu-install/${{ matrix.rocm-version }}/ubuntu/${OS_CODENAME}/amdgpu-install_${ROCM_MAJOR}.${ROCM_MINOR}.${ROCM_VERSN}-1_all.deb
             apt-get install -y ./amdgpu-install_${ROCM_MAJOR}.${ROCM_MINOR}.${ROCM_VERSN}-1_all.deb
             apt-get update -y
             apt-get install -y {rocm-dev,rocm-llvm-dev,rocm-hip-runtime-dev,rocm-smi-lib,rocminfo}${ROCM_VERSION} 

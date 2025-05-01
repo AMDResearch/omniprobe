@@ -117,8 +117,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rocm-version: ['6.3']
-        os-release: [ '9.3', '9.4' ]
+        rocm-version: ['6.3', '6.4']
+        os-release: ['9.4']
         llvm-install: [ '/opt/rocm/llvm', '$HOME/.triton/llvm/llvm-*' ]
         compiler: ['clang']
         build-type: ['Release']
@@ -193,7 +193,9 @@ jobs:
           command: |
             python3 -m pip install --upgrade pip &&
             python3 -m pip install 'cmake==3.22' &&
-            yum install -y epel-release ${{ matrix.compiler }} lld libzstd-devel libomp-devel ccache kmod libdwarf-devel
+            yum install -y epel-release ${{ matrix.compiler }} lld libzstd-devel libomp-devel ccache kmod libdwarf-devel python3-setuptools python3-wheel &&
+            wget https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm &&
+            rpm -ivh epel-release-latest-9.noarch.rpm &&
         
       - name: Install ROCm Packages
         timeout-minutes: 25
@@ -210,9 +212,7 @@ jobs:
             ROCM_MAJOR=$(echo ${ROCM_VERSION} | sed 's/\./ /g' | awk '{print $1}')
             ROCM_MINOR=$(echo ${ROCM_VERSION} | sed 's/\./ /g' | awk '{print $2}')
             ROCM_VERSN=$(( (${ROCM_MAJOR}*10000)+(${ROCM_MINOR}*100) ))
-            if [ "${OS_VERSION_MAJOR}" -eq 8 ]; then PERL_REPO=powertools; else PERL_REPO=crb; fi
-            dnf -y --enablerepo=${PERL_REPO} install perl-File-BaseDir
-            yum install -y https://repo.radeon.com/amdgpu-install/${{ matrix.rocm-version }}/rhel/${{ matrix.os-release }}/amdgpu-install-${ROCM_MAJOR}.${ROCM_MINOR}.${ROCM_VERSN}-1${RPM_TAG}.noarch.rpm
+            dnf -y install https://repo.radeon.com/amdgpu-install/${{ matrix.rocm-version }}/rhel/${{ matrix.os-release }}/amdgpu-install-${ROCM_MAJOR}.${ROCM_MINOR}.${ROCM_VERSN}-1${RPM_TAG}.noarch.rpm
             yum install -y rocm-dev rocm-llvm-dev rocm-hip-runtime-dev rocm-smi-lib rocminfo
             echo "/opt/rocm/bin" >> $GITHUB_PATH 
             echo "ROCM_PATH=/opt/rocm" >> $GITHUB_ENV 
