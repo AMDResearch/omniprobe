@@ -42,6 +42,7 @@ THE SOFTWARE.
 #include "hsa_mem_mgr.h"
 #include "comms_mgr.h"
 #include "kernelDB.h"
+#include "nlohmann/json.hpp"
 
 class hsaInterceptor;
 void signal_runner();
@@ -103,6 +104,8 @@ private:
     bool getPendingSignals(std::vector<hsa_signal_t>& outSigs);
     void signalCompleted(const hsa_signal_t sig);
     bool signalWait(hsa_signal_t sig, uint64_t timeout);
+    bool loadConfig();
+    bool checkForNewConfig();
     static void OnSubmitPackets(const void* in_packets, uint64_t count, uint64_t user_que_idx, void* data,
                          hsa_amd_queue_intercept_packet_writer writer);
     static hsa_status_t hsa_queue_create(hsa_agent_t agent, uint32_t size, hsa_queue_type32_t type, void(*callback)(hsa_status_t status, hsa_queue_t *source, void *data), void *data, uint32_t private_segment_size, uint32_t group_segment_size, hsa_queue_t **queue);
@@ -162,6 +165,8 @@ private:
     logDuration log_;
     coCache kernel_cache_;
     bool run_instrumented_;
+    bool running_;
+    std::string host_name_;
     KernArgAllocator allocator_;
     std::map<hsa_signal_t, void *, hsa_cmp<hsa_signal_t>> pending_kernargs_;
     std::map<hsa_agent_t, hsa_mem_mgr *, hsa_cmp<hsa_agent_t>> mem_mgrs_;
@@ -173,6 +178,8 @@ private:
     std::atomic<uint64_t> dispatch_count_;
     dispatchController dispatcher_;
     std::map<hsa_agent_t, std::unique_ptr<kernelDB::kernelDB>, hsa_cmp<hsa_agent_t>> kdbs_;
+    std::string config_file_;
+    std::time_t last_config_time_;
     static std::mutex singleton_mutex_;
     static std::shared_mutex stop_mutex_;
     static hsaInterceptor *singleton_;

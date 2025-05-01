@@ -527,10 +527,13 @@ unsigned int getLogDurConfig(std::map<std::string, std::string>& config) {
     const char* logDurHandlers = std::getenv("LOGDUR_HANDLERS");
     const char* logDurKernelFilter = std::getenv("LOGDUR_FILTER");
     const char* logDurDispatches = std::getenv("LOGDUR_DISPATCHES");
+    const char* logDurConfigFile = std::getenv("LOGDUR_CONFIG_FILE");
 
     config["LOGDUR_LOG_LOCATION"] = logDurLogLocation ? logDurLogLocation : "console";
 
     config["LOGDUR_KERNEL_CACHE"] = logDurKernelCache ? logDurKernelCache : "";
+
+    config["LOGDUR_CONFIG_FILE"] = logDurConfigFile ? logDurConfigFile : "";
 
     if (logDurInstrumented) {
         std::string tmp = logDurInstrumented;

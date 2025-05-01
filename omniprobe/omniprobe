@@ -248,6 +248,13 @@ def setup_env(parms):
     else:
         env['LOGDUR_LOG_LOCATION'] = "console"
         env_dump['LOGDUR_LOG_LOCATION'] = "console"
+    
+    if len(parms.config_file):
+        if os.path.isfile(parms.config_file):
+            env['LOGDUR_CONFIG_FILE'] = parms.config_file
+            env_dump['LOGDUR_CONFIG_FILE'] = parms.config_file
+        else:
+            print(f"WARNING: config file {parms.config_file} either doesn't exist or it is a directory. Using command-line arguments for all config options.")
 
     assume_triton = False
     if len(parms.cache_location):
@@ -437,6 +444,18 @@ def add_general_group(parser):
         required=False,
         default="console",
         help="\tThe location where all of your data should be logged. By default it will be to the console."
+    )
+
+
+    general_group.add_argument (
+        "-f",
+        "--config-file",
+        type=str,
+        metavar="",
+        dest="config_file",
+        required=False,
+        default="",
+        help="\tThe file containing configuration options for this run. omniprobe will periodically check for updates and modify its behavior whenever the config file is changed."
     )
 
     default_handlers = [os.path.join(install_path[1], "lib", "libdefaultMessageHandlers64.so")] if install_path[0] == "install" else [os.path.join(install_path[1], "libdefaultMessageHandlers64.so")]

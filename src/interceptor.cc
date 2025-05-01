@@ -108,7 +108,7 @@ void hsaInterceptor::OnSubmitPackets(const void* in_packets, uint64_t count,
     uint64_t user_que_idx, void* data, hsa_amd_queue_intercept_packet_writer writer)
 {
     hsaInterceptor *hook = hsaInterceptor::getInstance();
-    if (hook)
+    if (hook && hook->running_)
     {
         hsa_queue_t *queue = reinterpret_cast<hsa_queue_t *>(data);
         hook->doPackets(queue, static_cast<const packet_t *>(in_packets), count, writer);
@@ -139,6 +139,91 @@ void hsaInterceptor::cleanup()
     }
 }
 
+bool hsaInterceptor::loadConfig()
+{
+
+    std::ifstream file(config_file_);
+    if (!file.is_open()) {
+        throw std::runtime_error("Unable to open file: " + config_file_);
+    }
+
+    // Parse JSON from the file
+    nlohmann::json json_data;
+    bool bApply = true;
+    try {
+        file >> json_data;
+        if (json_data.contains("targets") and json_data["targets"].is_array())
+        {
+            bApply = false;
+            auto val = json_data["targets"];
+            for (auto target : val)
+            {
+                if (target == host_name_)
+                {
+                    bApply = true;
+                    break;
+                }
+            }
+            std::cout << "Found a list of targets" << std::endl;
+        }
+        if (bApply)
+        {
+            if (json_data.contains("running"))
+            {
+                auto val = json_data["running"];
+                if (val.is_boolean())
+                    running_ = val.get<bool>();
+                else
+                    std::cerr << "WARNING: The value for running in " << config_file_ << " must be a proper boolean. Ignoring for now.\n";
+            }
+            if (json_data.contains("run_instrumented"))
+            {
+                auto val = json_data["run_instrumented"];
+                if (val.is_boolean())
+                    run_instrumented_ = val.get<bool>();
+                else
+                    std::cerr << "WARNING: The value for run_instrumented in " << config_file_ << " must be a proper boolean. Ignoring for now.\n";
+            }
+        }
+    } catch (const nlohmann::json::parse_error& e) {
+        file.close();
+        std::cerr << "Error parsing config file at " << config_file_ << std::endl << "\t" << e.what() << std::endl;
+        throw std::runtime_error("JSON parse error: " + std::string(e.what()));
+    }
+
+    // Close the file
+    file.close();
+    last_config_time_ = std::time(0);
+    if (last_config_time_ == -1)
+        throw std::runtime_error("Unable to update config time\n");
+    return true;
+}
+
+std::time_t to_time_t(const std::filesystem::file_time_type& file_time) {
+    auto duration = file_time.time_since_epoch();
+    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+    return std::time_t(seconds);
+}
+    
+bool hsaInterceptor::checkForNewConfig()
+{
+    bool bReturn = false;
+    try {
+        auto file_time = std::filesystem::last_write_time(std::filesystem::path(config_file_));
+        std::time_t cftime = to_time_t(file_time);;
+
+        if (cftime > last_config_time_)
+        {
+            loadConfig();
+            bReturn = true;
+        }
+
+    } catch (const std::filesystem::filesystem_error& ex) {
+        std::cerr << "Error: " << ex.what() << std::endl;
+    }
+    return bReturn;
+}
+
 
 hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uint64_t failed_tool_count, const char* const* failed_tool_names) : 
     signal_runner_(signal_runner), cache_watcher_(cache_watcher), kernel_cache_(table), allocator_(table, std::cerr), 
@@ -154,6 +239,27 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
     }
     else
         run_instrumented_ = false;
+    
+    char hostname[HOST_NAME_MAX];
+    int result = gethostname(hostname, HOST_NAME_MAX);
+    if (result)
+    {
+      perror("gethostname");
+      std::cerr << "Unable to get hostname\n";
+      throw std::runtime_error("Unable to get hostname.\n");
+    }
+    else
+        host_name_ = hostname;
+
+
+    config_file_ = config_["LOGDUR_CONFIG_FILE"];
+    if(config_file_.size())
+    {
+        loadConfig();
+    }
+    else
+        running_ = true;
+
     //kernel_cache_.setLocation(config_["LOGDUR_KERNEL_CACHE"]);
     for (int i = 0; i < SIGPOOL_INCREMENT; i++)
     {
@@ -518,7 +624,10 @@ void signal_runner()
                 curr_sigs.clear();
             }while (me->getPendingSignals(curr_sigs));
         }
-        usleep(1);
+        if (me->running_)
+            usleep(1);
+        else
+            usleep(10000);
     }
     cerr << "signal_runner is shutting down\n";
 }
