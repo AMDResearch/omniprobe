@@ -135,8 +135,6 @@ jobs:
       - name: Configure Env
         shell: bash
         run:
-          echo "CC=$(echo '${{ matrix.compiler }}' | sed 's/+/c/g')" >> $GITHUB_ENV &&
-          echo "CXX=${{ matrix.compiler }}" >> $GITHUB_ENV &&
           echo "OS_VERSION_MAJOR=$(cat /etc/os-release | grep 'VERSION_ID' | sed 's/=/ /1' | awk '{print $NF}' | sed 's/"//g' | sed 's/\./ /g' | awk '{print $1}')" >> $GITHUB_ENV &&
           env
       - name: Determine artifact-run-id
