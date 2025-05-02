@@ -195,8 +195,8 @@ jobs:
             apt-get install -y software-properties-common &&
             apt-get upgrade -y &&
             apt-get install -y build-essential git wget ${{ matrix.compiler }} lld libzstd-dev libomp-dev ccache libdwarf-dev &&
-            python3 -m pip install --upgrade pip &&
-            python3 -m pip install 'cmake==3.22'
+            python3 -m pip install --upgrade pip --break-system-packages &&
+            python3 -m pip install 'cmake==3.22' --break-system-packages
         
       - name: Install ROCm Packages
         timeout-minutes: 25
