@@ -220,6 +220,9 @@ jobs:
             yum install -y https://repo.radeon.com/amdgpu-install/${{ matrix.rocm-version }}/rhel/${{ matrix.os-release }}/amdgpu-install-${ROCM_MAJOR}.${ROCM_MINOR}.${ROCM_VERSN}-1${RPM_TAG}.noarch.rpm
             yum install -y rocm-dev rocm-llvm-devel rocm-hip-runtime-devel rocm-smi-lib rocminfo
             if [ "${OS_VERSION_MAJOR}" -gt 8 ]; then dnf install -y libavcodec-free-devel libavformat-free-devel; fi
+            echo "/opt/rocm/bin" >> $GITHUB_PATH 
+            echo "ROCM_PATH=/opt/rocm" >> $GITHUB_ENV 
+            echo "LD_LIBRARY_PATH=/opt/rocm/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
 
 
       - name: Verify visible devices
