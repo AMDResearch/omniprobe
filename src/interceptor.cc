@@ -228,6 +228,9 @@ bool hsaInterceptor::checkForNewConfig()
         } catch (const std::filesystem::filesystem_error& ex) {
             std::cerr << "Error: " << ex.what() << std::endl;
         }
+        catch(const std::runtime_error& re){
+            std::cerr << "Error: " << re.what() << std::endl;
+        }
     }
     return bReturn;
 }
