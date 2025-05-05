@@ -198,7 +198,7 @@ jobs:
           command: |
             python3 -m pip install --upgrade pip &&
             python3 -m pip install 'cmake==3.22' &&
-            yum install -y epel-release ${{ matrix.compiler }} lld libzstd-devel libomp-devel ccache kmod libdwarf-devel python3-setuptools python3-wheel
+            yum install -y epel-release ${{ matrix.compiler }} lld libzstd-devel libomp-devel ccache kmod libdwarf-devel python3-setuptools python3-wheel python3-devel 
         
       - name: Install ROCm Packages
         timeout-minutes: 25
