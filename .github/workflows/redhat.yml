@@ -3,12 +3,12 @@ run-name: redhat
 
 on:
   push:
-    branches: [ main, colramos/self-hosted-runner ]
+    branches: [ main ]
     paths-ignore:
       - '*.md'
       - 'docs/**'
   pull_request:
-    branches: [ main, colramos/self-hosted-runner ]
+    branches: [ main ]
     paths-ignore:
       - '*.md'
       - 'docs/**'
@@ -235,12 +235,13 @@ jobs:
         shell: bash
         run: |
           git config --global --add safe.directory ${PWD} &&
+          mkdir -p /opt/logduration &&
           cmake --version &&
           mkdir -p build &&
           if [ "${{ matrix.llvm-install }}" == "/opt/rocm/llvm" ]; then
-          cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build
+          cmake -DCMAKE_INSTALL_PREFIX=/opt/logduration -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build
           else
-          cmake -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DTRITON_LLVM=${{ env.llvm-install }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build 
+          cmake -DCMAKE_INSTALL_PREFIX=/opt/logduration -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DTRITON_LLVM=${{ env.llvm-install }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build 
           fi 
           cmake --build build --target install
       
