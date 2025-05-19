@@ -16,7 +16,7 @@ __attribute__((destructor)) void on_library_unload() { std::cout << "Memory Anal
 memory_analysis_wrapper_t::memory_analysis_wrapper_t(const std::string& kernel, uint64_t dispatch_id, const std::string& location,  bool verbose) :
     kernel_(kernel), dispatch_id_(dispatch_id), location_(location), wrapped_(verbose)
 {
-    JsonOutputManager::getInstance().initializeKernelAnalysis(kernel, dispatch_id);
+    dh_comms::JsonOutputManager::getInstance().initializeKernelAnalysis(kernel, dispatch_id);
     
     // Get GPU architecture and cache line size
     hipDeviceProp_t props;
@@ -24,7 +24,7 @@ memory_analysis_wrapper_t::memory_analysis_wrapper_t(const std::string& kernel, 
     std::string gpu_arch = props.gcnArchName;
     
     // Initialize metadata with default kernels_found (will be updated in report)
-    JsonOutputManager::getInstance().setMetadata(gpu_arch, 128, 0); // Using default cache line size of 128
+    dh_comms::JsonOutputManager::getInstance().setMetadata(gpu_arch, 128, 0); // Using default cache line size of 128
 }
 
 bool memory_analysis_wrapper_t::handle(const dh_comms::message_t &message, const std::string& kernel, kernelDB::kernelDB& kdb)
@@ -47,7 +47,7 @@ void memory_analysis_wrapper_t::report(const std::string& kernel_name, kernelDB:
         // Update kernels found count
         std::vector<std::string> kernels;
         kdb.getKernels(kernels);
-        JsonOutputManager::getInstance().updateKernelsFound(kernels.size());
+        dh_comms::JsonOutputManager::getInstance().updateKernelsFound(kernels.size());
     }
     report();
 }
@@ -66,10 +66,10 @@ void memory_analysis_wrapper_t::report() {
   
   // Generate output filename
   std::string filename = (output_dir / ("memory_analysis_" + std::to_string(dispatch_id_) + ".json")).string();
-  JsonOutputManager::getInstance().writeToFile(filename);
+  dh_comms::JsonOutputManager::getInstance().writeToFile(filename);
 }
 
 void memory_analysis_wrapper_t::clear() {
   wrapped_.clear();
-  JsonOutputManager::getInstance().clear();
+  dh_comms::JsonOutputManager::getInstance().clear();
 }
