@@ -236,6 +236,15 @@ def setup_env(parms):
     global op_run_env
     global triton_llvm
     env = os.environ
+
+    # Set verbose environment variable
+    if parms.verbose:
+        env['LOGDUR_VERBOSE'] = "true"
+        env_dump['LOGDUR_VERBOSE'] = "true"
+    else:
+        env['LOGDUR_VERBOSE'] = "false"
+        env_dump['LOGDUR_VERBOSE'] = "false"
+
     if len(parms.log_location):
         if parms.log_location != "console":
             if not os.path.isdir(parms.log_location):

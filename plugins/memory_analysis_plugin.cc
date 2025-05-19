@@ -8,6 +8,14 @@ extern "C"{
         const char* logDurLogLocation = std::getenv("LOGDUR_LOG_LOCATION");
         if (logDurLogLocation != NULL)
             location = logDurLogLocation;
-        outHandlers.push_back(new memory_analysis_wrapper_t(kernel, dispatch_id, location, false));
+
+        // Read verbose setting from environment
+        bool verbose = false;
+        const char* logDurVerbose = std::getenv("LOGDUR_VERBOSE");
+        if (logDurVerbose != NULL && (strcmp(logDurVerbose, "1") == 0 || strcmp(logDurVerbose, "true") == 0)) {
+            verbose = true;
+        }
+        
+        outHandlers.push_back(new memory_analysis_wrapper_t(kernel, dispatch_id, location, verbose));
     }
 }
