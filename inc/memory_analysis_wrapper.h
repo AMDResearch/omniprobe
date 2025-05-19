@@ -22,7 +22,6 @@ THE SOFTWARE.
 #pragma once
 #include "message_handlers.h"
 #include "memory_analysis_handler.h"
-#include "json_output.h"
 
 #include <map>
 #include <set>
