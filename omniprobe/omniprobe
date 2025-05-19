@@ -263,7 +263,13 @@ def setup_env(parms):
             env['LOGDUR_LOG_FORMAT'] = parms.log_format
             env_dump['LOGDUR_LOG_FORMAT'] = parms.log_format
 
-            
+    if parms.verbose:
+        env['LOGDUR_VERBOSE'] = "true"
+        env_dump['LOGDUR_VERBOSE'] = "true"
+    else:
+        env['LOGDUR_VERBOSE'] = "false"
+        env_dump['LOGDUR_VERBOSE'] = "false"
+
     if len(parms.log_location):
         if parms.log_location != "console":
             if not os.path.isdir(parms.log_location):
