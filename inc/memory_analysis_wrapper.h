@@ -37,8 +37,10 @@ public:
   virtual void report() override;
   virtual void clear() override;
 
+private:
   const std::string& kernel_;
   uint64_t dispatch_id_;
   const std::string& location_;
+  bool verbose_;
   dh_comms::memory_analysis_handler_t wrapped_;
 };
