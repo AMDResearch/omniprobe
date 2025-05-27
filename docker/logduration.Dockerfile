@@ -12,7 +12,7 @@ COPY triton_install.sh /app/triton_install.sh
 RUN apt-get update && \
     apt-get install -y software-properties-common && \
     apt-get upgrade -y && \
-    apt-get install -y git build-essential wget clang lld libzstd-dev libomp-dev ccache libdwarf-dev python3-dev nlohmann-json3-dev && \
+    apt-get install -y git build-essential wget clang lld libzstd-dev libomp-dev ccache libdwarf-dev python3-dev && \
     python3 -m pip install --upgrade pip && \
     python3 -m pip install --upgrade setuptools 
 
