@@ -16,6 +16,7 @@ From: rocm/rocm-build-ubuntu-22.04:6.3
     triton_install.sh /app
 
 %post 
+    # Set globals
     export PATH=/opt/logduration/bin/logDuration:/opt/rocm/bin:/app/triton/.venv/bin:${PATH} 
     export ROCM_PATH=/opt/rocm 
     export LD_LIBRARY_PATH=/opt/rocm/lib:${LD_LIBRARY_PATH} 
@@ -24,6 +25,7 @@ From: rocm/rocm-build-ubuntu-22.04:6.3
     mkdir -p /app 
     cd /app 
 
+    # Install and update common packages
     apt-get update 
     apt-get install -y software-properties-common 
     apt-get upgrade -y 
@@ -46,7 +48,7 @@ From: rocm/rocm-build-ubuntu-22.04:6.3
     ls /app
     bash -c "source /app/triton_install.sh -g 368c864e9" 
     
-    # logduration install 
+    # Logduration install 
     mkdir -p ~/.ssh 
     touch ~/.ssh/known_hosts 
     ssh-keyscan github.com >> ~/.ssh/known_hosts 
@@ -56,6 +58,7 @@ From: rocm/rocm-build-ubuntu-22.04:6.3
     cd /app 
     ls
     cd logduration 
+    if [ -d build ]; then rm -rf build; fi
     mkdir -p /opt/logduration 
     mkdir -p build 
     cmake -DCMAKE_INSTALL_PREFIX=/opt/logduration -DCMAKE_PREFIX_PATH=$ROCM_PATH -DTRITON_LLVM=$TRITON_LLVM -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build 
