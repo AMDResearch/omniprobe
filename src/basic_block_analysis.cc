@@ -29,6 +29,30 @@ THE SOFTWARE.
 #include <fstream>
 #include <cstdint>
 #include <stdexcept>
+#include <algorithm>
+
+std::atomic<bool> basic_block_analysis::banner_displayed_ = false;
+
+double calculatePercentile(std::vector<double>& data, double percentile) {
+    if (data.empty()) return 0.0;
+    size_t n = data.size();
+
+    // Sort the vector
+    std::sort(data.begin(), data.end());
+
+    // Calculate index for the percentile
+    double index = percentile * (n - 1);
+    size_t lower = static_cast<size_t>(index);
+    double fraction = index - lower;
+
+    // If index is exact, return the value
+    if (fraction == 0.0) {
+        return data[lower];
+    }
+
+    // Linear interpolation between lower and upper elements
+    return data[lower] + fraction * (data[lower + 1] - data[lower]);
+}
 
 std::vector<std::string> readFileLines(const std::string& filename, uint32_t startLine, uint32_t endLine) {
     std::vector<std::string> lines;
@@ -112,7 +136,8 @@ basic_block_analysis::basic_block_analysis(const std::string& strKernel, uint64_
       strKernel_(strKernel),
       dispatch_id_(dispatch_id),
       current_block_(nullptr),
-      start_time_(0)
+      start_time_(0),
+      location_(strLocation)
 {
     message_count_ = 0;
 }
@@ -159,12 +184,13 @@ bool basic_block_analysis::handle(const dh_comms::message_t &message, const std:
                 if (biit != block_info_.end())
                 {
                     biit->second.count_++;
+                    biit->second.thread_count_ += countSetBits(hdr.exec);
                     biit->second.duration_ += ti.stop - ti.start;
                 }
                 else
                 {
                     //assert(ti.stop - ti.start != 0);
-                    block_info_[thisBlock] = {1, ti.stop - ti.start};
+                    block_info_[thisBlock] = {countSetBits(hdr.exec), 1, ti.stop - ti.start, hdr.dwarf_line};
                 }
             }
             else
@@ -183,12 +209,13 @@ bool basic_block_analysis::handle(const dh_comms::message_t &message, const std:
                     {
                         //std::cerr << "Message count: " << message_count_ << " on block update -- " << wave_identifier_to_string(wave) << std::endl;
                         biit->second.count_+= wsit->second.count_;
+                        biit->second.thread_count_ += countSetBits(hdr.exec);
                         biit->second.duration_ += hdr.timestamp - wsit->second.start_time_;
                     }
                     else
                     {
                         //std::cerr << "Message count: " << message_count_ << " on block add -- " << wave_identifier_to_string(wave) << std::endl;
-                        block_info_[wsit->second.current_block_] = {1, hdr.timestamp - wsit->second.start_time_};
+                        block_info_[wsit->second.current_block_] = {countSetBits(hdr.exec), 1, hdr.timestamp - wsit->second.start_time_};
                     }
                     
                     // Need to check for s_endpgm and clean up wave state here
@@ -227,12 +254,55 @@ bool basic_block_analysis::handle(const dh_comms::message_t &message)
     return true;
 }
 
+void basic_block_analysis::setupLogger()
+{
+    if (location_ == "console")
+        log_file_ = &std::cout;
+    else
+        log_file_ = new std::ofstream(location_, std::ios::app);
+}
+
 void basic_block_analysis::report(const std::string& kernel_name, kernelDB::kernelDB& kdb)
 {
+    bool bFormatCsv = true;
+    const char* logDurLogFormat= std::getenv("LOGDUR_LOG_FORMAT");
+    if (logDurLogFormat)
+    {
+        std::string strFormat = logDurLogFormat;
+        if (strFormat == "json")
+            bFormatCsv = false;
+    }
     std::map<std::string, uint64_t> inst_counts;
-    std::cerr << "omniprobe basic block analysis for kernel " << strKernel_ << "[" << dispatch_id_ << "]\n";
-    std::cerr << "basic block analysis for kernel message_count_ == " << message_count_ << std::endl;
+    bool first_time = false, initialized = true;
+    setupLogger();
+    if (banner_displayed_.compare_exchange_strong(first_time, initialized))
+        std::cerr << "omniprobe basic block analysis for kernel\n";
     auto it = block_info_.begin();
+    uint64_t duration = 0;
+    uint64_t block_exec_count = 0;
+    uint64_t thread_exec_count = 0;
+    while (it != block_info_.end())
+    {
+        duration += it->second.duration_;
+        block_exec_count += it->second.count_;
+        thread_exec_count += it->second.thread_count_;
+        it++;
+    }
+    std::map<std::string, std::string> strings;
+    std::map<std::string, uint64_t> bigints;
+    std::map<std::string, double> doubles;
+
+    strings["Kernel"] = strKernel_;
+    bigints["Dispatch"] = dispatch_id_;
+    doubles["Branchiness"] = 1.0 - ( (double) ((double)thread_exec_count / ((double)block_exec_count * 64.0)));
+    if (bFormatCsv)
+    {
+        *log_file_ << "Kernel: " << strKernel_ << std::endl;
+        *log_file_ << "Dispatch: " << dispatch_id_ << std::endl;
+        *log_file_ << "Branchiness: " << 1.0 - ( (double) ((double)thread_exec_count / ((double)block_exec_count * 64.0))) << std::endl;
+        *log_file_  << "Start Line, End Line, Duration, FileName, Branchiness, Overhead, Count\n";
+    }
+    it = block_info_.begin();
     while (it != block_info_.end())
     {
         std::vector<std::string> isa, files;
@@ -243,21 +313,70 @@ void basic_block_analysis::report(const std::string& kernel_name, kernelDB::kern
             files.push_back(kdb.getFileName(kernel_name, inst.path_id_));
             auto ic = inst_counts.find(inst.inst_);
             if (ic != inst_counts.end())
-                ic->second += it->second.count_;
+            {
+                if (inst.inst_.starts_with("v_"))
+                    inst_counts[inst.inst_] += it->second.thread_count_;
+                else
+                    ic->second += it->second.count_;
+            }
             else
-                inst_counts[inst.inst_] = it->second.count_;
+            {
+                if (inst.inst_.starts_with("v_"))
+                    inst_counts[inst.inst_] = it->second.thread_count_;
+                else
+                    inst_counts[inst.inst_] = it->second.count_;
+            }
         }
-        std::cerr << "Instruction Counts" << std::endl;
-        for (auto& thisCount : inst_counts)
-            std::cerr << "\t" << thisCount.first << ":" << thisCount.second << std::endl;
-        std::cerr << instructions[0].line_ << "," << instructions[instructions.size() - 1].line_ << "," << it->second.duration_ << "," << kdb.getFileName(kernel_name, instructions[0].path_id_) 
-            << "," << it->second.count_ << std::endl;
+        //std::cerr << "Instruction Counts" << std::endl;
+        //for (auto& thisCount : inst_counts)
+        //    std::cerr << "\t" << thisCount.first << ":" << thisCount.second << std::endl;
+        std::stringstream ss;
+        try
+        {
+            ss << "{";
+            strings.clear();
+            bigints.clear();
+            doubles.clear();
+            strings["Kernel"] = strKernel_;
+            bigints["Dispatch"] = dispatch_id_;
+            doubles["Kernel_Branchiness"] = 1.0 - ( (double) ((double)thread_exec_count / ((double)block_exec_count * 64.0)));
+            bigints["Block_Start_Line"] = instructions[0].line_;
+            bigints["Block_End_Line"] = instructions[instructions.size() - 1].line_;
+            bigints["Kernel_Duration"] = it->second.duration_;
+            strings["Kernel_File_Name"] = kdb.getFileName(kernel_name, instructions[0].path_id_);
+            doubles["Block_Branchiness"] = 1.0 - ((double) ((double)it->second.thread_count_  / ((double) it->second.count_ * 64.0)));
+            doubles["Block_Overhead"] = (double)((double) it->second.duration_ / (double) duration);
+            doubles["Block_Count"] = it->second.count_;
+            if (bFormatCsv)
+            {
+                *log_file_ << instructions[0].line_ << "," << instructions[instructions.size() - 1].line_ << "," << it->second.duration_ << "," << 
+                    kdb.getFileName(kernel_name, instructions[0].path_id_) << "," <<  1.0 - ((double) ((double)it->second.thread_count_  / ((double) it->second.count_ * 64.0))) << "," << 
+                        (double)((double) it->second.duration_ / (double) duration) 
+                            << "," << it->second.count_ << std::endl;
+            }
+            else
+            {
+                renderJSON(strings, ss, false);
+                renderJSON(bigints, ss, false);
+                renderJSON(doubles, ss, true);
+                ss << "}\n";
+                *log_file_ << ss.str();
+            }
+            ss.str("");
+            ss.clear();
+
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << e.what() << std::endl;
+        }
 
 //        printVectorsSideBySide(isa, files);
 
-        
         it++;
     }
+    if (location_ != "console")
+        delete log_file_;
 }
 
 void basic_block_analysis::report()

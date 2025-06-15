@@ -78,48 +78,22 @@ void memory_analysis_wrapper_t::report() {
     std::cerr << "[MemoryAnalysisWrapper] ERROR: Unknown exception in wrapped_.report()" << std::endl;
   }
   
-  // Set up output directory path
-  std::filesystem::path output_dir = std::filesystem::current_path() / "memory_analysis_output";
-  std::cout << "[MemoryAnalysisWrapper] Output directory: " << output_dir << std::endl;
+  // Write to single output file
+  std::string filename = (std::filesystem::current_path() / "memory_analysis_output.json").string();
+  std::cout << "[MemoryAnalysisWrapper] Writing memory analysis to " << filename << std::endl;
   
-  // Create output directory if it doesn't exist
-  std::cout << "[MemoryAnalysisWrapper] Creating output directory..." << std::endl;
+  // Dump current state before writing
+  std::cout << "[MemoryAnalysisWrapper] Dumping current JsonOutputManager state..." << std::endl;
+  auto& manager = dh_comms::JsonOutputManager::getInstance();
+  std::cout << "[MemoryAnalysisWrapper] Current analysis size before dump: " << manager.getCurrentAnalysisSize() << std::endl;
+  manager.dumpCurrentState();
+  
+  // Attempt to write the file
   try {
-    if (!std::filesystem::exists(output_dir)) {
-      std::filesystem::create_directories(output_dir);
-      std::cout << "[MemoryAnalysisWrapper] Created directory: " << output_dir << std::endl;
-    }
-    
-    // Generate output filename
-    std::string filename = (output_dir / ("memory_analysis_" + std::to_string(dispatch_id_) + ".json")).string();
-    std::cout << "[MemoryAnalysisWrapper] Writing memory analysis to " << filename << std::endl;
-    
-    // Dump current state before writing
-    std::cout << "[MemoryAnalysisWrapper] Dumping current JsonOutputManager state..." << std::endl;
-    auto& manager = dh_comms::JsonOutputManager::getInstance();
-    std::cout << "[MemoryAnalysisWrapper] Current analysis size before dump: " << manager.getCurrentAnalysisSize() << std::endl;
-    manager.dumpCurrentState();
-    
-    // Attempt to write the file
-    std::cout << "[MemoryAnalysisWrapper] Writing to file..." << std::endl;
-    try {
-      manager.writeToFile(filename);
-      std::cout << "[MemoryAnalysisWrapper] Report completed successfully" << std::endl;
-    } catch (const std::exception& e) {
-      std::cerr << "[MemoryAnalysisWrapper] ERROR: Failed to write file: " << e.what() << std::endl;
-      // Try writing to current directory as fallback
-      filename = (std::filesystem::current_path() / ("memory_analysis_" + std::to_string(dispatch_id_) + ".json")).string();
-      std::cout << "[MemoryAnalysisWrapper] Attempting to write to current directory: " << filename << std::endl;
-      manager.writeToFile(filename);
-    }
-  } catch (const std::filesystem::filesystem_error& e) {
-    std::cerr << "[MemoryAnalysisWrapper] ERROR: Filesystem error: " << e.what() << std::endl;
-    // Fall back to current directory
-    std::string filename = (std::filesystem::current_path() / ("memory_analysis_" + std::to_string(dispatch_id_) + ".json")).string();
-    std::cout << "[MemoryAnalysisWrapper] Falling back to current directory: " << filename << std::endl;
-    dh_comms::JsonOutputManager::getInstance().writeToFile(filename);
+    manager.writeToFile(filename);
+    std::cout << "[MemoryAnalysisWrapper] Report completed successfully" << std::endl;
   } catch (const std::exception& e) {
-    std::cerr << "[MemoryAnalysisWrapper] ERROR: Unexpected error: " << e.what() << std::endl;
+    std::cerr << "[MemoryAnalysisWrapper] ERROR: Unexpected error writing file: " << e.what() << std::endl;
   }
 }
 

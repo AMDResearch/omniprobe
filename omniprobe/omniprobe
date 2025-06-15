@@ -57,56 +57,71 @@ def capture_subprocess_output(subprocess_args, handler=None, new_env=None):
     # Start subprocess
     # bufsize = 1 means output is line buffered
     # universal_newlines = True is required for line buffering
-    process = (
-        subprocess.Popen(
-            subprocess_args,
-            bufsize=1,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            universal_newlines=True,
+    try:
+        process = (
+            subprocess.Popen(
+                subprocess_args,
+                bufsize=1,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+            )
+            if new_env == None
+            else subprocess.Popen(
+                subprocess_args,
+                bufsize=1,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                env=new_env,
+            )
         )
-        if new_env == None
-        else subprocess.Popen(
-            subprocess_args,
-            bufsize=1,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            universal_newlines=True,
-            env=new_env,
-        )
-    )
-    # Create callback function for process output
-    buf = io.StringIO()
+        # Create callback function for process output
+        buf = io.StringIO()
 
-    def handle_output(stream, mask):
-        # Because the process' output is line buffered, there's only ever one
-        # line to read when this function is called
-        line = stream.readline()
-        buf.write(line)
-        console_warning(line.rstrip())
+        def handle_output(stream, mask):
+            # Because the process' output is line buffered, there's only ever one
+            # line to read when this function is called
+            line = stream.readline()
+            buf.write(line)
+            console_warning(line.rstrip())
 
-    if handler == None:
-        handler = handle_output
+        if handler == None:
+            handler = handle_output
 
 
-    # Register callback for an "available for read" event from subprocess' stdout stream
-    selector = selectors.DefaultSelector()
-    selector.register(process.stdout, selectors.EVENT_READ, handler)
+        # Register callback for an "available for read" event from subprocess' stdout stream
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ, handler)
 
-    # Loop until subprocess is terminated
-    while process.poll() is None:
-        # Wait for events and handle them with their registered callbacks
-        events = selector.select()
-        for key, mask in events:
-            callback = key.data
-            callback(key.fileobj, mask)
+        # Loop until subprocess is terminated
+        while process.poll() is None:
+            # Wait for events and handle them with their registered callbacks
+            events = selector.select()
+            for key, mask in events:
+                callback = key.data
+                callback(key.fileobj, mask)
 
-    # Get process return code
-    remaining = process.stdout.read()
-    if remaining:
-        buf.write(remaining)
-        for line in remaining.splitlines():
-            console_warning(line.strip())
+        # Get process return code
+        remaining = process.stdout.read()
+        if remaining:
+            buf.write(remaining)
+            for line in remaining.splitlines():
+                console_warning(line.strip())
+    except KeyboardInterrupt:
+        print("\nCtrl+C received, terminating subprocess...")
+        # Send SIGTERM to the subprocess
+        process.terminate()
+        try:
+            # Wait for the subprocess to exit (timeout to avoid hanging)
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            # If it doesn't terminate, forcefully kill it
+            print("Subprocess did not terminate, killing...")
+            process.kill()
+            process.wait()  # Ensure it's fully terminated
+        print("Subprocess terminated, exiting...")
+        sys.exit(1)
 
 triton_llvm = None
 def get_install_path() -> tuple:
@@ -237,7 +252,17 @@ def setup_env(parms):
     global triton_llvm
     env = os.environ
 
-    # Set verbose environment variable
+    if len(parms.log_format):
+        parms.log_format = parms.log_format.lower();
+        if parms.log_format == "csv" or parms.log_format == "json":
+            env['LOGDUR_LOG_FORMAT'] = parms.log_format
+            env_dump['LOGDUR_LOG_FORMAT'] = parms.log_format
+        else:
+            print(f"WARNING: log format {parms.log_format} is not valid. Defaulting to 'csv'")
+            parms.log_format = "csv"
+            env['LOGDUR_LOG_FORMAT'] = parms.log_format
+            env_dump['LOGDUR_LOG_FORMAT'] = parms.log_format
+
     if parms.verbose:
         env['LOGDUR_VERBOSE'] = "true"
         env_dump['LOGDUR_VERBOSE'] = "true"
@@ -436,6 +461,18 @@ def add_general_group(parser):
         default="",
         help="\tThe location of the file system cache for instrumented kernels. For Triton this is typically found at $HOME/.triton/cache"
     )
+    
+    general_group.add_argument (
+        "-t",
+        "--log-format",
+        type=str,
+        metavar="",
+        dest="log_format",
+        required=False,
+        default="csv",
+        help="\tThe format for logging results. Default is 'csv'. Valid options: [csv|json]"
+    )
+
 
     general_group.add_argument (
         "-l",
