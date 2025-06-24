@@ -1011,9 +1011,11 @@ rocp_sdk_api_registration_callback(rocprofiler_intercept_table_t type,
                                    uint64_t lib_version, uint64_t lib_instance,
                                    void** tables, uint64_t num_tables, void* user_data)
 {
-    if(type != ROCPROFILER_HSA_TABLE)
-        throw std::runtime_error{ "unexpected library type: " +
-                                  std::to_string(static_cast<int>(type)) };
+    if(type != ROCPROFILER_HSA_TABLE) {
+        std::cerr << "Error: unexpected library type: " 
+                  << static_cast<int>(type) << std::endl;
+        std::abort();
+    }
 
     uint32_t major = lib_version / 10000;
     uint32_t minor = (lib_version % 10000) / 100;
