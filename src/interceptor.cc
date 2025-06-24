@@ -67,6 +67,7 @@ THE SOFTWARE.
 
 #include "inc/interceptor.h"
 
+#include <rocprofiler-sdk/intercept_table.h>
 #include <rocprofiler-sdk/registration.h>
 #include <rocprofiler-sdk/rocprofiler.h>
 
@@ -988,6 +989,9 @@ rocp_sdk_tool_init(rocprofiler_client_finalize_t fini_func, void* /*tool_data*/)
     std::atexit([]() {
         if(client_id && client_fini) client_fini(*client_id);
     });
+
+    // no errors
+    return 0;
 }
 
 void
