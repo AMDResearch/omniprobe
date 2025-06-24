@@ -49,6 +49,7 @@ set (HEATMAP_SRC
 )
 
 find_package(Python COMPONENTS Development)
+find_package(rocprofiler-sdk REQUIRED)
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
@@ -122,6 +123,7 @@ target_link_libraries(
     ${DH_COMMS_LIBRARIES}/libdh_comms.so
     kernelDB64
     amd_comgr
+    rocprofiler-sdk::rocprofiler-sdk
 )
 
 find_path(LIBDWARF_INCLUDE_DIR
