@@ -736,58 +736,18 @@ std::string getCodeContext(const std::string &fname, uint16_t line) {
 void memory_analysis_handler_t::report_json() {
   std::stringstream json_output;
   
-  // Check if the file already exists and has content
-  bool file_exists = false;
-  bool file_has_content = false;
-  std::string existing_content;
-  
-  if (location_ != "console") {
-    std::ifstream check_file(location_);
-    if (check_file.good()) {
-      file_exists = true;
-      check_file.seekg(0, std::ios::end);
-      file_has_content = check_file.tellg() > 0;
-      if (file_has_content) {
-        check_file.seekg(0, std::ios::beg);
-        existing_content.assign((std::istreambuf_iterator<char>(check_file)),
-                               std::istreambuf_iterator<char>());
-      }
-      check_file.close();
-    }
-  }
-  
-  // For the first write to a file, create the initial structure
-  if (location_ == "console" || !file_has_content) {
-    json_output << "{\n";
-    json_output << "  \"kernel_analyses\": [\n";
-    
-    // Write the kernel analysis object
-    json_output << "    {\n";
-  } else {
-    // For subsequent writes, we need to insert into the existing array
-    // Find the position where we need to insert (before the closing "])
-    size_t kernel_analyses_close = existing_content.rfind("  ]");
-    if (kernel_analyses_close != std::string::npos) {
-      // Insert before the closing bracket with proper comma
-      json_output << existing_content.substr(0, kernel_analyses_close);
-      json_output << ",\n    {\n";
-    } else {
-      // Fallback: start fresh structure
-      json_output << "{\n";
-      json_output << "  \"kernel_analyses\": [\n";
-      json_output << "    {\n";
-    }
-  }
+  json_output << "{\n";
+  json_output << "  \"kernel_analysis\": {\n";
   
   // Kernel info section
-  json_output << "      \"kernel_info\": {\n";
-  json_output << "        \"name\": \"" << kernel_ << "\",\n";
-  json_output << "        \"dispatch_id\": " << dispatch_id_ << "\n";
-  json_output << "      },\n";
+  json_output << "    \"kernel_info\": {\n";
+  json_output << "      \"name\": \"" << kernel_ << "\",\n";
+  json_output << "      \"dispatch_id\": " << dispatch_id_ << "\n";
+  json_output << "    },\n";
   
   // Cache analysis section
-  json_output << "      \"cache_analysis\": {\n";
-  json_output << "        \"accesses\": [\n";
+  json_output << "    \"cache_analysis\": {\n";
+  json_output << "      \"accesses\": [\n";
   
   bool first_cache_access = true;
   for (const auto &[fname, line_col] : global_accesses) {
@@ -799,36 +759,36 @@ void memory_analysis_handler_t::report_json() {
           }
           first_cache_access = false;
           
-          json_output << "          {\n";
-          json_output << "            \"source_location\": {\n";
-          json_output << "              \"file\": \"" << fname << "\",\n";
-          json_output << "              \"line\": " << line << ",\n";
-          json_output << "              \"column\": " << col << "\n";
-          json_output << "            },\n";
-          json_output << "            \"code_context\": \"" << getCodeContext(fname, line) << "\",\n";
-          json_output << "            \"access_info\": {\n";
-          json_output << "              \"type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
-          json_output << "              \"execution_count\": " << access.no_accesses << ",\n";
-          json_output << "              \"ir_bytes\": " << access.ir_access_size << ",\n";
-          json_output << "              \"isa_bytes\": " << access.isa_access_size << ",\n";
-          json_output << "              \"isa_instruction\": \"" << access.isa_instruction << "\",\n";
-          json_output << "              \"cache_lines\": {\n";
-          json_output << "                \"needed\": " << access.min_cache_lines_needed << ",\n";
-          json_output << "                \"used\": " << access.no_cache_lines_used << "\n";
-          json_output << "              }\n";
+          json_output << "        {\n";
+          json_output << "          \"source_location\": {\n";
+          json_output << "            \"file\": \"" << fname << "\",\n";
+          json_output << "            \"line\": " << line << ",\n";
+          json_output << "            \"column\": " << col << "\n";
+          json_output << "          },\n";
+          json_output << "          \"code_context\": \"" << getCodeContext(fname, line) << "\",\n";
+          json_output << "          \"access_info\": {\n";
+          json_output << "            \"type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
+          json_output << "            \"execution_count\": " << access.no_accesses << ",\n";
+          json_output << "            \"ir_bytes\": " << access.ir_access_size << ",\n";
+          json_output << "            \"isa_bytes\": " << access.isa_access_size << ",\n";
+          json_output << "            \"isa_instruction\": \"" << access.isa_instruction << "\",\n";
+          json_output << "            \"cache_lines\": {\n";
+          json_output << "              \"needed\": " << access.min_cache_lines_needed << ",\n";
+          json_output << "              \"used\": " << access.no_cache_lines_used << "\n";
           json_output << "            }\n";
-          json_output << "          }";
+          json_output << "          }\n";
+          json_output << "        }";
         }
       }
     }
   }
   
-  json_output << "\n        ]\n";
-  json_output << "      },\n";
+  json_output << "\n      ]\n";
+  json_output << "    },\n";
   
   // Bank conflicts section
-  json_output << "      \"bank_conflicts\": {\n";
-  json_output << "        \"accesses\": [\n";
+  json_output << "    \"bank_conflicts\": {\n";
+  json_output << "      \"accesses\": [\n";
   
   bool first_bank_access = true;
   for (const auto &[fname, line_col] : lds_accesses) {
@@ -840,32 +800,28 @@ void memory_analysis_handler_t::report_json() {
           }
           first_bank_access = false;
           
-          json_output << "          {\n";
-          json_output << "            \"source_location\": {\n";
-          json_output << "              \"file\": \"" << fname << "\",\n";
-          json_output << "              \"line\": " << line << ",\n";
-          json_output << "              \"column\": " << col << "\n";
-          json_output << "            },\n";
-          json_output << "            \"code_context\": \"" << getCodeContext(fname, line) << "\",\n";
-          json_output << "            \"access_info\": {\n";
-          json_output << "              \"type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
-          json_output << "              \"execution_count\": " << access.no_accesses << ",\n";
-          json_output << "              \"ir_bytes\": " << access.ir_access_size << ",\n";
-          json_output << "              \"total_conflicts\": " << access.no_bank_conflicts << "\n";
-          json_output << "            }\n";
-          json_output << "          }";
+          json_output << "        {\n";
+          json_output << "          \"source_location\": {\n";
+          json_output << "            \"file\": \"" << fname << "\",\n";
+          json_output << "            \"line\": " << line << ",\n";
+          json_output << "            \"column\": " << col << "\n";
+          json_output << "          },\n";
+          json_output << "          \"code_context\": \"" << getCodeContext(fname, line) << "\",\n";
+          json_output << "          \"access_info\": {\n";
+          json_output << "            \"type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
+          json_output << "            \"execution_count\": " << access.no_accesses << ",\n";
+          json_output << "            \"ir_bytes\": " << access.ir_access_size << ",\n";
+          json_output << "            \"total_conflicts\": " << access.no_bank_conflicts << "\n";
+          json_output << "          }\n";
+          json_output << "        }";
         }
       }
     }
   }
   
-  json_output << "\n        ]\n";
-  json_output << "      }\n";
-  json_output << "    }\n";  // Close kernel analysis object
-  
-  // Always close the array and add metadata for now
-  // This creates valid JSON for each dispatch, and subsequent dispatches will be handled above
-  json_output << "  ],\n";
+  json_output << "\n      ]\n";
+  json_output << "    }\n";
+  json_output << "  },\n";
   
   // Metadata section  
   json_output << "  \"metadata\": {\n";
@@ -928,14 +884,7 @@ void memory_analysis_handler_t::report_json() {
   json_output << "}\n";
   
   // Write to the log file
-  if (location_ == "console") {
-    *log_file_ << json_output.str();
-  } else {
-    // For file output, rewrite the entire file with the new content
-    std::ofstream outfile(location_);
-    outfile << json_output.str();
-    outfile.close();
-  }
+  *log_file_ << json_output.str() << "\n";
 }
 
 } // namespace dh_comms
