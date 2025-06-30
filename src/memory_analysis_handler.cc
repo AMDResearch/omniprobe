@@ -869,17 +869,60 @@ void memory_analysis_handler_t::report_json() {
   
   // Metadata section  
   json_output << "  \"metadata\": {\n";
-  json_output << "    \"version\": \"1.0\",\n";
-  json_output << "    \"kernels_found\": 1,\n";
+
+  std::string version = "null"; // Default
+  std::ifstream version_file("VERSION");
+  if (version_file.good()) {
+    std::string version_from_file;
+    std::getline(version_file, version_from_file);
+    if (!version_from_file.empty()) {
+      // Trim whitespace and newline
+      size_t first = version_from_file.find_first_not_of(" \t\n\r");
+      if (std::string::npos != first) {
+        size_t last = version_from_file.find_last_not_of(" \t\n\r");
+        version = version_from_file.substr(first, (last - first + 1));
+      }
+    }
+  }
+
+  json_output << "    \"version\": \"" << version << "\",\n";
   
   // Add timestamp
   auto now = std::time(nullptr);
   auto tm = *std::localtime(&now);
   json_output << "    \"timestamp\": \"" << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << "\",\n";
   
+  std::string arch = "unknown";
+  int cache_line_size = 128; // default
+  
+  hipDeviceProp_t props;
+  hipError_t err = hipGetDeviceProperties(&props, 0);
+  if (err == hipSuccess) {
+    std::string gcnArchName_str(props.gcnArchName);
+    size_t colon_pos = gcnArchName_str.find(':');
+    if (colon_pos != std::string::npos) {
+      arch = gcnArchName_str.substr(0, colon_pos);
+    } else {
+      arch = gcnArchName_str;
+    }
+
+    std::map<std::string, int> arch_to_cache_size = {
+        {"gfx906", 64},
+        {"gfx908", 64},
+        {"gfx90a", 128},
+        {"gfx940", 128},
+        {"gfx941", 128},
+        {"gfx942", 128}
+    };
+
+    if (arch_to_cache_size.count(arch)) {
+        cache_line_size = arch_to_cache_size[arch];
+    }
+  }
+
   json_output << "    \"gpu_info\": {\n";
-  json_output << "      \"architecture\": \"unknown\",\n";
-  json_output << "      \"cache_line_size\": 128\n";
+  json_output << "      \"architecture\": \"" << arch << "\",\n";
+  json_output << "      \"cache_line_size\": " << cache_line_size << "\n";
   json_output << "    }\n";
   json_output << "  }\n";
   json_output << "}\n";
