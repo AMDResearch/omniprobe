@@ -95,6 +95,7 @@ private:
   bool handle_cache_line_count_analysis(const message_t &message);
   void report_cache_line_use();
   void report_bank_conflicts();
+  void report_json();
 
 private:
   //! Maps each of the supported memory access sizes to the conflict sets for that size

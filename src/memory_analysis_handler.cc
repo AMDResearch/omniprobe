@@ -29,6 +29,10 @@
 #include <hip/hip_runtime.h>
 #include <set>
 #include <string>
+#include <sstream>
+#include <ctime>
+#include <iomanip>
+#include <fstream>
 
 namespace {
 constexpr size_t no_banks = 32;
@@ -605,14 +609,290 @@ void memory_analysis_handler_t::report(const std::string &kernel_name, kernelDB:
     log_file_ = nullptr;
   }
 }
+
 void memory_analysis_handler_t::report() {
   setupLogger();
-  report_cache_line_use();
-  report_bank_conflicts();
+  
+  // Check log format
+  bool bFormatJson = false;
+  const char* logDurLogFormat = std::getenv("LOGDUR_LOG_FORMAT");
+  if (logDurLogFormat) {
+    std::string strFormat = logDurLogFormat;
+    if (strFormat == "json") {
+      bFormatJson = true;
+    }
+  }
+  
+  if (bFormatJson) {
+    report_json();
+  } else {
+    report_cache_line_use();
+    report_bank_conflicts();
+  }
 }
 
 void memory_analysis_handler_t::clear() {
   global_accesses.clear();
   lds_accesses.clear();
 }
+
+template <typename T>
+void renderJSON(std::map<std::string, T>& fields, std::iostream& out, bool omitFinalComma)
+{
+    if constexpr (std::is_same_v<T, std::string>) {
+        auto it = fields.begin();
+        while (it != fields.end())
+        {
+            out << "\"" << it->first << "\": \"" << it->second << "\"";
+            it++;
+            if (it != fields.end() || !omitFinalComma)
+                out << ",";
+        }
+    }
+    else
+    {
+        auto it = fields.begin();
+        while (it != fields.end())
+        {
+            out << "\"" << it->first << "\": " << it->second;
+            it++;
+            if (it != fields.end() || !omitFinalComma)
+                out << ",";
+        }
+    }
+}
+
+template <typename T>
+void renderJSON(std::vector<std::pair<std::string, T>>& fields, std::iostream& out, bool omitFinalComma, bool valueAsString)
+{
+    if (valueAsString) {
+        auto it = fields.begin();
+        while (it != fields.end())
+        {
+            out << "\"" << it->first << "\": \"" << it->second << "\"";
+            it++;
+            if (it != fields.end() || !omitFinalComma)
+                out << ",";
+        }
+    }
+    else
+    {
+        auto it = fields.begin();
+        while (it != fields.end())
+        {
+            out << "\"" << it->first << "\": " << it->second;
+            it++;
+            if (it != fields.end() || !omitFinalComma)
+                out << ",";
+        }
+    }
+}
+
+// Function to get code context line for JSON output
+std::string getCodeContext(const std::string &fname, uint16_t line) {
+  static std::string cached_fname;
+  static std::vector<std::string> cached_lines;
+
+  // If accessing a new file, clear the old cache and read new file
+  if (fname != cached_fname) {
+    cached_fname = fname;
+    cached_lines.clear();
+
+    std::ifstream file(fname);
+    if (!file) {
+      return ""; // Return empty if file cannot be opened
+    }
+
+    std::string line_content;
+    while (std::getline(file, line_content)) {
+      cached_lines.push_back(line_content);
+    }
+  }
+
+  // Check if the requested line is out of bounds
+  if (line == 0 || line > cached_lines.size()) {
+    return "";
+  }
+
+  // Retrieve and process the requested line: replace each tab by 8 spaces
+  std::string processed_line = cached_lines[line - 1];
+  
+  // Replace tabs with spaces
+  size_t pos = 0;
+  while ((pos = processed_line.find('\t', pos)) != std::string::npos) {
+    processed_line.replace(pos, 1, "        "); // Replace '\t' with 8 spaces
+    pos += 8;
+  }
+
+  // Trim leading and trailing whitespace
+  size_t start = processed_line.find_first_not_of(" ");
+  if (start == std::string::npos) {
+    return "";
+  }
+  size_t end = processed_line.find_last_not_of(" ");
+  return processed_line.substr(start, end - start + 1);
+}
+
+void memory_analysis_handler_t::report_json() {
+  std::stringstream json_output;
+  
+  // Check if the file already exists and has content
+  bool file_exists = false;
+  bool file_has_content = false;
+  std::string existing_content;
+  
+  if (location_ != "console") {
+    std::ifstream check_file(location_);
+    if (check_file.good()) {
+      file_exists = true;
+      check_file.seekg(0, std::ios::end);
+      file_has_content = check_file.tellg() > 0;
+      if (file_has_content) {
+        check_file.seekg(0, std::ios::beg);
+        existing_content.assign((std::istreambuf_iterator<char>(check_file)),
+                               std::istreambuf_iterator<char>());
+      }
+      check_file.close();
+    }
+  }
+  
+  // For the first write to a file, create the initial structure
+  if (location_ == "console" || !file_has_content) {
+    json_output << "{\n";
+    json_output << "  \"kernel_analyses\": [\n";
+    
+    // Write the kernel analysis object
+    json_output << "    {\n";
+  } else {
+    // For subsequent writes, we need to insert into the existing array
+    // Find the position where we need to insert (before the closing "])
+    size_t kernel_analyses_close = existing_content.rfind("  ]");
+    if (kernel_analyses_close != std::string::npos) {
+      // Insert before the closing bracket with proper comma
+      json_output << existing_content.substr(0, kernel_analyses_close);
+      json_output << ",\n    {\n";
+    } else {
+      // Fallback: start fresh structure
+      json_output << "{\n";
+      json_output << "  \"kernel_analyses\": [\n";
+      json_output << "    {\n";
+    }
+  }
+  
+  // Kernel info section
+  json_output << "      \"kernel_info\": {\n";
+  json_output << "        \"name\": \"" << kernel_ << "\",\n";
+  json_output << "        \"dispatch_id\": " << dispatch_id_ << "\n";
+  json_output << "      },\n";
+  
+  // Cache analysis section
+  json_output << "      \"cache_analysis\": {\n";
+  json_output << "        \"accesses\": [\n";
+  
+  bool first_cache_access = true;
+  for (const auto &[fname, line_col] : global_accesses) {
+    for (const auto &[line, col_accesses] : line_col) {
+      for (const auto &[col, accesses] : col_accesses) {
+        for (const auto &access : accesses) {
+          if (!first_cache_access) {
+            json_output << ",\n";
+          }
+          first_cache_access = false;
+          
+          json_output << "          {\n";
+          json_output << "            \"source_location\": {\n";
+          json_output << "              \"file\": \"" << fname << "\",\n";
+          json_output << "              \"line\": " << line << ",\n";
+          json_output << "              \"column\": " << col << "\n";
+          json_output << "            },\n";
+          json_output << "            \"code_context\": \"" << getCodeContext(fname, line) << "\",\n";
+          json_output << "            \"access_info\": {\n";
+          json_output << "              \"type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
+          json_output << "              \"execution_count\": " << access.no_accesses << ",\n";
+          json_output << "              \"ir_bytes\": " << access.ir_access_size << ",\n";
+          json_output << "              \"isa_bytes\": " << access.isa_access_size << ",\n";
+          json_output << "              \"isa_instruction\": \"" << access.isa_instruction << "\",\n";
+          json_output << "              \"cache_lines\": {\n";
+          json_output << "                \"needed\": " << access.min_cache_lines_needed << ",\n";
+          json_output << "                \"used\": " << access.no_cache_lines_used << "\n";
+          json_output << "              }\n";
+          json_output << "            }\n";
+          json_output << "          }";
+        }
+      }
+    }
+  }
+  
+  json_output << "\n        ]\n";
+  json_output << "      },\n";
+  
+  // Bank conflicts section
+  json_output << "      \"bank_conflicts\": {\n";
+  json_output << "        \"accesses\": [\n";
+  
+  bool first_bank_access = true;
+  for (const auto &[fname, line_col] : lds_accesses) {
+    for (const auto &[line, col_accesses] : line_col) {
+      for (const auto &[col, accesses] : col_accesses) {
+        for (const auto &access : accesses) {
+          if (!first_bank_access) {
+            json_output << ",\n";
+          }
+          first_bank_access = false;
+          
+          json_output << "          {\n";
+          json_output << "            \"source_location\": {\n";
+          json_output << "              \"file\": \"" << fname << "\",\n";
+          json_output << "              \"line\": " << line << ",\n";
+          json_output << "              \"column\": " << col << "\n";
+          json_output << "            },\n";
+          json_output << "            \"code_context\": \"" << getCodeContext(fname, line) << "\",\n";
+          json_output << "            \"access_info\": {\n";
+          json_output << "              \"type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
+          json_output << "              \"execution_count\": " << access.no_accesses << ",\n";
+          json_output << "              \"ir_bytes\": " << access.ir_access_size << ",\n";
+          json_output << "              \"total_conflicts\": " << access.no_bank_conflicts << "\n";
+          json_output << "            }\n";
+          json_output << "          }";
+        }
+      }
+    }
+  }
+  
+  json_output << "\n        ]\n";
+  json_output << "      }\n";
+  json_output << "    }\n";  // Close kernel analysis object
+  
+  // Always close the array and add metadata for now
+  // This creates valid JSON for each dispatch, and subsequent dispatches will be handled above
+  json_output << "  ],\n";
+  
+  // Metadata section  
+  json_output << "  \"metadata\": {\n";
+  json_output << "    \"version\": \"1.0\",\n";
+  json_output << "    \"kernels_found\": 1,\n";
+  
+  // Add timestamp
+  auto now = std::time(nullptr);
+  auto tm = *std::localtime(&now);
+  json_output << "    \"timestamp\": \"" << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << "\",\n";
+  
+  json_output << "    \"gpu_info\": {\n";
+  json_output << "      \"architecture\": \"unknown\",\n";
+  json_output << "      \"cache_line_size\": 128\n";
+  json_output << "    }\n";
+  json_output << "  }\n";
+  json_output << "}\n";
+  
+  // Write to the log file
+  if (location_ == "console") {
+    *log_file_ << json_output.str();
+  } else {
+    // For file output, rewrite the entire file with the new content
+    std::ofstream outfile(location_);
+    outfile << json_output.str();
+    outfile.close();
+  }
+}
+
 } // namespace dh_comms
