@@ -736,6 +736,17 @@ std::string getCodeContext(const std::string &fname, uint16_t line) {
 void memory_analysis_handler_t::report_json() {
   std::stringstream json_output;
   
+  // Check if this is the first dispatch to write the opening bracket
+  bool is_first_dispatch = (dispatch_id_ == 1);
+  bool is_console_output = (location_ == "console");
+  
+  // Write opening bracket for first dispatch (but not for console output)
+  if (is_first_dispatch && !is_console_output) {
+    json_output << "[\n";
+  } else if (!is_first_dispatch) {
+    json_output << ",\n";
+  }
+  
   json_output << "{\n";
   json_output << "  \"kernel_analysis\": {\n";
   
@@ -881,10 +892,15 @@ void memory_analysis_handler_t::report_json() {
   json_output << "      \"cache_line_size\": " << cache_line_size << "\n";
   json_output << "    }\n";
   json_output << "  }\n";
-  json_output << "}\n";
+  json_output << "}";
+  
+  // Add newline for console output (for readability)
+  if (is_console_output) {
+    json_output << "\n";
+  }
   
   // Write to the log file
-  *log_file_ << json_output.str() << "\n";
+  *log_file_ << json_output.str();
 }
 
 } // namespace dh_comms

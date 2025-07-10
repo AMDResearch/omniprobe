@@ -36,6 +36,32 @@ from pyfiglet import figlet_format
 sys.stdout.reconfigure(line_buffering=True)
 
 
+def finalize_json_output(location, handlers):
+    """Finalize JSON output by adding closing bracket if needed (MemoryAnalysis plugin only)"""
+    if location == "console":
+        return
+        
+    # Check if MemoryAnalysis plugin is being used
+    using_memory_analysis = any("libMemAnalysis64.so" in handler for handler in handlers)
+    if not using_memory_analysis:
+        return
+        
+    # Check if JSON format is being used
+    if os.environ.get("LOGDUR_LOG_FORMAT") == "json":
+        try:
+            # Check if the file exists and has content
+            if os.path.exists(location) and os.path.getsize(location) > 0:
+                # Read the file to check if it starts with '[' (indicating it has JSON array content)
+                with open(location, "r") as f:
+                    content = f.read().strip()
+                    if content.startswith("["):
+                        # Append closing bracket to complete the JSON array
+                        with open(location, "a") as f:
+                            f.write("\n]")
+        except Exception as e:
+            print(f"Warning: Could not finalize JSON output: {e}")
+
+
 # Generate ASCII art for the word "omniprobe"
 name  = "Omniprobe"
 ascii_art = figlet_format(name, font="standard")  # Default font
@@ -635,6 +661,9 @@ def main():
     parms.handlers = handlers
     if len(parms.remaining) != 0 and not parms.dump_env == True:
         capture_subprocess_output(parms.remaining[1:], new_env=setup_env(parms))
+        # Finalize JSON output if needed
+        log_location = parms.log_location if parms.log_location else "console"
+        finalize_json_output(log_location, parms.handlers)
     elif parms.dump_env == True:
         setup_env(parms)
 
