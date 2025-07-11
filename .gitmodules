@@ -1,9 +1,9 @@
 [submodule "external/dh_comms"]
 	path = external/dh_comms
-	url = git@github.com:AMDResearch/dh_comms.git
+	url = https://github.com/AMDResearch/dh_comms.git
 [submodule "external/kerneldb"]
 	path = external/kerneldb
-	url = git@github.com:AMDResearch/kerneldb.git
+	url = https://github.com/AMDResearch/kerneldb.git
 [submodule "external/instrument-amdgpu-kernels"]
 	path = external/instrument-amdgpu-kernels
-	url = git@github.com:AMDResearch/instrument-amdgpu-kernels.git
+	url = https://github.com/AMDResearch/instrument-amdgpu-kernels.git
