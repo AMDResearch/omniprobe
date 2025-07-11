@@ -1,0 +1,61 @@
+# Git files
+.git
+.gitignore
+.gitmodules
+
+# Build artifacts
+build/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+
+# Documentation
+*.md
+README*
+CHANGELOG*
+LICENSE*
+CONTRIBUTING*
+docs/
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# Container files (exclude specific files but keep triton_install.sh)
+containers/omniprobe.Dockerfile
+containers/omniprobe.def
+containers/build.sh
+containers/run.sh
+containers/.dockerignore
+containers/*.sif
+# Note: triton_install.sh is intentionally NOT excluded as it's needed for the build
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Development/testing files
+.env
+.env.local
+.env.*.local
+test/
+tests/
+*_test.py
+*_test.cpp 

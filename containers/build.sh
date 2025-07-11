@@ -36,27 +36,15 @@ if [ "$build_docker" = false ] && [ "$build_apptainer" = false ]; then
     exit 1
 fi
 
-pushd "$script_dir"
-  
+pushd "$parent_dir"
+
 if [ "$build_docker" = true ]; then
     echo "Building Docker container..."
-    
-    # Auto-configure SSH agent
-    if [ ! -S ~/.ssh/ssh_auth_sock ]; then
-      eval "$(ssh-agent)" > /dev/null
-      ln -sf "$SSH_AUTH_SOCK" ~/.ssh/ssh_auth_sock
-    fi
-    export SSH_AUTH_SOCK=~/.ssh/ssh_auth_sock
-
-    # Add default keys if they exist
-    [ -f ~/.ssh/id_rsa ] && ssh-add ~/.ssh/id_rsa
-    [ -f ~/.ssh/id_ed25519 ] && ssh-add ~/.ssh/id_ed25519
-    [ -f ~/.ssh/id_github ] && ssh-add ~/.ssh/id_github
+    git submodule update --init --recursive $parent_dir
 
     # Enable BuildKit and build the Docker image
     export DOCKER_BUILDKIT=1
     docker build \
-        --ssh default \
         -t "$name:$(cat "$parent_dir/VERSION")" \
         -f "$script_dir/omniprobe.Dockerfile" \
         .
