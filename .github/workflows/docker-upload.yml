@@ -15,6 +15,9 @@ concurrency:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rocm-version: ['6.3', '6.4']
     
     steps:
       - name: Checkout code
@@ -44,30 +47,33 @@ jobs:
       - name: Build Docker image
         run: |
           # Build the Docker image using the existing build script
-          ./containers/build.sh --docker
+          ./containers/build.sh --docker --rocm ${{ matrix.rocm-version }}
 
       - name: Tag image for DockerHub
         run: |
           # Get your DockerHub username from secrets
           DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
           VERSION="${{ steps.version.outputs.version }}"
+          ROCM_VERSION="${{ matrix.rocm-version }}"
           
-          # Tag the locally built image for DockerHub
-          docker tag omniprobe:${VERSION} ${DOCKERHUB_USERNAME}/omniprobe:${VERSION}
-          docker tag omniprobe:${VERSION} ${DOCKERHUB_USERNAME}/omniprobe:latest
+          # Tag the locally built image for DockerHub with multiple tags
+          docker tag omniprobe:${VERSION}-rocm${ROCM_VERSION} ${DOCKERHUB_USERNAME}/omniprobe:${VERSION}-rocm${ROCM_VERSION}
+          docker tag omniprobe:${VERSION}-rocm${ROCM_VERSION} ${DOCKERHUB_USERNAME}/omniprobe:latest-rocm${ROCM_VERSION}
 
       - name: Push to DockerHub
         run: |
           DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
           VERSION="${{ steps.version.outputs.version }}"
+          ROCM_VERSION="${{ matrix.rocm-version }}"
           
-          # Push both version tag and latest tag
-          docker push ${DOCKERHUB_USERNAME}/omniprobe:${VERSION}
-          docker push ${DOCKERHUB_USERNAME}/omniprobe:latest
+          # Push version-specific and ROCm-specific tags
+          docker push ${DOCKERHUB_USERNAME}/omniprobe:${VERSION}-rocm${ROCM_VERSION}
+          docker push ${DOCKERHUB_USERNAME}/omniprobe:latest-rocm${ROCM_VERSION}
 
       - name: Image digest
         run: |
           DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
           VERSION="${{ steps.version.outputs.version }}"
-          echo "Image pushed: ${DOCKERHUB_USERNAME}/omniprobe:${VERSION}"
-          echo "Image pushed: ${DOCKERHUB_USERNAME}/omniprobe:latest" 
+          ROCM_VERSION="${{ matrix.rocm-version }}"
+          echo "Image pushed: ${DOCKERHUB_USERNAME}/omniprobe:${VERSION}-rocm${ROCM_VERSION}"
+          echo "Image pushed: ${DOCKERHUB_USERNAME}/omniprobe:latest-rocm${ROCM_VERSION}" 
