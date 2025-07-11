@@ -34,7 +34,7 @@ From: rocm/rocm-build-ubuntu-22.04:6.3
     python3 -m pip install --upgrade setuptools 
     
     # ROCm install 
-    ROCM_VERSION="6.3" 
+    ROCM_VERSION="${ROCM_VERSION:-6.3}"  # Use environment variable or default to 6.3
     ROCM_MAJOR=$(echo ${ROCM_VERSION} | sed 's/\./ /g' | awk '{print $1}') 
     ROCM_MINOR=$(echo ${ROCM_VERSION} | sed 's/\./ /g' | awk '{print $2}') 
     ROCM_VERSN=$(( (${ROCM_MAJOR}*10000)+(${ROCM_MINOR}*100) )) 

@@ -11,6 +11,7 @@ cur_dir=$(pwd)
 # Parse arguments
 build_docker=false
 build_apptainer=false
+rocm_version="6.3"  # Default ROCm version
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -22,9 +23,13 @@ while [[ $# -gt 0 ]]; do
       build_docker=true
       shift
       ;;
+    --rocm)
+      rocm_version="$2"
+      shift 2
+      ;;
     *)
       echo "Unknown option: $1"
-      echo "Usage: $0 [--docker] [--apptainer] -- At least one option is required."
+      echo "Usage: $0 [--docker] [--apptainer] [--rocm VERSION] -- Choose containerization type and ROCm version."
       exit 1
       ;;
   esac
@@ -32,20 +37,24 @@ done
 
 if [ "$build_docker" = false ] && [ "$build_apptainer" = false ]; then
     echo "Error: At least one of the options --docker or --apptainer is required."
-    echo "Usage: $0 [--docker] [--apptainer]"
+    echo "Usage: $0 [--docker] [--apptainer] [--rocm VERSION]"
+    echo "  --docker      Build Docker container"
+    echo "  --apptainer   Build Apptainer container"
+    echo "  --rocm        ROCm version (default: 6.3)"
     exit 1
 fi
 
 pushd "$parent_dir"
 
 if [ "$build_docker" = true ]; then
-    echo "Building Docker container..."
+    echo "Building Docker container with ROCm $rocm_version..."
     git submodule update --init --recursive $parent_dir
 
     # Enable BuildKit and build the Docker image
     export DOCKER_BUILDKIT=1
     docker build \
-        -t "$name:$(cat "$parent_dir/VERSION")" \
+        --build-arg ROCM_VERSION="$rocm_version" \
+        -t "$name:$(cat "$parent_dir/VERSION")-rocm$rocm_version" \
         -f "$script_dir/omniprobe.Dockerfile" \
         .
 
@@ -53,7 +62,7 @@ if [ "$build_docker" = true ]; then
 fi
 
 if [ "$build_apptainer" = true ]; then
-    echo "Building Apptainer container..."
+    echo "Building Apptainer container with ROCm $rocm_version..."
 
     # Check if apptainer is installed
     if ! command -v apptainer &> /dev/null; then
@@ -62,9 +71,10 @@ if [ "$build_apptainer" = true ]; then
         exit 1
     fi
 
-    # Build the Apptainer container
+    # Build the Apptainer container with ROCm version
+    export ROCM_VERSION="$rocm_version"
     apptainer build \
-      "${name}_$(cat "$parent_dir/VERSION").sif" "$script_dir/omniprobe.def"
+      "${name}_$(cat "$parent_dir/VERSION")-rocm${rocm_version}.sif" "$script_dir/omniprobe.def"
 
     echo "Apptainer build complete!"
 fi

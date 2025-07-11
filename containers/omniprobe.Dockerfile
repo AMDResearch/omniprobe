@@ -17,8 +17,8 @@ RUN apt-get update && \
 # =========================
 # ROCm install
 # =========================
-RUN ROCM_VERSION="6.3" && \
-    ROCM_MAJOR=$(echo ${ROCM_VERSION} | sed 's/\./ /g' | awk '{print $1}') && \
+ARG ROCM_VERSION=6.3
+RUN ROCM_MAJOR=$(echo ${ROCM_VERSION} | sed 's/\./ /g' | awk '{print $1}') && \
     ROCM_MINOR=$(echo ${ROCM_VERSION} | sed 's/\./ /g' | awk '{print $2}') && \
     ROCM_VERSN=$(( (${ROCM_MAJOR}*10000)+(${ROCM_MINOR}*100) )) && \
     echo "ROCM_MAJOR=${ROCM_MAJOR} ROCM_MINOR=${ROCM_MINOR} ROCM_VERSN=${ROCM_VERSN}" && \
