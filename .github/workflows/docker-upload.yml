@@ -1,0 +1,73 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches: [ main, colramos/docker-upload ]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Read VERSION file
+        id: version
+        run: |
+          if [ -f VERSION ]; then
+            echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
+          else
+            # Fallback to git commit hash if VERSION file doesn't exist
+            echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Docker image
+        run: |
+          # Build the Docker image using the existing build script
+          ./containers/build.sh --docker
+
+      - name: Tag image for DockerHub
+        run: |
+          # Get your DockerHub username from secrets
+          DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          # Tag the locally built image for DockerHub
+          docker tag omniprobe:${VERSION} ${DOCKERHUB_USERNAME}/omniprobe:${VERSION}
+          docker tag omniprobe:${VERSION} ${DOCKERHUB_USERNAME}/omniprobe:latest
+
+      - name: Push to DockerHub
+        run: |
+          DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          # Push both version tag and latest tag
+          docker push ${DOCKERHUB_USERNAME}/omniprobe:${VERSION}
+          docker push ${DOCKERHUB_USERNAME}/omniprobe:latest
+
+      - name: Image digest
+        run: |
+          DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "Image pushed: ${DOCKERHUB_USERNAME}/omniprobe:${VERSION}"
+          echo "Image pushed: ${DOCKERHUB_USERNAME}/omniprobe:latest" 
