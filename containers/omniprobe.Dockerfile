@@ -54,6 +54,7 @@ ENV PATH=/app/triton/.venv/bin:${PATH}
 RUN python3 -m pip install -r omniprobe/requirements.txt && \
     mkdir -p /opt/logduration && \
     cmake --version && \
+    rm -rf build && \
     mkdir -p build && \
     cmake -DCMAKE_INSTALL_PREFIX=/opt/logduration -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DTRITON_LLVM=${TRITON_LLVM} -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build && \
     cmake --build build --target install

@@ -12,8 +12,7 @@ From: rocm/rocm-build-ubuntu-22.04:6.3
     export TRITON_LLVM=/root/.triton/llvm/llvm-7ba6768d-ubuntu-x64 
 
 %files 
-    ../../omniprobe /app/omniprobe
-    triton_install.sh /app
+    . /app/omniprobe
 
 %post 
     # Set globals
@@ -45,15 +44,8 @@ From: rocm/rocm-build-ubuntu-22.04:6.3
     apt-get install -y rocm-dev${ROCM_VERSION} rocm-llvm-dev${ROCM_VERSION} rocm-hip-runtime-dev${ROCM_VERSION} rocm-smi-lib${ROCM_VERSION} rocminfo${ROCM_VERSION} 
     
     # Triton install 
-    ls /app
-    bash -c "source /app/triton_install.sh -g 368c864e9" 
-    
-    # Logduration install 
-    mkdir -p ~/.ssh 
-    touch ~/.ssh/known_hosts 
-    ssh-keyscan github.com >> ~/.ssh/known_hosts 
-    chmod 700 ~/.ssh 
-    chmod 644 ~/.ssh/known_hosts 
+    ls /app/omniprobe
+    bash -c "source /app/omniprobe/containers/triton_install.sh -g 368c864e9"
     
     cd /app 
     ls
