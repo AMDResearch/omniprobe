@@ -16,6 +16,7 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false  # Don't cancel other builds if one fails
       matrix:
         rocm-version: ['6.3', '6.4']
     

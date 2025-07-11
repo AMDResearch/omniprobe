@@ -13,6 +13,9 @@ build_docker=false
 build_apptainer=false
 rocm_version="6.3"  # Default ROCm version
 
+# Supported ROCm versions
+supported_rocm_versions=("6.3" "6.4")
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     --apptainer)
@@ -35,12 +38,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Validate ROCm version
+if [[ ! " ${supported_rocm_versions[@]} " =~ " ${rocm_version} " ]]; then
+    echo "Error: Unsupported ROCm version '$rocm_version'"
+    echo "Supported ROCm versions: ${supported_rocm_versions[*]}"
+    exit 1
+fi
+
 if [ "$build_docker" = false ] && [ "$build_apptainer" = false ]; then
     echo "Error: At least one of the options --docker or --apptainer is required."
     echo "Usage: $0 [--docker] [--apptainer] [--rocm VERSION]"
     echo "  --docker      Build Docker container"
     echo "  --apptainer   Build Apptainer container"
-    echo "  --rocm        ROCm version (default: 6.3)"
+    echo "  --rocm        ROCm version (default: 6.3, supported: ${supported_rocm_versions[*]})"
     exit 1
 fi
 
