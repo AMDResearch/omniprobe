@@ -73,6 +73,7 @@ fi
 
 if [ "$build_apptainer" = true ]; then
     echo "Building Apptainer container with ROCm $rocm_version..."
+    git submodule update --init --recursive $parent_dir
 
     # Check if apptainer is installed
     if ! command -v apptainer &> /dev/null; then
