@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.4
 
-FROM rocm/rocm-build-ubuntu-22.04:6.3
+ARG ROCM_VERSION=6.3
+FROM rocm/rocm-build-ubuntu-22.04:${ROCM_VERSION}
 LABEL Description="Docker container for LOGDURATION" 
 WORKDIR /app
 
@@ -17,7 +18,6 @@ RUN apt-get update && \
 # =========================
 # ROCm install
 # =========================
-ARG ROCM_VERSION=6.3
 RUN ROCM_MAJOR=$(echo ${ROCM_VERSION} | sed 's/\./ /g' | awk '{print $1}') && \
     ROCM_MINOR=$(echo ${ROCM_VERSION} | sed 's/\./ /g' | awk '{print $2}') && \
     ROCM_VERSN=$(( (${ROCM_MAJOR}*10000)+(${ROCM_MINOR}*100) )) && \

@@ -82,8 +82,8 @@ if [ "$build_apptainer" = true ]; then
     fi
 
     # Build the Apptainer container with ROCm version
-    export ROCM_VERSION="$rocm_version"
     apptainer build \
+      --build-arg ROCM_VERSION="$rocm_version" \
       "${script_dir}/${name}_$(cat "$parent_dir/VERSION")-rocm${rocm_version}.sif" "$script_dir/omniprobe.def"
 
     echo "Apptainer build complete!"
