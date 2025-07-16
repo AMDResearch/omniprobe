@@ -734,6 +734,45 @@ std::string getCodeContext(const std::string &fname, uint16_t line) {
 }
 
 void memory_analysis_handler_t::report_json() {
+  // Check if there's any data to report
+  bool has_cache_data = false;
+  bool has_bank_data = false;
+  
+  for (const auto &[fname, line_col] : global_accesses) {
+    for (const auto &[line, col_accesses] : line_col) {
+      for (const auto &[col, accesses] : col_accesses) {
+        if (!accesses.empty()) {
+          has_cache_data = true;
+          break;
+        }
+      }
+      if (has_cache_data) break;
+    }
+    if (has_cache_data) break;
+  }
+  
+  for (const auto &[fname, line_col] : lds_accesses) {
+    for (const auto &[line, col_accesses] : line_col) {
+      for (const auto &[col, accesses] : col_accesses) {
+        if (!accesses.empty()) {
+          has_bank_data = true;
+          break;
+        }
+      }
+      if (has_bank_data) break;
+    }
+    if (has_bank_data) break;
+  }
+  
+  // If there's no data to report, skip JSON generation
+  if (!has_cache_data && !has_bank_data) {
+    if (verbose_) {
+      printf("Memory analysis handler: No data to report for kernel '%s' (dispatch_id: %lu). This may be due to kernel filtering.\n", 
+             kernel_.c_str(), dispatch_id_);
+    }
+    return;
+  }
+  
   std::stringstream json_output;
   
   // Check if this is the first dispatch to write the opening bracket
