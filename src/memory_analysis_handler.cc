@@ -861,23 +861,34 @@ void memory_analysis_handler_t::report_json() {
             std::string code_context = getCodeContext(fname, line);
             std::cout << "DEBUG: getCodeContext returned: '" << code_context << "'" << std::endl;
             json_output << "          \"code_context\": \"" << code_context << "\",\n";
+            
+            std::cout << "DEBUG: About to write access_info section" << std::endl;
             json_output << "          \"access_info\": {\n";
-            json_output << "            \"type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
+            
+            std::cout << "DEBUG: About to call rw2str" << std::endl;
+            std::string rw_string = rw2str(access.rw_kind, rw2str_map);
+            std::cout << "DEBUG: rw2str returned: '" << rw_string << "'" << std::endl;
+            
+            json_output << "            \"type\": \"" << rw_string << "\",\n";
             json_output << "            \"execution_count\": " << access.no_accesses << ",\n";
             json_output << "            \"ir_bytes\": " << access.ir_access_size << ",\n";
             json_output << "            \"total_conflicts\": " << access.no_bank_conflicts << "\n";
             json_output << "          }\n";
             json_output << "        }";
+            std::cout << "DEBUG: Finished writing access JSON" << std::endl;
           }
         }
       }
     }
     
+    std::cout << "DEBUG: Finished processing all lds_accesses" << std::endl;
     json_output << "\n      ]\n";
     json_output << "    }\n";
+    std::cout << "DEBUG: Finished bank conflicts section JSON" << std::endl;
     json_output << "  },\n";
     
     // Metadata section  
+    std::cout << "DEBUG: Starting metadata section" << std::endl;
     json_output << "  \"metadata\": {\n";
 
     std::string version = "null"; // Default
