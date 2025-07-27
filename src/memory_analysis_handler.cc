@@ -837,21 +837,30 @@ void memory_analysis_handler_t::report_json() {
     std::cout << "DEBUG: About to process lds_accesses, size: " << lds_accesses.size() << std::endl;
     bool first_bank_access = true;
     for (const auto &[fname, line_col] : lds_accesses) {
+      std::cout << "DEBUG: Processing fname: '" << fname << "', line_col size: " << line_col.size() << std::endl;
       for (const auto &[line, col_accesses] : line_col) {
+        std::cout << "DEBUG: Processing line: " << line << ", col_accesses size: " << col_accesses.size() << std::endl;
         for (const auto &[col, accesses] : col_accesses) {
+          std::cout << "DEBUG: Processing column: " << col << ", accesses size: " << accesses.size() << std::endl;
           for (const auto &access : accesses) {
+            std::cout << "DEBUG: Processing individual access" << std::endl;
             if (!first_bank_access) {
               json_output << ",\n";
             }
             first_bank_access = false;
             
+            std::cout << "DEBUG: About to write source_location" << std::endl;
             json_output << "        {\n";
             json_output << "          \"source_location\": {\n";
             json_output << "            \"file\": \"" << fname << "\",\n";
             json_output << "            \"line\": " << line << ",\n";
             json_output << "            \"column\": " << col << "\n";
             json_output << "          },\n";
-            json_output << "          \"code_context\": \"" << getCodeContext(fname, line) << "\",\n";
+            
+            std::cout << "DEBUG: About to call getCodeContext for file: '" << fname << "', line: " << line << std::endl;
+            std::string code_context = getCodeContext(fname, line);
+            std::cout << "DEBUG: getCodeContext returned: '" << code_context << "'" << std::endl;
+            json_output << "          \"code_context\": \"" << code_context << "\",\n";
             json_output << "          \"access_info\": {\n";
             json_output << "            \"type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
             json_output << "            \"execution_count\": " << access.no_accesses << ",\n";
