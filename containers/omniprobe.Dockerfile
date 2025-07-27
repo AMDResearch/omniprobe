@@ -2,6 +2,7 @@
 
 ARG ROCM_VERSION=6.3
 FROM rocm/rocm-build-ubuntu-22.04:${ROCM_VERSION}
+ARG ROCM_VERSION=6.3 
 LABEL Description="Docker container for LOGDURATION" 
 WORKDIR /app
 
