@@ -734,55 +734,21 @@ std::string getCodeContext(const std::string &fname, uint16_t line) {
 }
 
 void memory_analysis_handler_t::report_json() {
-  // Check if there's any data to report
-  bool has_cache_data = false;
-  bool has_bank_data = false;
-  
-  for (const auto &[fname, line_col] : global_accesses) {
-    for (const auto &[line, col_accesses] : line_col) {
-      for (const auto &[col, accesses] : col_accesses) {
-        if (!accesses.empty()) {
-          has_cache_data = true;
-          break;
-        }
-      }
-      if (has_cache_data) break;
-    }
-    if (has_cache_data) break;
-  }
-  
-  for (const auto &[fname, line_col] : lds_accesses) {
-    for (const auto &[line, col_accesses] : line_col) {
-      for (const auto &[col, accesses] : col_accesses) {
-        if (!accesses.empty()) {
-          has_bank_data = true;
-          break;
-        }
-      }
-      if (has_bank_data) break;
-    }
-    if (has_bank_data) break;
-  }
-  
-  // If there's no data to report, skip JSON generation
-  if (!has_cache_data && !has_bank_data) {
-    if (verbose_) {
-      printf("Memory analysis handler: No data to report for kernel '%s' (dispatch_id: %lu). This may be due to kernel filtering.\n", 
-             kernel_.c_str(), dispatch_id_);
-    }
-    return;
-  }
-  
   std::stringstream json_output;
   
   // Check if this is the first dispatch to write the opening bracket
   bool is_first_dispatch = (dispatch_id_ == 1);
   bool is_console_output = (location_ == "console");
   
+  // For kernel filtering, we may have uninitialized dispatch_id_ or only one dispatch
+  // Check if we have any data to output
+  bool has_data = !global_accesses.empty() || !lds_accesses.empty();
+  
   // Write opening bracket for first dispatch (but not for console output)
-  if (is_first_dispatch && !is_console_output) {
+  // Also handle case where dispatch_id_ is uninitialized (0) but we have data
+  if (!is_console_output && (is_first_dispatch || (dispatch_id_ == 0 && has_data))) {
     json_output << "[\n";
-  } else if (!is_first_dispatch) {
+  } else if (!is_first_dispatch && dispatch_id_ > 0) {
     json_output << ",\n";
   }
   

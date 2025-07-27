@@ -58,6 +58,11 @@ def finalize_json_output(location, handlers):
                         # Append closing bracket to complete the JSON array
                         with open(location, "a") as f:
                             f.write("\n]")
+                    elif content.startswith("{") and not content.endswith("]"):
+                        # Handle single JSON object case (like with kernel filtering)
+                        # Wrap it in an array for consistency
+                        with open(location, "w") as f:
+                            f.write("[\n" + content + "\n]")
         except Exception as e:
             print(f"Warning: Could not finalize JSON output: {e}")
 
