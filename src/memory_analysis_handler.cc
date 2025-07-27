@@ -616,16 +616,21 @@ void memory_analysis_handler_t::report() {
   // Check log format
   bool bFormatJson = false;
   const char* logDurLogFormat = std::getenv("LOGDUR_LOG_FORMAT");
+  std::cout << "DEBUG: LOGDUR_LOG_FORMAT = " << (logDurLogFormat ? logDurLogFormat : "NULL") << std::endl;
   if (logDurLogFormat) {
     std::string strFormat = logDurLogFormat;
+    std::cout << "DEBUG: strFormat = '" << strFormat << "'" << std::endl;
     if (strFormat == "json") {
+      std::cout << "DEBUG: Format detected as JSON" << std::endl;
       bFormatJson = true;
     }
   }
   
   if (bFormatJson) {
+    std::cout << "DEBUG: Calling report_json()" << std::endl;
     report_json();
   } else {
+    std::cout << "DEBUG: Calling standard report methods" << std::endl;
     report_cache_line_use();
     report_bank_conflicts();
   }
@@ -734,6 +739,7 @@ std::string getCodeContext(const std::string &fname, uint16_t line) {
 }
 
 void memory_analysis_handler_t::report_json() {
+  std::cout << "DEBUG: report_json() called" << std::endl;
   std::stringstream json_output;
   
   // Check if this is the first dispatch to write the opening bracket
@@ -744,15 +750,21 @@ void memory_analysis_handler_t::report_json() {
   // Check if we have any data to output
   bool has_data = !global_accesses.empty() || !lds_accesses.empty();
   
-  std::cout << "has_data: " << has_data << std::endl;
-  std::cout << "dispatch_id_: " << dispatch_id_ << std::endl;
-  std::cout << "is_first_dispatch: " << is_first_dispatch << std::endl;
+  std::cout << "DEBUG: has_data: " << has_data << std::endl;
+  std::cout << "DEBUG: dispatch_id_: " << dispatch_id_ << std::endl;
+  std::cout << "DEBUG: is_first_dispatch: " << is_first_dispatch << std::endl;
+  std::cout << "DEBUG: is_console_output: " << is_console_output << std::endl;
+  
   // Write opening bracket for first dispatch (always for JSON format)
   // Also handle case where dispatch_id_ is uninitialized (0) but we have data
   if (is_first_dispatch || (dispatch_id_ == 0 && has_data)) {
+    std::cout << "DEBUG: Writing opening bracket [" << std::endl;
     json_output << "[\n";
   } else if (!is_first_dispatch && dispatch_id_ > 0) {
+    std::cout << "DEBUG: Writing comma separator" << std::endl;
     json_output << ",\n";
+  } else {
+    std::cout << "DEBUG: No opening bracket written" << std::endl;
   }
   
   json_output << "{\n";
@@ -908,7 +920,10 @@ void memory_analysis_handler_t::report_json() {
   }
   
   // Write to the log file
+  std::cout << "DEBUG: About to write JSON to log_file_. JSON length: " << json_output.str().length() << std::endl;
+  std::cout << "DEBUG: JSON content preview (first 100 chars): " << json_output.str().substr(0, 100) << std::endl;
   *log_file_ << json_output.str();
+  std::cout << "DEBUG: Finished writing JSON to log_file_" << std::endl;
 }
 
 } // namespace dh_comms
