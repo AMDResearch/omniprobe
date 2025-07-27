@@ -891,12 +891,15 @@ void memory_analysis_handler_t::report_json() {
     std::cout << "DEBUG: Starting metadata section" << std::endl;
     json_output << "  \"metadata\": {\n";
 
+    std::cout << "DEBUG: About to read VERSION file" << std::endl;
     std::string version = "null"; // Default
     std::ifstream version_file("VERSION");
     if (version_file.good()) {
+      std::cout << "DEBUG: VERSION file opened successfully" << std::endl;
       std::string version_from_file;
       std::getline(version_file, version_from_file);
       if (!version_from_file.empty()) {
+        std::cout << "DEBUG: VERSION file content: '" << version_from_file << "'" << std::endl;
         // Trim whitespace and newline
         size_t first = version_from_file.find_first_not_of(" \t\n\r");
         if (std::string::npos != first) {
@@ -904,28 +907,39 @@ void memory_analysis_handler_t::report_json() {
           version = version_from_file.substr(first, (last - first + 1));
         }
       }
+    } else {
+      std::cout << "DEBUG: VERSION file not found or couldn't be opened" << std::endl;
     }
 
+    std::cout << "DEBUG: Writing version to JSON: '" << version << "'" << std::endl;
     json_output << "    \"version\": \"" << version << "\",\n";
     
     // Add timestamp
+    std::cout << "DEBUG: Getting timestamp" << std::endl;
     auto now = std::time(nullptr);
     auto tm = *std::localtime(&now);
+    std::cout << "DEBUG: Writing timestamp to JSON" << std::endl;
     json_output << "    \"timestamp\": \"" << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << "\",\n";
     
+    std::cout << "DEBUG: About to get GPU properties" << std::endl;
     std::string arch = "unknown";
     int cache_line_size = 128; // default
     
+    std::cout << "DEBUG: Calling hipGetDeviceProperties..." << std::endl;
     hipDeviceProp_t props;
     hipError_t err = hipGetDeviceProperties(&props, 0);
+    std::cout << "DEBUG: hipGetDeviceProperties call completed with result: " << err << std::endl;
     if (err == hipSuccess) {
+      std::cout << "DEBUG: Got device properties successfully" << std::endl;
       std::string gcnArchName_str(props.gcnArchName);
+      std::cout << "DEBUG: gcnArchName: '" << gcnArchName_str << "'" << std::endl;
       size_t colon_pos = gcnArchName_str.find(':');
       if (colon_pos != std::string::npos) {
         arch = gcnArchName_str.substr(0, colon_pos);
       } else {
         arch = gcnArchName_str;
       }
+      std::cout << "DEBUG: Parsed arch: '" << arch << "'" << std::endl;
 
       std::map<std::string, int> arch_to_cache_size = {
           {"gfx906", 64},
@@ -938,18 +952,37 @@ void memory_analysis_handler_t::report_json() {
 
       if (arch_to_cache_size.count(arch)) {
           cache_line_size = arch_to_cache_size[arch];
+          std::cout << "DEBUG: Set cache_line_size to: " << cache_line_size << std::endl;
       }
+    } else {
+      std::cout << "DEBUG: Failed to get device properties" << std::endl;
     }
 
+    std::cout << "DEBUG: Writing GPU info to JSON" << std::endl;
     json_output << "    \"gpu_info\": {\n";
     json_output << "      \"architecture\": \"" << arch << "\",\n";
     json_output << "      \"cache_line_size\": " << cache_line_size << "\n";
     json_output << "    }\n";
     json_output << "  }\n";
     json_output << "}";
+    std::cout << "DEBUG: Finished main JSON object" << std::endl;
+    
+    // Check closing logic
+    std::cout << "DEBUG: Checking closing logic. is_console_output=" << is_console_output << ", is_first_dispatch=" << is_first_dispatch << ", dispatch_id_=" << dispatch_id_ << ", has_data=" << has_data << std::endl;
+    
+    // Close JSON array if we opened it
+    // For console output, assume single dispatch and close immediately
+    // For file output, omniprobe script will handle closing
+    if (is_console_output && (is_first_dispatch || (dispatch_id_ == 0 && has_data))) {
+      std::cout << "DEBUG: Adding closing bracket ]" << std::endl;
+      json_output << "\n]";
+    } else {
+      std::cout << "DEBUG: Not adding closing bracket" << std::endl;
+    }
     
     // Add newline for console output (for readability)
     if (is_console_output) {
+      std::cout << "DEBUG: Adding final newline" << std::endl;
       json_output << "\n";
     }
   
