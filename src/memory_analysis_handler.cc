@@ -590,10 +590,14 @@ void memory_analysis_handler_t::report_cache_line_use() {
 
 void memory_analysis_handler_t::setupLogger()
 {
-    if (location_ == "console")
+    std::cout << "DEBUG: setupLogger() called, location_ = '" << location_ << "'" << std::endl;
+    if (location_ == "console") {
         log_file_ = &std::cout;
-    else
+        std::cout << "DEBUG: log_file_ set to &std::cout" << std::endl;
+    } else {
         log_file_ = new std::ofstream(location_, std::ios::app);
+        std::cout << "DEBUG: log_file_ set to file stream for: " << location_ << std::endl;
+    }
 }
 
 
@@ -742,188 +746,214 @@ void memory_analysis_handler_t::report_json() {
   std::cout << "DEBUG: report_json() called" << std::endl;
   std::stringstream json_output;
   
-  // Check if this is the first dispatch to write the opening bracket
-  bool is_first_dispatch = (dispatch_id_ == 1);
-  bool is_console_output = (location_ == "console");
+  try {
   
-  // For kernel filtering, we may have uninitialized dispatch_id_ or only one dispatch
-  // Check if we have any data to output
-  bool has_data = !global_accesses.empty() || !lds_accesses.empty();
-  
-  std::cout << "DEBUG: has_data: " << has_data << std::endl;
-  std::cout << "DEBUG: dispatch_id_: " << dispatch_id_ << std::endl;
-  std::cout << "DEBUG: is_first_dispatch: " << is_first_dispatch << std::endl;
-  std::cout << "DEBUG: is_console_output: " << is_console_output << std::endl;
-  
-  // Write opening bracket for first dispatch (always for JSON format)
-  // Also handle case where dispatch_id_ is uninitialized (0) but we have data
-  if (is_first_dispatch || (dispatch_id_ == 0 && has_data)) {
-    std::cout << "DEBUG: Writing opening bracket [" << std::endl;
-    json_output << "[\n";
-  } else if (!is_first_dispatch && dispatch_id_ > 0) {
-    std::cout << "DEBUG: Writing comma separator" << std::endl;
-    json_output << ",\n";
-  } else {
-    std::cout << "DEBUG: No opening bracket written" << std::endl;
-  }
-  
-  json_output << "{\n";
-  json_output << "  \"kernel_analysis\": {\n";
-  
-  // Kernel info section
-  json_output << "    \"kernel_info\": {\n";
-  json_output << "      \"name\": \"" << kernel_ << "\",\n";
-  json_output << "      \"dispatch_id\": " << dispatch_id_ << "\n";
-  json_output << "    },\n";
-  
-  // Cache analysis section
-  json_output << "    \"cache_analysis\": {\n";
-  json_output << "      \"accesses\": [\n";
-  
-  bool first_cache_access = true;
-  for (const auto &[fname, line_col] : global_accesses) {
-    for (const auto &[line, col_accesses] : line_col) {
-      for (const auto &[col, accesses] : col_accesses) {
-        for (const auto &access : accesses) {
-          if (!first_cache_access) {
-            json_output << ",\n";
-          }
-          first_cache_access = false;
-          
-          json_output << "        {\n";
-          json_output << "          \"source_location\": {\n";
-          json_output << "            \"file\": \"" << fname << "\",\n";
-          json_output << "            \"line\": " << line << ",\n";
-          json_output << "            \"column\": " << col << "\n";
-          json_output << "          },\n";
-          json_output << "          \"code_context\": \"" << getCodeContext(fname, line) << "\",\n";
-          json_output << "          \"access_info\": {\n";
-          json_output << "            \"type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
-          json_output << "            \"execution_count\": " << access.no_accesses << ",\n";
-          json_output << "            \"ir_bytes\": " << access.ir_access_size << ",\n";
-          json_output << "            \"isa_bytes\": " << access.isa_access_size << ",\n";
-          json_output << "            \"isa_instruction\": \"" << access.isa_instruction << "\",\n";
-          json_output << "            \"cache_lines\": {\n";
-          json_output << "              \"needed\": " << access.min_cache_lines_needed << ",\n";
-          json_output << "              \"used\": " << access.no_cache_lines_used << "\n";
-          json_output << "            }\n";
-          json_output << "          }\n";
-          json_output << "        }";
-        }
-      }
-    }
-  }
-  
-  json_output << "\n      ]\n";
-  json_output << "    },\n";
-  
-  // Bank conflicts section
-  json_output << "    \"bank_conflicts\": {\n";
-  json_output << "      \"accesses\": [\n";
-  
-  bool first_bank_access = true;
-  for (const auto &[fname, line_col] : lds_accesses) {
-    for (const auto &[line, col_accesses] : line_col) {
-      for (const auto &[col, accesses] : col_accesses) {
-        for (const auto &access : accesses) {
-          if (!first_bank_access) {
-            json_output << ",\n";
-          }
-          first_bank_access = false;
-          
-          json_output << "        {\n";
-          json_output << "          \"source_location\": {\n";
-          json_output << "            \"file\": \"" << fname << "\",\n";
-          json_output << "            \"line\": " << line << ",\n";
-          json_output << "            \"column\": " << col << "\n";
-          json_output << "          },\n";
-          json_output << "          \"code_context\": \"" << getCodeContext(fname, line) << "\",\n";
-          json_output << "          \"access_info\": {\n";
-          json_output << "            \"type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
-          json_output << "            \"execution_count\": " << access.no_accesses << ",\n";
-          json_output << "            \"ir_bytes\": " << access.ir_access_size << ",\n";
-          json_output << "            \"total_conflicts\": " << access.no_bank_conflicts << "\n";
-          json_output << "          }\n";
-          json_output << "        }";
-        }
-      }
-    }
-  }
-  
-  json_output << "\n      ]\n";
-  json_output << "    }\n";
-  json_output << "  },\n";
-  
-  // Metadata section  
-  json_output << "  \"metadata\": {\n";
-
-  std::string version = "null"; // Default
-  std::ifstream version_file("VERSION");
-  if (version_file.good()) {
-    std::string version_from_file;
-    std::getline(version_file, version_from_file);
-    if (!version_from_file.empty()) {
-      // Trim whitespace and newline
-      size_t first = version_from_file.find_first_not_of(" \t\n\r");
-      if (std::string::npos != first) {
-        size_t last = version_from_file.find_last_not_of(" \t\n\r");
-        version = version_from_file.substr(first, (last - first + 1));
-      }
-    }
-  }
-
-  json_output << "    \"version\": \"" << version << "\",\n";
-  
-  // Add timestamp
-  auto now = std::time(nullptr);
-  auto tm = *std::localtime(&now);
-  json_output << "    \"timestamp\": \"" << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << "\",\n";
-  
-  std::string arch = "unknown";
-  int cache_line_size = 128; // default
-  
-  hipDeviceProp_t props;
-  hipError_t err = hipGetDeviceProperties(&props, 0);
-  if (err == hipSuccess) {
-    std::string gcnArchName_str(props.gcnArchName);
-    size_t colon_pos = gcnArchName_str.find(':');
-    if (colon_pos != std::string::npos) {
-      arch = gcnArchName_str.substr(0, colon_pos);
+    // Check if this is the first dispatch to write the opening bracket
+    bool is_first_dispatch = (dispatch_id_ == 1);
+    bool is_console_output = (location_ == "console");
+    
+    // For kernel filtering, we may have uninitialized dispatch_id_ or only one dispatch
+    // Check if we have any data to output
+    bool has_data = !global_accesses.empty() || !lds_accesses.empty();
+    
+    std::cout << "DEBUG: has_data: " << has_data << std::endl;
+    std::cout << "DEBUG: dispatch_id_: " << dispatch_id_ << std::endl;
+    std::cout << "DEBUG: is_first_dispatch: " << is_first_dispatch << std::endl;
+    std::cout << "DEBUG: is_console_output: " << is_console_output << std::endl;
+    
+    // Write opening bracket for first dispatch (always for JSON format)
+    // Also handle case where dispatch_id_ is uninitialized (0) but we have data
+    if (is_first_dispatch || (dispatch_id_ == 0 && has_data)) {
+      std::cout << "DEBUG: Writing opening bracket [" << std::endl;
+      json_output << "[\n";
+    } else if (!is_first_dispatch && dispatch_id_ > 0) {
+      std::cout << "DEBUG: Writing comma separator" << std::endl;
+      json_output << ",\n";
     } else {
-      arch = gcnArchName_str;
+      std::cout << "DEBUG: No opening bracket written" << std::endl;
+    }
+    
+    std::cout << "DEBUG: About to start JSON object generation" << std::endl;
+    json_output << "{\n";
+    json_output << "  \"kernel_analysis\": {\n";
+    
+    // Kernel info section
+    std::cout << "DEBUG: Writing kernel info section" << std::endl;
+    json_output << "    \"kernel_info\": {\n";
+    json_output << "      \"name\": \"" << kernel_ << "\",\n";
+    json_output << "      \"dispatch_id\": " << dispatch_id_ << "\n";
+    json_output << "    },\n";
+    std::cout << "DEBUG: Finished kernel info section" << std::endl;
+    
+    // Cache analysis section
+    std::cout << "DEBUG: Starting cache analysis section" << std::endl;
+    json_output << "    \"cache_analysis\": {\n";
+    json_output << "      \"accesses\": [\n";
+    
+    std::cout << "DEBUG: About to process global_accesses, size: " << global_accesses.size() << std::endl;
+    bool first_cache_access = true;
+    for (const auto &[fname, line_col] : global_accesses) {
+      for (const auto &[line, col_accesses] : line_col) {
+        for (const auto &[col, accesses] : col_accesses) {
+          for (const auto &access : accesses) {
+            if (!first_cache_access) {
+              json_output << ",\n";
+            }
+            first_cache_access = false;
+            
+            json_output << "        {\n";
+            json_output << "          \"source_location\": {\n";
+            json_output << "            \"file\": \"" << fname << "\",\n";
+            json_output << "            \"line\": " << line << ",\n";
+            json_output << "            \"column\": " << col << "\n";
+            json_output << "          },\n";
+            json_output << "          \"code_context\": \"" << getCodeContext(fname, line) << "\",\n";
+            json_output << "          \"access_info\": {\n";
+            json_output << "            \"type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
+            json_output << "            \"execution_count\": " << access.no_accesses << ",\n";
+            json_output << "            \"ir_bytes\": " << access.ir_access_size << ",\n";
+            json_output << "            \"isa_bytes\": " << access.isa_access_size << ",\n";
+            json_output << "            \"isa_instruction\": \"" << access.isa_instruction << "\",\n";
+            json_output << "            \"cache_lines\": {\n";
+            json_output << "              \"needed\": " << access.min_cache_lines_needed << ",\n";
+            json_output << "              \"used\": " << access.no_cache_lines_used << "\n";
+            json_output << "            }\n";
+            json_output << "          }\n";
+            json_output << "        }";
+          }
+        }
+      }
+    }
+    
+    json_output << "\n      ]\n";
+    json_output << "    },\n";
+    std::cout << "DEBUG: Finished cache analysis section" << std::endl;
+    
+    // Bank conflicts section
+    std::cout << "DEBUG: Starting bank conflicts section" << std::endl;
+    json_output << "    \"bank_conflicts\": {\n";
+    json_output << "      \"accesses\": [\n";
+    
+    std::cout << "DEBUG: About to process lds_accesses, size: " << lds_accesses.size() << std::endl;
+    bool first_bank_access = true;
+    for (const auto &[fname, line_col] : lds_accesses) {
+      for (const auto &[line, col_accesses] : line_col) {
+        for (const auto &[col, accesses] : col_accesses) {
+          for (const auto &access : accesses) {
+            if (!first_bank_access) {
+              json_output << ",\n";
+            }
+            first_bank_access = false;
+            
+            json_output << "        {\n";
+            json_output << "          \"source_location\": {\n";
+            json_output << "            \"file\": \"" << fname << "\",\n";
+            json_output << "            \"line\": " << line << ",\n";
+            json_output << "            \"column\": " << col << "\n";
+            json_output << "          },\n";
+            json_output << "          \"code_context\": \"" << getCodeContext(fname, line) << "\",\n";
+            json_output << "          \"access_info\": {\n";
+            json_output << "            \"type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
+            json_output << "            \"execution_count\": " << access.no_accesses << ",\n";
+            json_output << "            \"ir_bytes\": " << access.ir_access_size << ",\n";
+            json_output << "            \"total_conflicts\": " << access.no_bank_conflicts << "\n";
+            json_output << "          }\n";
+            json_output << "        }";
+          }
+        }
+      }
+    }
+    
+    json_output << "\n      ]\n";
+    json_output << "    }\n";
+    json_output << "  },\n";
+    
+    // Metadata section  
+    json_output << "  \"metadata\": {\n";
+
+    std::string version = "null"; // Default
+    std::ifstream version_file("VERSION");
+    if (version_file.good()) {
+      std::string version_from_file;
+      std::getline(version_file, version_from_file);
+      if (!version_from_file.empty()) {
+        // Trim whitespace and newline
+        size_t first = version_from_file.find_first_not_of(" \t\n\r");
+        if (std::string::npos != first) {
+          size_t last = version_from_file.find_last_not_of(" \t\n\r");
+          version = version_from_file.substr(first, (last - first + 1));
+        }
+      }
     }
 
-    std::map<std::string, int> arch_to_cache_size = {
-        {"gfx906", 64},
-        {"gfx908", 64},
-        {"gfx90a", 128},
-        {"gfx940", 128},
-        {"gfx941", 128},
-        {"gfx942", 128}
-    };
+    json_output << "    \"version\": \"" << version << "\",\n";
+    
+    // Add timestamp
+    auto now = std::time(nullptr);
+    auto tm = *std::localtime(&now);
+    json_output << "    \"timestamp\": \"" << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << "\",\n";
+    
+    std::string arch = "unknown";
+    int cache_line_size = 128; // default
+    
+    hipDeviceProp_t props;
+    hipError_t err = hipGetDeviceProperties(&props, 0);
+    if (err == hipSuccess) {
+      std::string gcnArchName_str(props.gcnArchName);
+      size_t colon_pos = gcnArchName_str.find(':');
+      if (colon_pos != std::string::npos) {
+        arch = gcnArchName_str.substr(0, colon_pos);
+      } else {
+        arch = gcnArchName_str;
+      }
 
-    if (arch_to_cache_size.count(arch)) {
-        cache_line_size = arch_to_cache_size[arch];
+      std::map<std::string, int> arch_to_cache_size = {
+          {"gfx906", 64},
+          {"gfx908", 64},
+          {"gfx90a", 128},
+          {"gfx940", 128},
+          {"gfx941", 128},
+          {"gfx942", 128}
+      };
+
+      if (arch_to_cache_size.count(arch)) {
+          cache_line_size = arch_to_cache_size[arch];
+      }
     }
+
+    json_output << "    \"gpu_info\": {\n";
+    json_output << "      \"architecture\": \"" << arch << "\",\n";
+    json_output << "      \"cache_line_size\": " << cache_line_size << "\n";
+    json_output << "    }\n";
+    json_output << "  }\n";
+    json_output << "}";
+    
+    // Add newline for console output (for readability)
+    if (is_console_output) {
+      json_output << "\n";
+    }
+  
+  } catch (const std::exception& e) {
+    std::cout << "DEBUG: Exception caught in report_json(): " << e.what() << std::endl;
+    return;
+  } catch (...) {
+    std::cout << "DEBUG: Unknown exception caught in report_json()" << std::endl;
+    return;
   }
 
-  json_output << "    \"gpu_info\": {\n";
-  json_output << "      \"architecture\": \"" << arch << "\",\n";
-  json_output << "      \"cache_line_size\": " << cache_line_size << "\n";
-  json_output << "    }\n";
-  json_output << "  }\n";
-  json_output << "}";
-  
-  // Add newline for console output (for readability)
-  if (is_console_output) {
-    json_output << "\n";
-  }
-  
   // Write to the log file
-  std::cout << "DEBUG: About to write JSON to log_file_. JSON length: " << json_output.str().length() << std::endl;
+  std::cout << "DEBUG: About to write JSON to log_file_. log_file_ = " << log_file_ << std::endl;
+  std::cout << "DEBUG: JSON length: " << json_output.str().length() << std::endl;
   std::cout << "DEBUG: JSON content preview (first 100 chars): " << json_output.str().substr(0, 100) << std::endl;
-  *log_file_ << json_output.str();
-  std::cout << "DEBUG: Finished writing JSON to log_file_" << std::endl;
+  
+  if (log_file_) {
+    std::cout << "DEBUG: log_file_ is valid, writing JSON..." << std::endl;
+    *log_file_ << json_output.str();
+    log_file_->flush();  // Force flush to ensure output appears
+    std::cout << "DEBUG: Finished writing JSON to log_file_" << std::endl;
+  } else {
+    std::cout << "DEBUG: ERROR - log_file_ is null!" << std::endl;
+  }
 }
 
 } // namespace dh_comms
