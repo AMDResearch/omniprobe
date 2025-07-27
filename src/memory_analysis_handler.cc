@@ -925,37 +925,46 @@ void memory_analysis_handler_t::report_json() {
     std::string arch = "unknown";
     int cache_line_size = 128; // default
     
-    std::cout << "DEBUG: Calling hipGetDeviceProperties..." << std::endl;
-    hipDeviceProp_t props;
-    hipError_t err = hipGetDeviceProperties(&props, 0);
-    std::cout << "DEBUG: hipGetDeviceProperties call completed with result: " << err << std::endl;
-    if (err == hipSuccess) {
-      std::cout << "DEBUG: Got device properties successfully" << std::endl;
-      std::string gcnArchName_str(props.gcnArchName);
-      std::cout << "DEBUG: gcnArchName: '" << gcnArchName_str << "'" << std::endl;
-      size_t colon_pos = gcnArchName_str.find(':');
-      if (colon_pos != std::string::npos) {
-        arch = gcnArchName_str.substr(0, colon_pos);
-      } else {
-        arch = gcnArchName_str;
-      }
-      std::cout << "DEBUG: Parsed arch: '" << arch << "'" << std::endl;
-
-      std::map<std::string, int> arch_to_cache_size = {
-          {"gfx906", 64},
-          {"gfx908", 64},
-          {"gfx90a", 128},
-          {"gfx940", 128},
-          {"gfx941", 128},
-          {"gfx942", 128}
-      };
-
-      if (arch_to_cache_size.count(arch)) {
-          cache_line_size = arch_to_cache_size[arch];
-          std::cout << "DEBUG: Set cache_line_size to: " << cache_line_size << std::endl;
-      }
+    // Check if this is JSON output with kernel filtering - if so, skip HIP call that hangs
+    const char* kernelFilter = std::getenv("LOGDUR_FILTER");
+    bool hasKernelFilter = (kernelFilter && strlen(kernelFilter) > 0);
+    
+    if (hasKernelFilter) {
+      std::cout << "DEBUG: Skipping GPU properties query for JSON output with kernel filtering to avoid hang" << std::endl;
+      std::cout << "DEBUG: Using default GPU info: arch='" << arch << "', cache_line_size=" << cache_line_size << std::endl;
     } else {
-      std::cout << "DEBUG: Failed to get device properties" << std::endl;
+      std::cout << "DEBUG: Calling hipGetDeviceProperties..." << std::endl;
+      hipDeviceProp_t props;
+      hipError_t err = hipGetDeviceProperties(&props, 0);
+      std::cout << "DEBUG: hipGetDeviceProperties call completed with result: " << err << std::endl;
+      if (err == hipSuccess) {
+        std::cout << "DEBUG: Got device properties successfully" << std::endl;
+        std::string gcnArchName_str(props.gcnArchName);
+        std::cout << "DEBUG: gcnArchName: '" << gcnArchName_str << "'" << std::endl;
+        size_t colon_pos = gcnArchName_str.find(':');
+        if (colon_pos != std::string::npos) {
+          arch = gcnArchName_str.substr(0, colon_pos);
+        } else {
+          arch = gcnArchName_str;
+        }
+        std::cout << "DEBUG: Parsed arch: '" << arch << "'" << std::endl;
+
+        std::map<std::string, int> arch_to_cache_size = {
+            {"gfx906", 64},
+            {"gfx908", 64},
+            {"gfx90a", 128},
+            {"gfx940", 128},
+            {"gfx941", 128},
+            {"gfx942", 128}
+        };
+
+        if (arch_to_cache_size.count(arch)) {
+            cache_line_size = arch_to_cache_size[arch];
+            std::cout << "DEBUG: Set cache_line_size to: " << cache_line_size << std::endl;
+        }
+      } else {
+        std::cout << "DEBUG: Failed to get device properties" << std::endl;
+      }
     }
 
     std::cout << "DEBUG: Writing GPU info to JSON" << std::endl;
