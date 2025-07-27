@@ -746,6 +746,7 @@ void memory_analysis_handler_t::report_json() {
   
   std::cout << "has_data: " << has_data << std::endl;
   std::cout << "dispatch_id_: " << dispatch_id_ << std::endl;
+  std::cout << "is_first_dispatch: " << is_first_dispatch << std::endl;
   // Write opening bracket for first dispatch (always for JSON format)
   // Also handle case where dispatch_id_ is uninitialized (0) but we have data
   if (is_first_dispatch || (dispatch_id_ == 0 && has_data)) {
