@@ -867,28 +867,39 @@ void memory_analysis_handler_t::report_json() {
   std::string arch = "unknown";
   int cache_line_size = 128; // default
   
-  hipDeviceProp_t props;
-  hipError_t err = hipGetDeviceProperties(&props, 0);
-  if (err == hipSuccess) {
-    std::string gcnArchName_str(props.gcnArchName);
-    size_t colon_pos = gcnArchName_str.find(':');
-    if (colon_pos != std::string::npos) {
-      arch = gcnArchName_str.substr(0, colon_pos);
-    } else {
-      arch = gcnArchName_str;
-    }
+  // In case of kernel filtering, multiple dispatches may processed sequentially, causing multiple calls to this hipGetDeviceProperties()
+  // Found that this race condition causes HIP call to hang.
+  // Check if this is JSON output with kernel filtering - if so, skip HIP call that hangs
+  const char* kernelFilter = std::getenv("LOGDUR_FILTER");
+  bool hasKernelFilter = (kernelFilter && strlen(kernelFilter) > 0);
 
-    std::map<std::string, int> arch_to_cache_size = {
-        {"gfx906", 64},
-        {"gfx908", 64},
-        {"gfx90a", 128},
-        {"gfx940", 128},
-        {"gfx941", 128},
-        {"gfx942", 128}
-    };
+  if (hasKernelFilter) {
+    std::cout << "DEBUG: Skipping GPU properties query for JSON output with kernel filtering to avoid contention" << std::endl;
+    std::cout << "DEBUG: Using default GPU info: arch='" << arch << "', cache_line_size=" << cache_line_size << std::endl;
+  } else {
+    hipDeviceProp_t props;
+    hipError_t err = hipGetDeviceProperties(&props, 0);
+    if (err == hipSuccess) {
+      std::string gcnArchName_str(props.gcnArchName);
+      size_t colon_pos = gcnArchName_str.find(':');
+      if (colon_pos != std::string::npos) {
+        arch = gcnArchName_str.substr(0, colon_pos);
+      } else {
+        arch = gcnArchName_str;
+      }
 
-    if (arch_to_cache_size.count(arch)) {
-        cache_line_size = arch_to_cache_size[arch];
+      std::map<std::string, int> arch_to_cache_size = {
+          {"gfx906", 64},
+          {"gfx908", 64},
+          {"gfx90a", 128},
+          {"gfx940", 128},
+          {"gfx941", 128},
+          {"gfx942", 128}
+      };
+
+      if (arch_to_cache_size.count(arch)) {
+          cache_line_size = arch_to_cache_size[arch];
+      }
     }
   }
 
