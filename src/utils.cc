@@ -1059,7 +1059,7 @@ void KernelArgHelper::computeKernargData(amd_comgr_metadata_node_t exec_map)
                     }
                 }
             }
-            desc.explicit_args_length = roundArgsLength(desc.explicit_args_length);
+            desc.explicit_args_length = std::min(roundArgsLength(desc.explicit_args_length), desc.kernarg_length);
             desc.hidden_args_length = desc.kernarg_length - desc.explicit_args_length;
             kernels_[strName] = desc;
         }
