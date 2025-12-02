@@ -187,7 +187,7 @@ public:
     void addCodeObject(const char *bits, size_t length);
     bool getArgDescriptor(const std::string& strName, arg_descriptor_t& desc);
     static void getElfSectionBits(const std::string &fileName, const std::string &sectionName, std::vector<uint8_t>& sectionData);
-    static amd_comgr_code_object_info_t getCodeObjectInfo(hsa_agent_t agent, std::vector<uint8_t>& bits);
+    static std::vector<amd_comgr_code_object_info_t> getCodeObjectInfo(hsa_agent_t agent, std::vector<uint8_t>& bits);
     static void getSharedLibraries(std::vector<std::string>& libraries);
 private:
     std::string get_metadata_string(amd_comgr_metadata_node_t node);

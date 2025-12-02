@@ -319,11 +319,8 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
     hsa_status_t status;
     std::vector<uint8_t> co_bits;
 
-    // Create executable.
-    hsa_executable_t executable;
-    status = apiTable_->core_->hsa_executable_create_alt_fn(HSA_PROFILE_FULL, HSA_DEFAULT_FLOAT_ROUNDING_MODE_DEFAULT,
-                                         NULL, &executable);
-    CHECK_STATUS("Error in creating executable object", status);
+    // Vector to hold executables (one for .hsaco, possibly multiple for fat binaries)
+    std::vector<hsa_executable_t> executables;
     KernelArgHelper *p_kh = NULL;
 
     // Open the file containing code object
@@ -334,6 +331,12 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
             assert(false);
             return false;
         }
+
+        // Create executable.
+        hsa_executable_t executable;
+        status = apiTable_->core_->hsa_executable_create_alt_fn(HSA_PROFILE_FULL, HSA_DEFAULT_FLOAT_ROUNDING_MODE_DEFAULT,
+                                             NULL, &executable);
+        CHECK_STATUS("Error in creating executable object", status);
 
         // Create code object reader
         status = apiTable_->core_->hsa_code_object_reader_create_from_file_fn(file_handle, &code_obj_rdr);
@@ -352,6 +355,8 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
         }
         else
             CHECK_STATUS("Error in loading executable object", status);
+
+        executables.push_back(executable);
         p_kh = new KernelArgHelper(name);
     }
     else
@@ -359,118 +364,138 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
         KernelArgHelper::getElfSectionBits(name,std::string(".hip_fatbin"), co_bits);
         if (co_bits.size())
         {
-            amd_comgr_code_object_info_t info = KernelArgHelper::getCodeObjectInfo(agent, co_bits);
-            if (info.size)
+            std::vector<amd_comgr_code_object_info_t> code_objects = KernelArgHelper::getCodeObjectInfo(agent, co_bits);
+
+            // Create and load an executable for each code object
+            for (const auto& info : code_objects)
             {
-                status = apiTable_->core_->hsa_code_object_reader_create_from_memory_fn(co_bits.data() + info.offset, info.size, &code_obj_rdr);
-                if (status != HSA_STATUS_SUCCESS)
-                    throw std::runtime_error("Could not create code reader from fat binary bits");
-                status = apiTable_->core_->hsa_executable_load_agent_code_object_fn(executable, agent, code_obj_rdr, NULL, NULL);
-                if (status != HSA_STATUS_SUCCESS)
-                    throw std::runtime_error("Could not load code object from fat binary bits");
+                if (info.size)
+                {
+                    hsa_executable_t executable;
+                    status = apiTable_->core_->hsa_executable_create_alt_fn(HSA_PROFILE_FULL, HSA_DEFAULT_FLOAT_ROUNDING_MODE_DEFAULT,
+                                                         NULL, &executable);
+                    CHECK_STATUS("Error in creating executable object", status);
+
+                    status = apiTable_->core_->hsa_code_object_reader_create_from_memory_fn(co_bits.data() + info.offset, info.size, &code_obj_rdr);
+                    if (status != HSA_STATUS_SUCCESS)
+                        throw std::runtime_error("Could not create code reader from fat binary bits");
+                    status = apiTable_->core_->hsa_executable_load_agent_code_object_fn(executable, agent, code_obj_rdr, NULL, NULL);
+                    if (status != HSA_STATUS_SUCCESS)
+                        throw std::runtime_error("Could not load code object from fat binary bits");
+
+                    executables.push_back(executable);
+                }
             }
+            // Create KernelArgHelper once - its constructor already handles all code objects
             p_kh = new KernelArgHelper(agent, co_bits);
         }
         else
             return false;
     }
 
-
-
-    // Freeze executable.
-    status = apiTable_->core_->hsa_executable_freeze_fn(executable, "");
-    //std::cerr << "Status on freeze: " << std::hex << status << std::endl;
-    CHECK_STATUS("Error in freezing executable object", status);
-
-    // Get symbol handle.
-    hsa_executable_symbol_t kernelSymbol;
-    std::vector<hsa_executable_symbol_t> symbols;
-    status = apiTable_->core_->hsa_executable_iterate_symbols_fn(executable, [](hsa_executable_t exec, hsa_executable_symbol_t symbol, void *data){
-        std::vector<hsa_executable_symbol_t> *syms = reinterpret_cast<std::vector<hsa_executable_symbol_t> *>(data);
-        syms->push_back(symbol);
-        return HSA_STATUS_SUCCESS;
-    }, reinterpret_cast<void *>(&symbols));
-
-    //KernelArgHelper kh(name);
-
-    //cerr << "coCache found " << symbols.size() << " symbols\n";
-    for (auto sym : symbols)
+    // Process all executables to extract symbols
+    for (auto executable : executables)
     {
-        hsa_symbol_kind_t kind;
-        CHECK_STATUS("Unable to get valid symbol info", apiTable_->core_->hsa_executable_symbol_get_info_fn(sym,HSA_EXECUTABLE_SYMBOL_INFO_TYPE,&kind));
-        if (kind == HSA_SYMBOL_KIND_KERNEL)
+        // Freeze executable.
+        status = apiTable_->core_->hsa_executable_freeze_fn(executable, "");
+        //std::cerr << "Status on freeze: " << std::hex << status << std::endl;
+        CHECK_STATUS("Error in freezing executable object", status);
+
+        // Get symbol handle.
+        hsa_executable_symbol_t kernelSymbol;
+        std::vector<hsa_executable_symbol_t> symbols;
+        status = apiTable_->core_->hsa_executable_iterate_symbols_fn(executable, [](hsa_executable_t exec, hsa_executable_symbol_t symbol, void *data){
+            std::vector<hsa_executable_symbol_t> *syms = reinterpret_cast<std::vector<hsa_executable_symbol_t> *>(data);
+            syms->push_back(symbol);
+            return HSA_STATUS_SUCCESS;
+        }, reinterpret_cast<void *>(&symbols));
+
+        //KernelArgHelper kh(name);
+
+        //cerr << "coCache found " << symbols.size() << " symbols\n";
+        for (auto sym : symbols)
         {
+            hsa_symbol_kind_t kind;
+            CHECK_STATUS("Unable to get valid symbol info", apiTable_->core_->hsa_executable_symbol_get_info_fn(sym,HSA_EXECUTABLE_SYMBOL_INFO_TYPE,&kind));
+            if (kind == HSA_SYMBOL_KIND_KERNEL)
             {
-                lock_guard<std::mutex> lock(mutex_);
-                auto it = kernels_.find(agent);
-                if (it != kernels_.end())
-                    it->second.push_back(sym);
-                else
-                    kernels_[agent].push_back(sym);
-            }
-
-            uint64_t kernel_object;
-
-            CHECK_STATUS("Can't retrieve a kernel object from a valid symbol", apiTable_->core_->hsa_executable_symbol_get_info_fn(sym, HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_OBJECT, reinterpret_cast<void *>(&kernel_object)));
-            uint32_t length;
-            CHECK_STATUS("Can't retrieve the length of kernel name from a valid symbol",
-                apiTable_->core_->hsa_executable_symbol_get_info_fn(sym, HSA_EXECUTABLE_SYMBOL_INFO_NAME_LENGTH,&length));
-            char *name = reinterpret_cast<char *>(malloc(length + 1));
-            if (name)
-            {
-                name[length] = '\0';
-                CHECK_STATUS("Can't retrieve name from valid symbol", apiTable_->core_->hsa_executable_symbol_get_info_fn(sym, HSA_EXECUTABLE_SYMBOL_INFO_NAME, name));
-                std::string mangledName(name);
-
-                string strName = demangleName(name);
-                //std::cout << "Kernel Name Found: " << strName << std::endl;
-                // If a kernel filter was supplied, match the demangled name to the filter. If there's no match,
-                // skip this symbol because we don't want to run instrumented for kernels whose names don't
-                // match on the filter
-                if (strFilter.size())
-                {
-                    try
-                    {
-                        std::regex filter_regex(strFilter, std::regex_constants::ECMAScript);
-                        if (!std::regex_search(strName, filter_regex))
-                            continue;
-                    }
-                    catch(const std::regex_error& error)
-                    {
-                        std::cout << "ERROR: There is a problem with your kernel filter (\"" << strFilter << "\"):\n";
-                        std::cout << "\t" << error.what() << std::endl;
-                        abort();
-                    }
-                }
-                arg_descriptor_t desc;
-                if (p_kh->getArgDescriptor(strName, desc))
-                {
-                   //std::cerr << "Adding arg descriptor to coCache for " << strName << " of length " << std::dec << strName.size() << std::endl;
-                   lock_guard<std::mutex> lock(mutex_);
-                   auto itMap = arg_map_.find(agent);
-                   if (itMap != arg_map_.end())
-                       itMap->second[strName] = desc;
-                   else
-                        arg_map_[agent] = {{strName, desc}};
-                }
-                else
-                    std::cerr << "Unable to find arg descriptor for " << strName << std::endl;
-                free(reinterpret_cast<void *>(name));
                 {
                     lock_guard<std::mutex> lock(mutex_);
-                    auto it = lookup_map_.find(agent);
-                    if (it != lookup_map_.end())
-                        it->second[strName] = sym;
+                    auto it = kernels_.find(agent);
+                    if (it != kernels_.end())
+                        it->second.push_back(sym);
                     else
-                        lookup_map_[agent] = {{strName,sym}};
+                        kernels_[agent].push_back(sym);
+                }
+
+                uint64_t kernel_object;
+
+                CHECK_STATUS("Can't retrieve a kernel object from a valid symbol", apiTable_->core_->hsa_executable_symbol_get_info_fn(sym, HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_OBJECT, reinterpret_cast<void *>(&kernel_object)));
+                uint32_t length;
+                CHECK_STATUS("Can't retrieve the length of kernel name from a valid symbol",
+                    apiTable_->core_->hsa_executable_symbol_get_info_fn(sym, HSA_EXECUTABLE_SYMBOL_INFO_NAME_LENGTH,&length));
+                char *name = reinterpret_cast<char *>(malloc(length + 1));
+                if (name)
+                {
+                    name[length] = '\0';
+                    CHECK_STATUS("Can't retrieve name from valid symbol", apiTable_->core_->hsa_executable_symbol_get_info_fn(sym, HSA_EXECUTABLE_SYMBOL_INFO_NAME, name));
+                    std::string mangledName(name);
+
+                    string strName = demangleName(name);
+                    //std::cout << "Kernel Name Found: " << strName << std::endl;
+                    // If a kernel filter was supplied, match the demangled name to the filter. If there's no match,
+                    // skip this symbol because we don't want to run instrumented for kernels whose names don't
+                    // match on the filter
+                    if (strFilter.size())
+                    {
+                        try
+                        {
+                            std::regex filter_regex(strFilter, std::regex_constants::ECMAScript);
+                            if (!std::regex_search(strName, filter_regex))
+                                continue;
+                        }
+                        catch(const std::regex_error& error)
+                        {
+                            std::cout << "ERROR: There is a problem with your kernel filter (\"" << strFilter << "\"):\n";
+                            std::cout << "\t" << error.what() << std::endl;
+                            abort();
+                        }
+                    }
+                    arg_descriptor_t desc;
+                    if (p_kh->getArgDescriptor(strName, desc))
+                    {
+                       //std::cerr << "Adding arg descriptor to coCache for " << strName << " of length " << std::dec << strName.size() << std::endl;
+                       lock_guard<std::mutex> lock(mutex_);
+                       auto itMap = arg_map_.find(agent);
+                       if (itMap != arg_map_.end())
+                           itMap->second[strName] = desc;
+                       else
+                            arg_map_[agent] = {{strName, desc}};
+                    }
+                    else
+                        std::cerr << "Unable to find arg descriptor for " << strName << std::endl;
+                    free(reinterpret_cast<void *>(name));
+                    {
+                        lock_guard<std::mutex> lock(mutex_);
+                        auto it = lookup_map_.find(agent);
+                        if (it != lookup_map_.end())
+                            it->second[strName] = sym;
+                        else
+                            lookup_map_[agent] = {{strName,sym}};
+                    }
                 }
             }
         }
+
+        // TODO: cache_objects_[agent] currently stores only one executable per agent.
+        // With multiple code objects in fat binaries, this will overwrite previous executables.
+        // Consider changing cache_objects_ to support multiple executables per agent.
+        {
+            lock_guard<std::mutex> lock(mutex_);
+            cache_objects_[agent] = {executable, name, std::chrono::system_clock::now()};
+        }
     }
-    {
-        lock_guard<std::mutex> lock(mutex_);
-        cache_objects_[agent] = {executable, name, std::chrono::system_clock::now()};
-    }
+
     close(file_handle);
     delete p_kh;
     return bResult;
@@ -904,42 +929,41 @@ std::vector<size_t> findCodeObjectOffsets(hsa_agent_t agent, std::vector<uint8_t
  *      is used to create an executable which can be used to query kernel argument metadata for any kernels in
  *      the code object. */
 
-amd_comgr_code_object_info_t KernelArgHelper::getCodeObjectInfo(hsa_agent_t agent, std::vector<uint8_t>& bits)
+std::vector<amd_comgr_code_object_info_t> KernelArgHelper::getCodeObjectInfo(hsa_agent_t agent, std::vector<uint8_t>& bits)
 {
-    auto code_object_offsets =  findCodeObjectOffsets(agent, bits);
-    size_t co_idx = 0;
-    if (code_object_offsets.size() > 5)
-        co_idx = 5; // Pick the 5th code object if there are that many
+    std::vector<amd_comgr_code_object_info_t> results;
+    auto code_object_offsets = findCodeObjectOffsets(agent, bits);
 
-    amd_comgr_data_t bundle;
-    std::vector<std::string> isas = getIsaList(agent);
-    CHECK_COMGR(amd_comgr_create_data(AMD_COMGR_DATA_KIND_FATBIN, &bundle));
-    CHECK_COMGR(amd_comgr_set_data(bundle, bits.size() - code_object_offsets[co_idx],
-                                   reinterpret_cast<const char *>(bits.data() + code_object_offsets[co_idx])));
-    if (isas.size())
+    for(size_t co_idx = 0; co_idx != code_object_offsets.size(); ++co_idx)
     {
-        std::vector<amd_comgr_code_object_info_t> ql;
-        for (int i = 0; i < isas.size(); i++)
-            ql.push_back({isas[i].c_str(),0,0});
-        //for(auto co : ql)
-        //    std::cerr << "{" << co.isa << "," << co.size << "," << co.offset << "}" << std::endl;
-        //std::cerr << "query list size: " << ql.size() << std::endl;
-        CHECK_COMGR(amd_comgr_lookup_code_object(bundle,static_cast<amd_comgr_code_object_info_t *>(ql.data()), ql.size()));
-        for (auto co : ql)
+        amd_comgr_data_t bundle;
+        std::vector<std::string> isas = getIsaList(agent);
+        CHECK_COMGR(amd_comgr_create_data(AMD_COMGR_DATA_KIND_FATBIN, &bundle));
+        CHECK_COMGR(amd_comgr_set_data(bundle, bits.size() - code_object_offsets[co_idx],
+                                       reinterpret_cast<const char *>(bits.data() + code_object_offsets[co_idx])));
+        if (isas.size())
         {
-            co.offset += code_object_offsets[co_idx];
-            //std::cerr << "After query: " << std::endl;
-            //std::cerr << "{" << co.isa << "," << co.size << "," << co.offset << "}" << std::endl;
-            /* Use the first code object that is ISA-compatible with this agent */
-            if (co.size != 0)
+            std::vector<amd_comgr_code_object_info_t> ql;
+            for (int i = 0; i < isas.size(); i++)
+                ql.push_back({isas[i].c_str(), 0, 0});
+
+            CHECK_COMGR(amd_comgr_lookup_code_object(bundle, static_cast<amd_comgr_code_object_info_t *>(ql.data()), ql.size()));
+
+            for (auto co : ql)
             {
-                CHECK_COMGR(amd_comgr_release_data(bundle));
-                return co;
+                co.offset += code_object_offsets[co_idx];
+                /* Collect all ISA-compatible code objects */
+                if (co.size != 0)
+                {
+                    results.push_back(co);
+                    break;  // Only take the first compatible ISA for this bundle offset
+                }
             }
         }
+        CHECK_COMGR(amd_comgr_release_data(bundle));
     }
-    CHECK_COMGR(amd_comgr_release_data(bundle));
-    return {0,0,0};
+
+    return results;
 }
 
 KernelArgHelper::KernelArgHelper(hsa_agent_t agent, std::vector<uint8_t>& bits)
@@ -949,34 +973,34 @@ KernelArgHelper::KernelArgHelper(hsa_agent_t agent, std::vector<uint8_t>& bits)
      * Since fat binaries can contain code objects for multiple ISAs, we use
      * the supplied agent to find a code object that will run on that agent */
     auto code_object_offsets =  findCodeObjectOffsets(agent, bits);
-    size_t co_idx = 0;
-    if (code_object_offsets.size() > 5)
-        co_idx = 5; // Pick the 5th code object if there are that many
-
-    amd_comgr_data_t bundle;
-    std::vector<std::string> isas = getIsaList(agent);
-    CHECK_COMGR(amd_comgr_create_data(AMD_COMGR_DATA_KIND_FATBIN, &bundle));
-    CHECK_COMGR(amd_comgr_set_data(bundle, bits.size() - code_object_offsets[co_idx],
-                                   reinterpret_cast<const char *>(bits.data() + code_object_offsets[co_idx])));
-    if (isas.size())
+    for(size_t co_idx = 0; co_idx != code_object_offsets.size(); ++co_idx)
     {
-        std::vector<amd_comgr_code_object_info_t> ql;
-        for (int i = 0; i < isas.size(); i++)
-            ql.push_back({isas[i].c_str(),0,0});
-        CHECK_COMGR(amd_comgr_lookup_code_object(bundle,static_cast<amd_comgr_code_object_info_t *>(ql.data()), ql.size()));
-        for (auto co : ql)
+        amd_comgr_data_t bundle;
+        std::vector<std::string> isas = getIsaList(agent);
+        CHECK_COMGR(amd_comgr_create_data(AMD_COMGR_DATA_KIND_FATBIN, &bundle));
+        CHECK_COMGR(amd_comgr_set_data(bundle, bits.size() - code_object_offsets[co_idx],
+                                       reinterpret_cast<const char *>(bits.data() + code_object_offsets[co_idx])));
+        if (isas.size())
         {
-            co.offset += code_object_offsets[co_idx];
-            /* Use the first code object that is ISA-compatible with this agent */
-            if (co.size != 0)
+            std::vector<amd_comgr_code_object_info_t> ql;
+            for (int i = 0; i < isas.size(); i++)
+                ql.push_back({isas[i].c_str(),0,0});
+            CHECK_COMGR(amd_comgr_lookup_code_object(bundle,static_cast<amd_comgr_code_object_info_t *>(ql.data()), ql.size()));
+            for (auto co : ql)
             {
-                addCodeObject(reinterpret_cast<const char *>(bits.data() + co.offset), co.size);
-                break;
+                co.offset += code_object_offsets[co_idx];
+                /* Use the first code object that is ISA-compatible with this agent */
+                if (co.size != 0)
+                {
+                    addCodeObject(reinterpret_cast<const char *>(bits.data() + co.offset), co.size);
+                    break;
+                }
             }
         }
+        CHECK_COMGR(amd_comgr_release_data(bundle));
     }
-    CHECK_COMGR(amd_comgr_release_data(bundle));
 }
+
 
 /* Given the bits of a code object, create an instance of a comgr executable
  * and siphon out all of the kernel argument metadata needed later on
