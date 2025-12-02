@@ -625,6 +625,15 @@ void dumpKernArgs(void *args, uint32_t size)
 
 void hsaInterceptor::fixupKernArgs(void *dst, void *src, void *comms, arg_descriptor_t desc)
 {
+    // std::cout << "Fixing up kernargs\n";
+    // std::cout << "  explicit_args_length: " << desc.explicit_args_length << std::endl;
+    // std::cout << "  explicit_args_count: " << desc.explicit_args_count << std::endl;
+    // std::cout << "  hidden_args_length: " << desc.hidden_args_length << std::endl;
+    // std::cout << "  kernarg_length: " << desc.kernarg_length << std::endl;
+    // std::cout << "  private_segment_size: " << desc.private_segment_size << std::endl;
+    // std::cout << "  group_segment_size: " << desc.group_segment_size << std::endl;
+    // std::cout << "  clone_hidden_args_length: " << desc.clone_hidden_args_length << std::endl;
+
     assert(dst);
     assert(src);
     memset(dst, 0, desc.kernarg_length);
