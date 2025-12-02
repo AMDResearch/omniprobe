@@ -271,6 +271,8 @@ bool coCache::hasKernels(hsa_agent_t agent)
 
 bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descriptor_t& desc, bool instrumented)
 {
+    // std::cout << "coCache::getArgDescriptor for agent " << agent.handle << " and kernel " << name << " (instrumented=" << instrumented << ")" << std::endl;
+    // std::cout << "clone_hidden_args_length before lookup: " << desc.clone_hidden_args_length << std::endl;
     bool bReturn = false;
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = arg_map_.find(agent);
@@ -279,10 +281,12 @@ bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descrip
     {
         std::string strName;
         if (instrumented)
-        {
+        { 
             auto itclone = it->second.find(name);
             if (itclone != it->second.end())
             {
+                // std::cout << "itclone->second.kernarg_length: " << itclone->second.kernarg_length << std::endl;
+                // std::cout << "itclone->second.explicit_args_length: " << itclone->second.explicit_args_length << std::endl;
                 // If there are hidden arguments in the clone, compute how many bytes of kernarg data comprises the hidden kernargs.
                 if (itclone->second.hidden_args_length)
                     clone_hidden_args_length = itclone->second.kernarg_length - itclone->second.explicit_args_length;
@@ -301,6 +305,7 @@ bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descrip
             bReturn = true;
         }
     }
+    //std::cout << "clone_hidden_args_length after lookup: " << desc.clone_hidden_args_length << std::endl;
     return bReturn;
 }
 
