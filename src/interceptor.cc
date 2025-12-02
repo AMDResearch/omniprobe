@@ -140,9 +140,9 @@ void hsaInterceptor::cleanup()
 }
 
 
-hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uint64_t failed_tool_count, const char* const* failed_tool_names) : 
-    signal_runner_(signal_runner), cache_watcher_(cache_watcher), kernel_cache_(table), allocator_(table, std::cerr), 
-        comms_mgr_(table), comms_runner_(comms_runner, std::ref(comms_mgr_)) 
+hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uint64_t failed_tool_count, const char* const* failed_tool_names) :
+    signal_runner_(signal_runner), cache_watcher_(cache_watcher), kernel_cache_(table), allocator_(table, std::cerr),
+        comms_mgr_(table), comms_runner_(comms_runner, std::ref(comms_mgr_))
 {
     apiTable_ = table;
     getLogDurConfig(config_);
@@ -171,7 +171,7 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                         hsa_device_type_t type;
                         hsa_status_t status = hsa_agent_get_info(agent, HSA_AGENT_INFO_DEVICE, static_cast<void *>(&type));
                         if (status == HSA_STATUS_SUCCESS && type == HSA_DEVICE_TYPE_GPU)
-                            agents->emplace_back(agent); 
+                            agents->emplace_back(agent);
                         return HSA_STATUS_SUCCESS;
                     }, reinterpret_cast<void *>(&gpus))== HSA_STATUS_SUCCESS)
                 {
@@ -204,7 +204,7 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                                      * these files will cause addFile() to throw a runtime exception.
                                      * these exceptions are benign for our purposes because any shared lib
                                      * we might be interested in (i.e. the ones that contain .hip_fatbin sections)
-                                     * will enumerate from getSharedLibraries with a full path to the file. 
+                                     * will enumerate from getSharedLibraries with a full path to the file.
                                      * so we catch this exception and continue */
                                     continue;
                                 }
@@ -267,7 +267,7 @@ bool hsaInterceptor::addCodeObject(const std::string& name)
                 if (it != kdbs_.end())
                     it->second.get()->addFile(name, agent, config_["LOGDUR_FILTER"]);
                 else
-                    kdbs_[agent] = std::make_unique<kernelDB::kernelDB>(agent, name); 
+                    kdbs_[agent] = std::make_unique<kernelDB::kernelDB>(agent, name);
             }
         }
     }
@@ -308,7 +308,7 @@ void hsaInterceptor::signalCompleted(const hsa_signal_t sig)
     {
         kernel_info_t ki = it->second;
         pending_signals_.erase(sig);
-        // If the application originally provided a completion_signal 
+        // If the application originally provided a completion_signal
         // We need to decrement it to ensure application behavior isn't affected.
         if (ki.signal_.handle)
         {
@@ -372,9 +372,9 @@ void cache_watcher()
             exit(EXIT_FAILURE);
         }
         auto files = util_get_directory_files(dir, true);
-        for (const auto& entry : files) 
+        for (const auto& entry : files)
         {
-            if (util_is_directory(entry)) 
+            if (util_is_directory(entry))
             {
                 int wd = inotify_add_watch(fd, entry.c_str(), IN_CREATE | IN_DELETE | IN_MODIFY | IN_MOVED_FROM | IN_MOVED_TO);
                 if (wd != -1)
@@ -477,7 +477,7 @@ void cache_watcher()
                                     if (strFileName.ends_with(".hsaco"))
                                     {
                                       //  cerr << "I CAN SEE JITTED CODE OBJECT " << strFileName << std::endl;
-                                        me->addCodeObject(strFileName);                                        
+                                        me->addCodeObject(strFileName);
                                     }
                                     //else
                                     //    cerr << "The file/directory " << event->name << " was moved to directory " << watch_map[event->wd] << std::endl;
@@ -640,7 +640,7 @@ void hsaInterceptor::fixupKernArgs(void *dst, void *src, void *comms, arg_descri
     //void *hidden_args_src = &(((void **)src)[desc.explicit_args_count - 1]);
     void *hidden_args_src = &(((char *)src)[desc.explicit_args_length - sizeof(void *)]);
     // In Triton, for some reason we sometimes get non-instrumented kernsl with no hidden arguments
-    // So we only want to copy hidden arguments if there ARE some. If there are, the length to 
+    // So we only want to copy hidden arguments if there ARE some. If there are, the length to
     // copy is the original size of the kernarg data - the size of explicit arguments. But since its
     // a kernarg segment from a non-instrumented clone, we subtract one from the arg count
     if (desc.clone_hidden_args_length)
@@ -652,9 +652,9 @@ void hsaInterceptor::fixupKernArgs(void *dst, void *src, void *comms, arg_descri
     /* The weird thing here is that, apparently, kernel arguments are 4-byteb aligned
      * regardless of the actual argument size. This really bit me working on this code
      * because the metadata on kernel objects that is retrievable from comgr shows argument lengths
-     * and at first I was using the argument length to repack the kernel arguments with the 
+     * and at first I was using the argument length to repack the kernel arguments with the
      * newly inserted void * created by the instrumentation code. But after staring
-     * at hex dumps, I realized that all of the kernel arguments (at least the explicit arguments, 
+     * at hex dumps, I realized that all of the kernel arguments (at least the explicit arguments,
      * I'm not sure about the hidden arguments) are 4-byte aligned regardless of the inherent argument
      * size. I don't know how portable this is between code object versions. I'm assuming it is some
      * aspect of code object first combined with the expecations of the GPU firmware.
@@ -662,21 +662,21 @@ void hsaInterceptor::fixupKernArgs(void *dst, void *src, void *comms, arg_descri
     //void **comms_loc = &(((void **)dst)[desc.explicit_args_count  - 1]);
     // This computation using explicit_args_length is more adaptable to changes in the way the compiler
     // and runtime pack kernel arguments. For example 2 four-byte args might be packed into a single
-    // 64 bit slot and the individual parms might not be 64-bit aligned. For any kernel where that 
+    // 64 bit slot and the individual parms might not be 64-bit aligned. For any kernel where that
     // turns out to be the case, this address calculation with be resilient whether the args
     // are packed or not.
     void **comms_loc = (void **)&(((char *)dst)[desc.explicit_args_length  - sizeof(void *)]);
     *comms_loc = comms;
-    //dumpKernArgs(dst, src, desc);
+    // dumpKernArgs(dst, src, desc);
 }
 
 /*
     This function is the core of functionality for logDuration. It's where completion signals are set up for tracking so that
-    at kernel completion we can extract start/stop times from the signal. It's also where "alternative" kernels - those found 
+    at kernel completion we can extract start/stop times from the signal. It's also where "alternative" kernels - those found
     in the kernel cache pointed to by LOGDUR_KERNEL_CACHE - are used to replace the kernel_object in the dispatch packet with
-    the kernel cache alternative. Also, whenever replacing the original kernel_object with an alternative, this function 
+    the kernel cache alternative. Also, whenever replacing the original kernel_object with an alternative, this function
     allocates a new kernarg structure, initializes it to zeros, and copies the original kernarg buffer into the new one.
-    Pending signals and the alternative kernarg buffers are stored and processed later when the kernel completes and 
+    Pending signals and the alternative kernarg buffers are stored and processed later when the kernel completes and
     hsaIntereceptor::signalComplete is called.
 */
 hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_dispatch_packet_t *packet, hsa_queue_t *queue, uint64_t dispatch_id)
@@ -808,10 +808,10 @@ void hsaInterceptor::doPackets(hsa_queue_t *queue, const packet_t *packet, uint6
 
 void hsaInterceptor::addQueue(hsa_queue_t *queue, hsa_agent_t agent)
 {
-    // This call results in completion signals having start and stop timestamps on dispatches 
+    // This call results in completion signals having start and stop timestamps on dispatches
     auto result = (*(apiTable_->amd_ext_->hsa_amd_profiling_set_profiler_enabled_fn))(queue, true);
     assert(result == HSA_STATUS_SUCCESS && "Couldn't enable queue for profiling");
-    
+
     lock_guard<mutex> lock(mutex_);
 
     queues_[queue] = agent;
@@ -880,7 +880,7 @@ void hsaInterceptor::addKernel(uint64_t kernelObject, std::string& name, hsa_exe
         kernel_objects_[kernelObject] = {thisName.length() ? thisName : name, symbol, agent, kernarg_size};
    }
 }
- 
+
 hsa_status_t hsaInterceptor::hsa_executable_symbol_get_info(hsa_executable_symbol_t symbol, hsa_executable_symbol_info_t attribute, void *data)
 {
     hsa_status_t result = HSA_STATUS_SUCCESS;
