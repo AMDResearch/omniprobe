@@ -214,7 +214,7 @@ public:
     handlerManager();
     handlerManager(const std::vector<std::string>& handlers);
     ~handlerManager();
-    void getMessageHandlers(const std::string& strKernel, uint64_t dispatch_id, std::vector<dh_comms::message_handler_base *>& outHandlers); 
+    void getMessageHandlers(const std::string& strKernel, uint64_t dispatch_id, std::vector<dh_comms::message_handler_base *>& outHandlers);
     bool setHandlers(const std::vector<std::string>& handlers);
 private:
     std::map<void *, getMessageHandlers_t> plugins_;
@@ -290,7 +290,7 @@ static inline size_t split(std::string const& s,
                 // append the current field to the given container
                 container.push_back(std::string(first, it));
                 ++n;
-                
+
                 // skip the delimiter
                 first = it + 1;
             }
