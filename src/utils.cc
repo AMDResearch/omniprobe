@@ -281,7 +281,7 @@ bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descrip
     {
         std::string strName;
         if (instrumented)
-        { 
+        {
             auto itclone = it->second.find(name);
             if (itclone != it->second.end())
             {
@@ -804,6 +804,89 @@ KernelArgHelper::~KernelArgHelper()
 {
 }
 
+std::vector<size_t> findCodeObjectOffsets(hsa_agent_t agent, std::vector<uint8_t>& bits)
+{
+    std::cout << "=== Analyzing Clang Offload Bundle structure ===" << std::endl;
+    // std::cout << "Bundle size: " << bits.size() << " bytes" << std::endl;
+
+    const char* CLANG_OFFLOAD_MAGIC = "__CLANG_OFFLOAD_BUNDLE__";
+    const size_t MAGIC_SIZE = 24;
+    const size_t ALIGNMENT = 4096; // 4096-byte alignment
+
+    std::vector<size_t> bundle_offsets;
+    size_t search_offset = 0;
+
+    // Search for Clang Offload Bundles using calculated positions
+    while (search_offset < bits.size()) {
+        // Check if there's a valid bundle at this position
+        if (search_offset + MAGIC_SIZE > bits.size()) {
+            break;
+        }
+
+        // Validate that the data starts with "__CLANG_OFFLOAD_BUNDLE__"
+        if (memcmp(bits.data() + search_offset, CLANG_OFFLOAD_MAGIC, MAGIC_SIZE) != 0) {
+            std::cout << "No bundle found at expected position 0x" << std::hex << search_offset << std::dec << ", stopping search" << std::endl;
+            break;
+        }
+
+        bundle_offsets.push_back(search_offset);
+        // std::cout << "Found Clang Offload Bundle at offset: 0x" << std::hex << search_offset << std::dec << " (" << search_offset << ")" << std::endl;
+
+        // Calculate the next bundle position
+        if (search_offset + MAGIC_SIZE + 8 > bits.size()) {
+            break;
+        }
+
+        uint64_t num_bundles = *reinterpret_cast<const uint64_t*>(bits.data() + search_offset + MAGIC_SIZE);
+        // std::cout << "Number of sub-bundles: " << num_bundles << std::endl;
+
+        size_t offset = search_offset + MAGIC_SIZE + 8;
+        uint64_t last_bundle_end = 0; // Track the furthest end position relative to bundle start
+
+        // Parse sub-bundles to find their details and the maximum end position
+        for (uint64_t i = 0; i < num_bundles && offset + 24 <= bits.size(); i++) {
+            uint64_t bundle_offset = *reinterpret_cast<const uint64_t*>(bits.data() + offset);
+            uint64_t bundle_size = *reinterpret_cast<const uint64_t*>(bits.data() + offset + 8);
+            uint64_t triple_size = *reinterpret_cast<const uint64_t*>(bits.data() + offset + 16);
+
+            offset += 24;
+            if (offset + triple_size > bits.size()) break;
+
+            // Read triple string
+            std::string triple(reinterpret_cast<const char*>(bits.data() + offset), triple_size);
+            if (!triple.empty() && triple.back() == '\0') {
+                triple.pop_back(); // Remove null terminator
+            }
+            offset += triple_size;
+
+            uint64_t bundle_end = bundle_offset + bundle_size;
+
+            // std::cout << "Sub-bundle " << i << ":" << std::endl;
+            // std::cout << "  Triple: " << triple << std::endl;
+            // std::cout << "  Offset: 0x" << std::hex << bundle_offset << std::dec << " (" << bundle_offset << ")" << std::endl;
+            // std::cout << "  Size: " << bundle_size << " bytes" << std::endl;
+            // std::cout << "  End: 0x" << std::hex << bundle_end << std::dec << std::endl;
+            // std::cout << "  Status: " << (search_offset + bundle_end <= bits.size() ? "Valid" : "Invalid") << std::endl;
+            // std::cout << std::endl;
+
+            // Track the last sub-bundle end position (relative to bundle start)
+            if (i == num_bundles - 1) {
+                last_bundle_end = bundle_end;
+            }
+        }
+
+        // Calculate absolute end position and round up to next 4096-byte boundary
+        uint64_t absolute_end = search_offset + last_bundle_end;
+        search_offset = ((absolute_end + ALIGNMENT - 1) / ALIGNMENT) * ALIGNMENT;
+        // std::cout << "Next bundle search position: 0x" << std::hex << search_offset << std::dec << std::endl;
+        // std::cout << std::endl;
+    }
+
+    std::cout << "Total Clang Offload Bundles found: " << bundle_offsets.size() << std::endl;
+    std::cout << "=== End analysis ===" << std::endl;
+    return bundle_offsets;
+}
+
 /*
  * The bits vector passed to this function is created by reading the .fatbin section of an elf binary.
  * These bits take the form of a bundle of code objects, with each code object in the bundle representing
@@ -823,10 +906,16 @@ KernelArgHelper::~KernelArgHelper()
 
 amd_comgr_code_object_info_t KernelArgHelper::getCodeObjectInfo(hsa_agent_t agent, std::vector<uint8_t>& bits)
 {
-    amd_comgr_data_t executable, bundle;
+    auto code_object_offsets =  findCodeObjectOffsets(agent, bits);
+    size_t co_idx = 0;
+    if (code_object_offsets.size() > 5)
+        co_idx = 5; // Pick the 5th code object if there are that many
+
+    amd_comgr_data_t bundle;
     std::vector<std::string> isas = getIsaList(agent);
     CHECK_COMGR(amd_comgr_create_data(AMD_COMGR_DATA_KIND_FATBIN, &bundle));
-    CHECK_COMGR(amd_comgr_set_data(bundle, bits.size(), reinterpret_cast<const char *>(bits.data())));
+    CHECK_COMGR(amd_comgr_set_data(bundle, bits.size() - code_object_offsets[co_idx],
+                                   reinterpret_cast<const char *>(bits.data() + code_object_offsets[co_idx])));
     if (isas.size())
     {
         std::vector<amd_comgr_code_object_info_t> ql;
@@ -838,6 +927,7 @@ amd_comgr_code_object_info_t KernelArgHelper::getCodeObjectInfo(hsa_agent_t agen
         CHECK_COMGR(amd_comgr_lookup_code_object(bundle,static_cast<amd_comgr_code_object_info_t *>(ql.data()), ql.size()));
         for (auto co : ql)
         {
+            co.offset += code_object_offsets[co_idx];
             //std::cerr << "After query: " << std::endl;
             //std::cerr << "{" << co.isa << "," << co.size << "," << co.offset << "}" << std::endl;
             /* Use the first code object that is ISA-compatible with this agent */
@@ -858,11 +948,16 @@ KernelArgHelper::KernelArgHelper(hsa_agent_t agent, std::vector<uint8_t>& bits)
      * This code is given bits from a fat binary and needs to find a code object
      * Since fat binaries can contain code objects for multiple ISAs, we use
      * the supplied agent to find a code object that will run on that agent */
+    auto code_object_offsets =  findCodeObjectOffsets(agent, bits);
+    size_t co_idx = 0;
+    if (code_object_offsets.size() > 5)
+        co_idx = 5; // Pick the 5th code object if there are that many
 
-    amd_comgr_data_t executable, bundle;
+    amd_comgr_data_t bundle;
     std::vector<std::string> isas = getIsaList(agent);
     CHECK_COMGR(amd_comgr_create_data(AMD_COMGR_DATA_KIND_FATBIN, &bundle));
-    CHECK_COMGR(amd_comgr_set_data(bundle, bits.size(), reinterpret_cast<const char *>(bits.data())));
+    CHECK_COMGR(amd_comgr_set_data(bundle, bits.size() - code_object_offsets[co_idx],
+                                   reinterpret_cast<const char *>(bits.data() + code_object_offsets[co_idx])));
     if (isas.size())
     {
         std::vector<amd_comgr_code_object_info_t> ql;
@@ -871,6 +966,7 @@ KernelArgHelper::KernelArgHelper(hsa_agent_t agent, std::vector<uint8_t>& bits)
         CHECK_COMGR(amd_comgr_lookup_code_object(bundle,static_cast<amd_comgr_code_object_info_t *>(ql.data()), ql.size()));
         for (auto co : ql)
         {
+            co.offset += code_object_offsets[co_idx];
             /* Use the first code object that is ISA-compatible with this agent */
             if (co.size != 0)
             {
