@@ -94,10 +94,22 @@ memory_analysis_handler_t::memory_analysis_handler_t(const std::string& kernel, 
           {dh_comms::memory_access::read_write, "read/write"},
       },
       instr_size_map{
+          {"global_load_ubyte", {1, memory_access::read}},      {"global_load_sbyte", {1, memory_access::read}},
+          {"global_load_ubyte_d16", {1, memory_access::read}},  {"global_load_ubyte_d16_hi", {1, memory_access::read}},
+          {"global_load_sbyte_d16", {1, memory_access::read}},  {"global_load_sbyte_d16_hi", {1, memory_access::read}},
+          {"global_load_ushort", {2, memory_access::read}},     {"global_load_sshort", {2, memory_access::read}},
+          {"global_load_short_d16", {2, memory_access::read}},  {"global_load_short_d16_hi", {2, memory_access::read}},
           {"global_load_dword", {4, memory_access::read}},      {"global_load_dwordx2", {8, memory_access::read}},
           {"global_load_dwordx3", {12, memory_access::read}},   {"global_load_dwordx4", {16, memory_access::read}},
+
+          {"global_store_byte", {1, memory_access::write}},     {"global_store_byte_d16_hi", {1, memory_access::write}},
+          {"global_store_short", {2, memory_access::write}},    {"global_store_short_d16_hi", {2, memory_access::write}},
           {"global_store_dword", {4, memory_access::write}},    {"global_store_dwordx2", {8, memory_access::write}},
           {"global_store_dwordx3", {12, memory_access::write}}, {"global_store_dwordx4", {16, memory_access::write}},
+
+          {"global_load_lds_ubyte", {1, memory_access::read}},  {"global_load_lds_sbyte", {1, memory_access::read}},
+          {"global_load_lds_ushort", {2, memory_access::read}}, {"global_load_lds_sshort", {2, memory_access::read}},
+          {"global_load_lds_dword", {4, memory_access::read}}
       }
 {
   conflict_sets.insert({1, std::vector<conflict_set>{
@@ -182,7 +194,7 @@ bool memory_analysis_handler_t::handle(const message_t &message) {
     }
     return false;
   }
-  
+
   assert(message.data_item_size() == sizeof(uint64_t));
 
   uint8_t mspace = (message.wave_header().user_data >> 2) & 0xf;
@@ -282,6 +294,7 @@ get_dwarf_info(const dh_comms::message_t &message, const std::string &kernel_nam
         if (verbose) {
           printf("\tsource location: %s:%u:%u\n", kdb_dwarf_fname.c_str(), inst.line_, inst.column_);
           printf("\tdwarf_fname_hash = 0x%lx\n", kdb_dwarf_fname_hash);
+          printf("\tisa instruction = %s\n", isa_instruction.c_str());
         }
 
         // we have a match between the instruction instrumented at the IR level and
@@ -612,7 +625,7 @@ void memory_analysis_handler_t::report(const std::string &kernel_name, kernelDB:
 
 void memory_analysis_handler_t::report() {
   setupLogger();
-  
+
   // Check log format
   bool bFormatJson = false;
   const char* logDurLogFormat = std::getenv("LOGDUR_LOG_FORMAT");
@@ -622,7 +635,7 @@ void memory_analysis_handler_t::report() {
       bFormatJson = true;
     }
   }
-  
+
   if (bFormatJson) {
     report_json();
   } else {
@@ -716,7 +729,7 @@ std::string getCodeContext(const std::string &fname, uint16_t line) {
 
   // Retrieve and process the requested line: replace each tab by 8 spaces
   std::string processed_line = cached_lines[line - 1];
-  
+
   // Replace tabs with spaces
   size_t pos = 0;
   while ((pos = processed_line.find('\t', pos)) != std::string::npos) {
@@ -735,15 +748,15 @@ std::string getCodeContext(const std::string &fname, uint16_t line) {
 
 void memory_analysis_handler_t::report_json() {
   std::stringstream json_output;
-  
+
   // Check if this is the first dispatch to write the opening bracket
   bool is_first_dispatch = (dispatch_id_ == 1);
   bool is_console_output = (location_ == "console");
-  
+
   // For kernel filtering, we may have uninitialized dispatch_id_ or only one dispatch
   // Check if we have any data to output
   bool has_data = !global_accesses.empty() || !lds_accesses.empty();
-  
+
   // Write opening bracket for first dispatch (but not for console output)
   // Also handle case where dispatch_id_ is uninitialized (0) but we have data
   if (!is_console_output && (is_first_dispatch || (dispatch_id_ == 0 && has_data))) {
@@ -751,20 +764,20 @@ void memory_analysis_handler_t::report_json() {
   } else if (!is_first_dispatch && dispatch_id_ > 0) {
     json_output << ",\n";
   }
-  
+
   json_output << "{\n";
   json_output << "  \"kernel_analysis\": {\n";
-  
+
   // Kernel info section
   json_output << "    \"kernel_info\": {\n";
   json_output << "      \"name\": \"" << kernel_ << "\",\n";
   json_output << "      \"dispatch_id\": " << dispatch_id_ << "\n";
   json_output << "    },\n";
-  
+
   // Cache analysis section
   json_output << "    \"cache_analysis\": {\n";
   json_output << "      \"accesses\": [\n";
-  
+
   bool first_cache_access = true;
   for (const auto &[fname, line_col] : global_accesses) {
     for (const auto &[line, col_accesses] : line_col) {
@@ -774,7 +787,7 @@ void memory_analysis_handler_t::report_json() {
             json_output << ",\n";
           }
           first_cache_access = false;
-          
+
           json_output << "        {\n";
           json_output << "          \"source_location\": {\n";
           json_output << "            \"file\": \"" << fname << "\",\n";
@@ -798,14 +811,14 @@ void memory_analysis_handler_t::report_json() {
       }
     }
   }
-  
+
   json_output << "\n      ]\n";
   json_output << "    },\n";
-  
+
   // Bank conflicts section
   json_output << "    \"bank_conflicts\": {\n";
   json_output << "      \"accesses\": [\n";
-  
+
   bool first_bank_access = true;
   for (const auto &[fname, line_col] : lds_accesses) {
     for (const auto &[line, col_accesses] : line_col) {
@@ -815,7 +828,7 @@ void memory_analysis_handler_t::report_json() {
             json_output << ",\n";
           }
           first_bank_access = false;
-          
+
           json_output << "        {\n";
           json_output << "          \"source_location\": {\n";
           json_output << "            \"file\": \"" << fname << "\",\n";
@@ -834,12 +847,12 @@ void memory_analysis_handler_t::report_json() {
       }
     }
   }
-  
+
   json_output << "\n      ]\n";
   json_output << "    }\n";
   json_output << "  },\n";
-  
-  // Metadata section  
+
+  // Metadata section
   json_output << "  \"metadata\": {\n";
 
   std::string version = "null"; // Default
@@ -858,15 +871,15 @@ void memory_analysis_handler_t::report_json() {
   }
 
   json_output << "    \"version\": \"" << version << "\",\n";
-  
+
   // Add timestamp
   auto now = std::time(nullptr);
   auto tm = *std::localtime(&now);
   json_output << "    \"timestamp\": \"" << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << "\",\n";
-  
+
   std::string arch = "unknown";
   int cache_line_size = 128; // default
-  
+
   // In case of kernel filtering, multiple dispatches may processed sequentially, causing multiple calls to this hipGetDeviceProperties()
   // Found that this race condition causes HIP call to hang.
   // Check if this is JSON output with kernel filtering - if so, skip HIP call that hangs
@@ -909,12 +922,12 @@ void memory_analysis_handler_t::report_json() {
   json_output << "    }\n";
   json_output << "  }\n";
   json_output << "}";
-  
+
   // Add newline for console output (for readability)
   if (is_console_output) {
     json_output << "\n";
   }
-  
+
   // Write to the log file
   *log_file_ << json_output.str();
 }
