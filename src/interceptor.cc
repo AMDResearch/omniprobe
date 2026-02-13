@@ -67,6 +67,9 @@ THE SOFTWARE.
 
 #include "inc/interceptor.h"
 
+#include <rocprofiler-sdk/intercept_table.h>
+#include <rocprofiler-sdk/registration.h>
+#include <rocprofiler-sdk/rocprofiler.h>
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -983,4 +986,101 @@ extern "C" {
         hsaInterceptor::cleanup();
         cerr << "hsaInterceptor: Application elapsed usecs: " << globalTime.getElapsedNanos() / 1000 << "us\n";
     }*/
+}
+
+namespace
+{
+rocprofiler_client_id_t*      client_id   = nullptr;
+rocprofiler_client_finalize_t client_fini = nullptr;
+
+int
+rocp_sdk_tool_init(rocprofiler_client_finalize_t fini_func, void* /*tool_data*/)
+{
+    // save the function pointer for explicit finalization
+    client_fini = fini_func;
+
+    // not necessary but this is how you force finalizing a rocprofiler-sdk client
+    std::atexit([]() {
+        if(client_id && client_fini) client_fini(*client_id);
+    });
+
+    // no errors
+    return 0;
+}
+
+void
+rocp_sdk_tool_fini(void* tool_data)
+{
+    // set to nullptr if automatically invoked by rocprofiler-sdk before atexit check
+    client_id   = nullptr;
+    client_fini = nullptr;
+
+    hsaInterceptor::cleanup();
+    cerr << "hsaInterceptor: Application elapsed usecs: " << std::dec
+         << globalTime.getElapsedNanos() / 1000 << "us\n";
+}
+
+void
+rocp_sdk_api_registration_callback(rocprofiler_intercept_table_t type,
+                                   uint64_t lib_version, uint64_t lib_instance,
+                                   void** tables, uint64_t num_tables, void* user_data)
+{
+    if(type != ROCPROFILER_HSA_TABLE) {
+        std::cerr << "Error: unexpected library type: " 
+                  << static_cast<int>(type) << std::endl;
+        std::abort();
+    }
+
+    uint32_t major = lib_version / 10000;
+    uint32_t minor = (lib_version % 10000) / 100;
+    uint32_t patch = lib_version % 100;
+
+    const char* table_name = nullptr;
+    rocprofiler_query_intercept_table_name(type, &table_name, nullptr);
+
+    clog << client_id->name << " is using " << table_name << " v" << major << "." << minor
+         << "." << patch << '\n'
+         << std::flush;
+
+    auto*           table = static_cast<HsaApiTable*>(tables[0]);
+    hsaInterceptor* hook  = hsaInterceptor::getInstance(table, lib_version, 0, nullptr);
+}
+}  // namespace
+
+extern "C"
+{
+    rocprofiler_tool_configure_result_t* rocprofiler_configure(
+        uint32_t version, const char* runtime_version, uint32_t priority,
+        rocprofiler_client_id_t* id)
+    {
+        // set the client name
+        id->name = "Omniprobe";
+
+        // save client info
+        client_id = id;
+
+        // compute major/minor/patch version info
+        uint32_t major = version / 10000;
+        uint32_t minor = (version % 10000) / 100;
+        uint32_t patch = version % 100;
+
+        // generate info string
+        std::clog << id->name << " (priority=" << priority
+                  << ") is using rocprofiler-sdk v" << major << "." << minor << "."
+                  << patch << " (" << runtime_version << ")" << std::endl;
+
+        auto status = rocprofiler_at_intercept_table_registration(
+            rocp_sdk_api_registration_callback, ROCPROFILER_HSA_TABLE, nullptr);
+
+        if(status != ROCPROFILER_STATUS_SUCCESS) return nullptr;
+
+        // create configure data
+        static auto cfg = rocprofiler_tool_configure_result_t{
+            sizeof(rocprofiler_tool_configure_result_t), &rocp_sdk_tool_init,
+            &rocp_sdk_tool_fini, nullptr
+        };
+
+        // return pointer to configure data
+        return &cfg;
+    }
 }
