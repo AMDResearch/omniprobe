@@ -103,6 +103,12 @@ hsaInterceptor * hsaInterceptor::getInstance(HsaApiTable *table, uint64_t runtim
     return singleton_;
 }
 
+hsaInterceptor * hsaInterceptor::getInstanceIfExists()
+{
+    const lock_guard<mutex> lock(singleton_mutex_);
+    return singleton_;
+}
+
 
 void hsaInterceptor::OnSubmitPackets(const void* in_packets, uint64_t count,
     uint64_t user_que_idx, void* data, hsa_amd_queue_intercept_packet_writer writer)
@@ -127,6 +133,11 @@ void hsaInterceptor::shutdown()
     shutting_down_.store(true);
 }
 
+bool hsaInterceptor::hasPendingSignals()
+{
+    lock_guard<std::mutex> lock(mutex_);
+    return !pending_signals_.empty();
+}
 
 
 
@@ -218,16 +229,28 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
     }
 }
 hsaInterceptor::~hsaInterceptor() {
+    std::cerr << "hsaInterceptor destructor START" << std::endl;
     shutting_down_.store(true);
-    //cerr << "Joining the signal runner\n";
+
+    std::cerr << "hsaInterceptor joining signal_runner" << std::endl;
     signal_runner_.join();
+    std::cerr << "hsaInterceptor signal_runner joined" << std::endl;
+
+    std::cerr << "hsaInterceptor joining cache_watcher" << std::endl;
     cache_watcher_.join();
+    std::cerr << "hsaInterceptor cache_watcher joined" << std::endl;
+
+    std::cerr << "hsaInterceptor joining comms_runner" << std::endl;
     comms_runner_.join();
+    std::cerr << "hsaInterceptor comms_runner joined" << std::endl;
+
+    std::cerr << "hsaInterceptor starting cleanup" << std::endl;
     // Join signal processing thread here
     lock_guard<std::mutex> lock(mutex_);
     for (auto sig : sig_pool_)
         CHECK_STATUS("Signal cleanup error at shutdown", apiTable_->core_->hsa_signal_destroy_fn(sig));
     restoreHsaApi();
+    std::cerr << "hsaInterceptor destructor END" << std::endl;
 }
 
 bool hsaInterceptor::growBufferPool(hsa_agent_t agent, size_t count)
@@ -337,8 +360,11 @@ void hsaInterceptor::signalCompleted(const hsa_signal_t sig)
         }
         //Put this completion signal back in the pool for subsequent dispatches
         sig_pool_.push_back(sig);
-        if (ki.comms_obj_)
+        if (ki.comms_obj_) {
+            std::cerr << "signalCompleted checking in comms_obj for signal " << sig.handle << std::endl;
             comms_mgr_.checkinCommsObject(ki.agent_, ki.comms_obj_);
+            std::cerr << "signalCompleted checked in comms_obj" << std::endl;
+        }
     }
     else
     {
@@ -967,13 +993,74 @@ extern "C" {
         hsaInterceptor *hook = hsaInterceptor::getInstance(table, runtime_version, failed_tool_count, failed_tool_names);
         //cerr << "hsaInterceptor: Initializing: 0x" << hex << hook << endl;
 
+        // Register atexit handler to ensure cleanup happens before process exit
+        // atexit handlers run BEFORE __attribute__((destructor)) functions
+        static bool atexit_registered = false;
+        if (!atexit_registered) {
+            atexit([]() {
+                std::cerr << "atexit handler called - ensuring cleanup before process exit" << std::endl;
+                auto* hook = hsaInterceptor::getInstanceIfExists();
+                if (hook) {
+                    hook->shutdown();
+                    // Wait for operations to complete
+                    int wait_count = 0;
+                    while (hook->hasPendingSignals() && wait_count < 1000) {
+                        usleep(1000);
+                        wait_count++;
+                    }
+                    if (wait_count < 1000) {
+                        std::cerr << "atexit handler: all operations completed, calling cleanup" << std::endl;
+                        hsaInterceptor::cleanup();
+                        std::cerr << "atexit handler: cleanup finished" << std::endl;
+                    } else {
+                        std::cerr << "atexit handler: WARNING - timeout waiting for operations" << std::endl;
+                    }
+                } else {
+                    std::cerr << "atexit handler: singleton already cleaned up" << std::endl;
+                }
+            });
+            atexit_registered = true;
+        }
+
         return true;
     }
 
     PUBLIC_API void OnUnload() {
-        // cout << "ROCMHOOK: Unloading" << endl;
-        hsaInterceptor::cleanup();
-        cerr << "hsaInterceptor: Application elapsed usecs: " << std::dec << globalTime.getElapsedNanos() / 1000 << "us\n";
+        std::cerr << "OnUnload() called" << std::endl;
+        // Check if already cleaned up by atexit handler
+        auto* hook = hsaInterceptor::getInstanceIfExists();
+        if (hook) {
+            std::cerr << "OnUnload() calling hsaInterceptor::cleanup()" << std::endl;
+            hsaInterceptor::cleanup();
+            cerr << "hsaInterceptor: Application elapsed usecs: " << std::dec << globalTime.getElapsedNanos() / 1000 << "us" << std::endl;
+            std::cerr << "OnUnload() finished" << std::endl;
+        } else {
+            std::cerr << "OnUnload() - already cleaned up by atexit handler" << std::endl;
+        }
+    }
+
+    // This runs during process exit, even before HSA runtime calls OnUnload()
+    // We need this to ensure threads are stopped before C++ runtime shutdown
+    // Use high priority to run as early as possible during exit
+    // Note: If atexit handler already cleaned up, this is a no-op
+    static void process_exit_cleanup() __attribute__((destructor(65535)));
+    void process_exit_cleanup()
+    {
+        std::cerr << "process_exit_cleanup() called" << std::endl;
+        auto* hook = hsaInterceptor::getInstanceIfExists();
+        if (hook) {
+            std::cerr << "process_exit_cleanup() - WARNING: singleton still exists after atexit!" << std::endl;
+            // This shouldn't happen if atexit worked properly, but handle it anyway
+            hook->shutdown();
+            int wait_count = 0;
+            while (hook->hasPendingSignals() && wait_count < 1000) {
+                usleep(1000);
+                wait_count++;
+            }
+            std::cerr << "process_exit_cleanup() finished (fallback path)" << std::endl;
+        } else {
+            std::cerr << "process_exit_cleanup() - singleton already cleaned up by atexit (expected)" << std::endl;
+        }
     }
 
    /* static void unload_me() __attribute__((destructor));

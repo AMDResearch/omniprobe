@@ -118,6 +118,7 @@ public:
     void addAgent(hsa_agent_t agent, unsigned int dev_index);
     std::string packetToText(const packet_t *packet);
     static hsaInterceptor *getInstance(HsaApiTable *table = NULL, uint64_t runtime_version = 0, uint64_t failed_tool_count = 0, const char* const* failed_tool_names = NULL);
+    static hsaInterceptor *getInstanceIfExists(); // Check if singleton exists without creating
     static void cleanup();
     static hsa_packet_type_t getHeaderType(const packet_t* packet) {
         const packet_word_t* header = reinterpret_cast<const packet_word_t*>(packet);
@@ -137,9 +138,11 @@ public:
     friend void signal_runner();
     friend void cache_watcher();
     friend void comms_runner(comms_mgr& mgr);
+
+    bool hasPendingSignals();
+    void shutdown();
 protected:
     bool shuttingdown();
-    void shutdown();
     std::string getCacheLocation() { return config_["LOGDUR_KERNEL_CACHE"];}
     bool addCodeObject(const std::string& name);
 private:

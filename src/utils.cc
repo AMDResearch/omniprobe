@@ -1217,12 +1217,16 @@ handlerManager::handlerManager(const std::vector<std::string>& handlers)
 
 handlerManager::~handlerManager()
 {
+    std::cerr << "handlerManager destructor START - calling dlclose on handler libraries" << std::endl;
     auto it = plugins_.begin();
     while(it != plugins_.end())
     {
+        std::cerr << "handlerManager calling dlclose on " << it->first << std::endl;
         dlclose(it->first);
+        std::cerr << "handlerManager dlclose returned" << std::endl;
         it++;
     }
+    std::cerr << "handlerManager destructor END" << std::endl;
 }
 
 void handlerManager::getMessageHandlers(const std::string& strKernel, uint64_t dispatch_id,std::vector<dh_comms::message_handler_base *>& outHandlers)
