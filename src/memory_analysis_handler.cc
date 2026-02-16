@@ -109,7 +109,20 @@ memory_analysis_handler_t::memory_analysis_handler_t(const std::string& kernel, 
 
           {"global_load_lds_ubyte", {1, memory_access::read}},  {"global_load_lds_sbyte", {1, memory_access::read}},
           {"global_load_lds_ushort", {2, memory_access::read}}, {"global_load_lds_sshort", {2, memory_access::read}},
-          {"global_load_lds_dword", {4, memory_access::read}}
+          {"global_load_lds_dword", {4, memory_access::read}},
+
+          {"buffer_load_ubyte", {1, memory_access::read}},      {"buffer_load_sbyte", {1, memory_access::read}},
+          {"buffer_load_ubyte_d16", {1, memory_access::read}},  {"buffer_load_ubyte_d16_hi", {1, memory_access::read}},
+          {"buffer_load_sbyte_d16", {1, memory_access::read}},  {"buffer_load_sbyte_d16_hi", {1, memory_access::read}},
+          {"buffer_load_ushort", {2, memory_access::read}},     {"buffer_load_sshort", {2, memory_access::read}},
+          {"buffer_load_short_d16", {2, memory_access::read}},  {"buffer_load_short_d16_hi", {2, memory_access::read}},
+          {"buffer_load_dword", {4, memory_access::read}},      {"buffer_load_dwordx2", {8, memory_access::read}},
+          {"buffer_load_dwordx3", {12, memory_access::read}},   {"buffer_load_dwordx4", {16, memory_access::read}},
+
+          {"buffer_store_byte", {1, memory_access::write}},     {"buffer_store_byte_d16_hi", {1, memory_access::write}},
+          {"buffer_store_short", {2, memory_access::write}},    {"buffer_store_short_d16_hi", {2, memory_access::write}},
+          {"buffer_store_dword", {4, memory_access::write}},    {"buffer_store_dwordx2", {8, memory_access::write}},
+          {"buffer_store_dwordx3", {12, memory_access::write}}, {"buffer_store_dwordx4", {16, memory_access::write}}
       }
 {
   conflict_sets.insert({1, std::vector<conflict_set>{
@@ -152,11 +165,37 @@ memory_analysis_handler_t::memory_analysis_handler_t(bool verbose)
           {dh_comms::memory_access::read_write, "read/write"},
       },
       instr_size_map{
+          {"global_load_ubyte", {1, memory_access::read}},      {"global_load_sbyte", {1, memory_access::read}},
+          {"global_load_ubyte_d16", {1, memory_access::read}},  {"global_load_ubyte_d16_hi", {1, memory_access::read}},
+          {"global_load_sbyte_d16", {1, memory_access::read}},  {"global_load_sbyte_d16_hi", {1, memory_access::read}},
+          {"global_load_ushort", {2, memory_access::read}},     {"global_load_sshort", {2, memory_access::read}},
+          {"global_load_short_d16", {2, memory_access::read}},  {"global_load_short_d16_hi", {2, memory_access::read}},
           {"global_load_dword", {4, memory_access::read}},      {"global_load_dwordx2", {8, memory_access::read}},
           {"global_load_dwordx3", {12, memory_access::read}},   {"global_load_dwordx4", {16, memory_access::read}},
+
+          {"global_store_byte", {1, memory_access::write}},     {"global_store_byte_d16_hi", {1, memory_access::write}},
+          {"global_store_short", {2, memory_access::write}},    {"global_store_short_d16_hi", {2, memory_access::write}},
           {"global_store_dword", {4, memory_access::write}},    {"global_store_dwordx2", {8, memory_access::write}},
           {"global_store_dwordx3", {12, memory_access::write}}, {"global_store_dwordx4", {16, memory_access::write}},
-      } {
+
+          {"global_load_lds_ubyte", {1, memory_access::read}},  {"global_load_lds_sbyte", {1, memory_access::read}},
+          {"global_load_lds_ushort", {2, memory_access::read}}, {"global_load_lds_sshort", {2, memory_access::read}},
+          {"global_load_lds_dword", {4, memory_access::read}},
+
+          {"buffer_load_ubyte", {1, memory_access::read}},      {"buffer_load_sbyte", {1, memory_access::read}},
+          {"buffer_load_ubyte_d16", {1, memory_access::read}},  {"buffer_load_ubyte_d16_hi", {1, memory_access::read}},
+          {"buffer_load_sbyte_d16", {1, memory_access::read}},  {"buffer_load_sbyte_d16_hi", {1, memory_access::read}},
+          {"buffer_load_ushort", {2, memory_access::read}},     {"buffer_load_sshort", {2, memory_access::read}},
+          {"buffer_load_short_d16", {2, memory_access::read}},  {"buffer_load_short_d16_hi", {2, memory_access::read}},
+          {"buffer_load_dword", {4, memory_access::read}},      {"buffer_load_dwordx2", {8, memory_access::read}},
+          {"buffer_load_dwordx3", {12, memory_access::read}},   {"buffer_load_dwordx4", {16, memory_access::read}},
+
+          {"buffer_store_byte", {1, memory_access::write}},     {"buffer_store_byte_d16_hi", {1, memory_access::write}},
+          {"buffer_store_short", {2, memory_access::write}},    {"buffer_store_short_d16_hi", {2, memory_access::write}},
+          {"buffer_store_dword", {4, memory_access::write}},    {"buffer_store_dwordx2", {8, memory_access::write}},
+          {"buffer_store_dwordx3", {12, memory_access::write}}, {"buffer_store_dwordx4", {16, memory_access::write}}
+      }
+  {
   conflict_sets.insert({1, std::vector<conflict_set>{
                                conflict_set{std::vector<std::pair<size_t, size_t>>{{0, 32}}},
                                conflict_set{std::vector<std::pair<size_t, size_t>>{{32, 64}}},
@@ -339,6 +378,9 @@ bool memory_analysis_handler_t::handle_cache_line_count_analysis(const message_t
   dwarf_info_t dwarf_info = get_dwarf_info(message, kernel_name, kdb_p, instr_size_map, verbose_);
   if (dwarf_info.access_size ==
       0xffff) { // no instruction found in ISA for source line in IR, may have been combined with other instructions.
+    if (verbose_) {
+      printf("No instruction found in ISA for source line in IR, may have been combined with other instructions.\n");
+    }
     return true;
   }
   bool data_size_corrected = false;
