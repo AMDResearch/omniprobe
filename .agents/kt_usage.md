@@ -19,6 +19,25 @@ Quick reference for using the knowledge tree in agentic coding sessions.
 
 ---
 
+## First-Time Setup
+
+### New Project (no KT exists)
+
+```
+kt-init
+```
+
+Creates:
+- `.agents/kt/architecture.md` — system overview
+- `.agents/kt/<subsystem>.md` — per-subsystem dossiers
+- `.agents/kt/glossary.md` — domain terms (if needed)
+
+### Sub-projects
+
+Sub-projects get their own KT in `<subproject>/.agents/kt/`. Top-level KT has integration dossiers that reference them.
+
+---
+
 ## Session Workflow
 
 ### Starting a Session
@@ -275,25 +294,6 @@ Step 3: Remove duplicate definition
 Commit: abc123
 Date: 2026-03-01
 ```
-
----
-
-## First-Time Setup
-
-### New Project (no KT exists)
-
-```
-kt-init
-```
-
-Creates:
-- `.agents/kt/architecture.md` — system overview
-- `.agents/kt/<subsystem>.md` — per-subsystem dossiers
-- `.agents/kt/glossary.md` — domain terms (if needed)
-
-### Sub-projects
-
-Sub-projects get their own KT in `<subproject>/.agents/kt/`. Top-level KT has integration dossiers that reference them.
 
 ---
 
