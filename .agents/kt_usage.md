@@ -326,6 +326,5 @@ project/
 - **Be specific** when loading: "kt-load for interceptor bugfix" beats "kt-load"
 - **Don't skip updates**: Run `kt-update` at session end, or use `kt-validate` next time
 - **Granularity varies**: Exploration needs coarse KT; bugfixes may need fine detail
-- **Negative knowledge matters**: Record why approaches don't work, not just what does
 - **Use refactor dossiers** for multi-session work: they preserve context across sessions
 - **Micro-steps with compile gates**: small changes, verify each, don't accumulate breakage
