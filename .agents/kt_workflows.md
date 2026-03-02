@@ -179,6 +179,337 @@ Date: <YYYY-MM-DD>
 
 ---
 
+## Command: `kt-refactor`
+
+**Purpose**: Manage refactor dossiers — persistent work-item trackers for multi-session refactoring tasks.
+
+**Why refactor dossiers?**
+Refactoring is constraint preservation under partial observability. Unlike greenfield features, refactors must:
+- Preserve API/ABI compatibility
+- Maintain semantic invariants (ordering, lifetimes, ownership)
+- Handle hidden coupling (macros, templates, build flags)
+- Track progress across sessions
+
+A refactor dossier is separate from subsystem dossiers — it tracks a *work item*, not stable structure.
+
+**Subcommands**:
+- `kt-refactor start <goal>` — begin new refactor
+- `kt-refactor suspend` — checkpoint and pause current refactor
+- `kt-refactor resume <slug>` — continue existing refactor
+- `kt-refactor finish` — finalize completed refactor
+- `kt-refactor list` — show all refactors with status
+
+**Multiple concurrent refactors**: You can have multiple refactors in progress simultaneously. Use `suspend` to pause one and `resume <slug>` to switch to another. Use `list` to see all active refactors.
+
+---
+
+### `kt-refactor start <goal>`
+
+**Purpose**: Begin a new refactor with interactive discovery.
+
+**Input**: A high-level change request, e.g.:
+- "kt-refactor start extract handler interface into standalone header"
+- "kt-refactor start comms_mgr to use RAII for buffer management"
+
+The user provides the *goal*; we discover the *scope* and *constraints* together.
+
+**Steps**:
+
+1. **Create refactor dossier**:
+   - Generate slug from goal description
+   - Location: `.agents/kt/refactors/rf_<slug>.md`
+   - Create from template
+
+2. **Survey the code**:
+   - Load relevant subsystem dossier(s) from KT
+   - Read key source files to identify affected symbols
+   - Map out call graph impact
+   - Identify risks and hidden coupling
+
+3. **Discuss with user** to establish contract:
+   - Confirm goal interpretation
+   - Ask about invariants: "Does ABI need to be preserved?" "Any performance constraints?"
+   - Agree on verification gates: "What tests should pass?"
+   - Clarify any ambiguities before proceeding
+
+4. **Draft the dossier** (interactively):
+   - **Goal**: What changes (be specific)
+   - **Non-goals/Invariants**: What must NOT change (ABI, perf, threading, determinism)
+   - **Verification gates**: What proves correctness (build targets, tests, runtime checks)
+   - **Affected symbols**: Types, functions that will change
+   - **Expected files**: Where changes will occur (hypotheses, update as confirmed)
+   - **Risks**: ABI breaks, hidden dependencies, etc.
+   - **Micro-step plan**: Ordered list of small, verifiable steps
+
+5. **Get user approval**:
+   - Present the dossier for review
+   - User confirms contract, scope, and plan
+   - Adjust if needed before proceeding
+
+6. **Begin execution** (if approved):
+   - Set status to "In Progress"
+   - Start with first micro-step
+
+---
+
+### `kt-refactor suspend`
+
+**Purpose**: Checkpoint current refactor for later resumption.
+
+**When to use**: End of session when refactor is not complete.
+
+**Steps**:
+
+1. **Update dossier**:
+   - Mark completed steps
+   - Record gates passed/failed
+   - Note current state and any blockers
+   - Add rejected approaches discovered this session
+   - Identify next step clearly
+
+2. **Add progress log entry**:
+   - Session date
+   - What was accomplished
+   - What was discovered
+   - Next step
+
+3. **Update metadata**:
+   - Status remains "In Progress"
+   - Update "Last Verified" date
+
+---
+
+### `kt-refactor resume <slug>`
+
+**Purpose**: Continue an existing refactor from a previous session.
+
+**Input**: Slug of existing refactor, or omit if only one active refactor.
+
+**Steps**:
+
+1. **Load refactor dossier**:
+   - Read `.agents/kt/refactors/rf_<slug>.md`
+   - Load relevant subsystem dossiers referenced in scope
+
+2. **Review state**:
+   - Summarize: objective, current step, recent progress
+   - Confirm understanding with user
+
+3. **Continue execution**:
+   - Proceed from current step
+   - Execute with compile gates as normal
+
+---
+
+### `kt-refactor finish`
+
+**Purpose**: Finalize a completed refactor.
+
+**When to use**: All micro-steps done, refactor complete.
+
+**Steps**:
+
+1. **Verify completion**:
+   - Confirm all micro-steps are checked off
+   - Run final verification gates (full build, all tests)
+
+2. **Update dossier**:
+   - Set status to "Done"
+   - Add final progress log entry
+   - Update "Last Verified"
+
+3. **Update subsystem dossiers** (if structure changed):
+   - Update affected interfaces/symbols
+   - Add any new invariants discovered
+   - Remove outdated information
+
+4. **Archive**:
+   - Dossier remains in `refactors/` for reference
+   - Completed refactors serve as historical record
+
+---
+
+### `kt-refactor list`
+
+**Purpose**: Show all refactors with their status.
+
+**Output**:
+```
+Active refactors:
+
+  rf_extract-handler-interface
+    Status: In Progress (step 3/5)
+    Last active: 2026-03-01
+    Next step: Remove duplicate definition from dh_comms.h
+
+  rf_raii-buffer-management
+    Status: Blocked
+    Last active: 2026-02-28
+    Blocker: Waiting for dh_comms API review
+
+Completed refactors:
+
+  rf_rename-dispatch-count
+    Status: Done
+    Completed: 2026-02-15
+```
+
+**Use cases**:
+- See what refactors are in flight before starting a new one
+- Find the slug to resume an existing refactor
+- Check for blocked refactors that may be unblocked
+
+---
+
+### Multiple Concurrent Refactors
+
+You can have multiple refactors in progress simultaneously.
+
+**Workflow for switching**:
+1. `kt-refactor suspend` — checkpoint current refactor
+2. `kt-refactor resume <other-slug>` — switch to different refactor
+
+**Guidance**:
+- **Avoid overlapping scope**: Don't run concurrent refactors that touch the same files
+- **Use "Blocked" status**: When a refactor is waiting on external factors
+- **Prefer sequential for related changes**: If refactor B depends on refactor A, finish A first
+
+**Blocked status**:
+Set status to "Blocked" in dossier when:
+- Waiting for code review
+- Waiting for external dependency
+- Need decision from stakeholder
+- Discovered prerequisite work needed
+
+Include blocker description in dossier:
+```markdown
+## Status
+- [x] Blocked
+
+### Blocker
+Waiting for dh_comms API changes to be merged (PR #42).
+Can resume after merge.
+```
+
+---
+
+### Execution: Micro-step Discipline
+
+During any active refactor (after `start` or `resume`):
+
+1. **Execute current micro-step**:
+   - Make minimal change for this step only
+   - Typical order: public API (headers) → implementation → call sites
+
+2. **Run compile/test gate**:
+   - Compile after each step
+   - Test after related steps complete
+
+3. **Handle result**:
+   - If gate passes: mark step done in dossier, proceed to next
+   - If gate fails: diagnose and fix before proceeding — don't accumulate breakage
+
+4. **Update dossier** as you go:
+   - Check off completed steps
+   - Note any discoveries or complications
+   - Update expected files from hypothesis to confirmed
+
+**Principles**:
+- Prefer small diffs over large rewrites
+- One logical change per step
+- Never proceed past a failing gate
+- If stuck, consider adding to "Rejected Approaches" and trying alternative
+
+---
+
+## Refactor Dossier Template
+
+Location: `.agents/kt/refactors/rf_<slug>.md`
+
+```markdown
+# Refactor: <Short Title>
+
+## Status
+- [ ] TODO
+- [ ] In Progress
+- [ ] Blocked
+- [ ] Done
+
+### Blocker (if blocked)
+Describe what is blocking progress and when it can be unblocked.
+
+## Objective
+What this refactor accomplishes. Be specific.
+
+## Refactor Contract
+
+### Goal
+Precise description of the change.
+
+### Non-Goals / Invariants
+What must NOT change:
+- ABI compatibility: [yes/no/n/a]
+- API compatibility: [yes/no/n/a]
+- Performance constraints: [describe]
+- Threading model: [describe]
+- Other invariants: [list]
+
+### Verification Gates
+How to prove correctness:
+- Build: `make` or `ninja`
+- Tests: `ctest` or specific test commands
+- Runtime: [any runtime sanity checks]
+
+## Scope
+
+### Affected Symbols
+- `ClassName::methodName()` — what changes
+- `free_function()` — what changes
+
+### Expected Files
+- `path/to/file.cpp` — [confirmed/hypothesis]
+- `path/to/header.h` — [confirmed/hypothesis]
+
+### Call Graph Impact
+Which callers are affected and how.
+
+### Risks
+- Risk 1: [description and mitigation]
+- Risk 2: [description and mitigation]
+
+## Plan of Record
+
+### Micro-steps
+1. [ ] Step 1: [description] — Gate: [compile/test]
+2. [ ] Step 2: [description] — Gate: [compile/test]
+3. [ ] Step 3: [description] — Gate: [compile/test]
+
+### Current Step
+Step N: [description]
+
+## Progress Log
+<!-- Append updates, don't delete -->
+
+### Session YYYY-MM-DD
+- Completed: [steps]
+- Gates: [passed/failed]
+- Discovered: [new constraints or issues]
+- Next: [next step]
+
+## Rejected Approaches
+Structural approaches that won't work, with reasons.
+- **Approach**: Why it's not viable
+
+## Open Questions
+Unresolved issues blocking progress.
+
+## Last Verified
+Commit: <hash or "N/A">
+Date: <YYYY-MM-DD>
+```
+
+---
+
 ## Command: `kt-validate`
 
 **Purpose**: Check if knowledge tree is stale relative to code, and optionally fix issues.
