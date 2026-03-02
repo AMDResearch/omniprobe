@@ -7,6 +7,7 @@ See `.agents/kt/architecture.md` for detailed structure (once initialized).
 ## Knowledge Tree
 This project uses a knowledge tree in `.agents/kt/` for structured project understanding.
 
+**New to the KT?** Start with `.agents/kt_overview.md`
 **Quick reference**: `.agents/kt_usage.md`
 **Full specifications**: `.agents/kt_workflows.md`
 
