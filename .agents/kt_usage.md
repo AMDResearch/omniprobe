@@ -6,6 +6,7 @@ Quick reference for using the knowledge tree in agentic coding sessions.
 
 | Command | When | Purpose |
 |---------|------|---------|
+| `kt-help` | Anytime | Show available commands |
 | `kt-init` | First session | Create KT structure for new project |
 | `kt-load` | Session start | Rehydrate context from KT |
 | `kt-update` | Session end | Persist learnings to KT |

@@ -4,6 +4,32 @@ Commands for maintaining the knowledge tree in `.agents/kt/`.
 
 ---
 
+## Command: `kt-help`
+
+**Purpose**: Show available KT commands.
+
+**Output**:
+```
+Knowledge Tree Commands:
+
+  kt-help       Show this help
+  kt-init       Create KT structure for new project
+  kt-load       Load context at session start
+  kt-update     Persist learnings at session end
+  kt-validate   Check for stale dossiers
+  kt-reflect    Assess KT granularity for current task
+
+  kt-refactor start <goal>   Begin new refactor
+  kt-refactor suspend        Checkpoint current refactor
+  kt-refactor resume [slug]  Continue existing refactor
+  kt-refactor finish         Finalize completed refactor
+  kt-refactor list           Show all refactors
+
+See .agents/kt_usage.md for quick reference.
+```
+
+---
+
 ## Sub-project Conventions
 
 Projects may contain git submodules or nested sub-projects. Each sub-project can have its own `.agents/kt/` that describes it in isolation. The top-level knowledge tree:
