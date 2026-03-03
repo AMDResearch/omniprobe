@@ -60,5 +60,9 @@ Main handler class. Inherits from `message_handler_base`.
 - IR-level access size may not match ISA-level (handled via kerneldb correlation)
 - Conflict set calculation for 16-byte accesses has complex non-contiguous lane groups
 
+## Recent Changes
+- **2026-03-03**: Removed `memory_analysis_wrapper_t` — handler now used directly in plugins and comms_mgr
+
 ## Last Verified
-Date: 2026-03-02
+Commit: 6ce0281
+Date: 2026-03-03

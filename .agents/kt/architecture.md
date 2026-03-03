@@ -6,6 +6,8 @@ Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runti
 **Recent Changes** (2026-03-03):
 - Removed passthrough wrapper classes for cleaner architecture
 - Added end-to-end test infrastructure via `tests/run_handler_tests.sh`
+- Created test kernels with `CHECK_HIP` macro for clean error handling
+- Improved test code readability (replaced binary constants with enums)
 
 ## System Diagram
 
@@ -64,6 +66,7 @@ Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runti
 | Memory Analysis | `src/memory_analysis_handler.cc` | Uncoalesced access + bank conflict detection |
 | Plugins | `plugins/` | Message handler factory interface |
 | omniprobe CLI | `omniprobe/omniprobe` | Python orchestrator script |
+| Testing | `tests/` | End-to-end test infrastructure via omniprobe |
 
 ## Sub-projects (Git Submodules)
 
@@ -102,4 +105,5 @@ Useful build artifacts:
 | `LOGDUR_LOG_FORMAT` | Output format (csv, json) |
 
 ## Last Verified
-Date: 2026-03-02
+Commit: 6ce0281
+Date: 2026-03-03
