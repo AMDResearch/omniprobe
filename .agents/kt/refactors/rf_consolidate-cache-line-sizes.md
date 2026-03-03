@@ -118,9 +118,15 @@ Eliminate duplicate cache line size definitions in host-side code by creating a 
   - Added entry to Recent Changes
 
 **Net changes**:
-- New file: `external/dh_comms/include/gpu_arch_constants.h` (+72 lines)
+- New file: `external/dh_comms/include/gpu_arch_constants.h` (+82 lines)
 - Modified: `src/memory_analysis_handler.cc` (-9 lines, simplified)
 - Modified: `.agents/kt/memory_analysis.md` (documentation)
+
+**Commits**:
+- `282a26b` (dh_comms): Add GPU architecture constants header with L2 cache line sizes
+- `41ab393` (main): Consolidate L2 cache line size definitions into shared header
+
+**Final verification**: All 3 end-to-end tests pass ✓
 
 ### Session 2026-03-03 - Planning
 - Analyzed codebase and found duplicate cache line size definitions
@@ -154,6 +160,6 @@ Device code sets `message.wave_header().arch` to this enum value at compile time
 - JSON report generation requires mapping from string architecture names to enum values (could be improved in future)
 
 ## Last Verified
-Commit: (not yet committed)
+Commit: 41ab393 (main repo), 282a26b (dh_comms submodule)
 Date: 2026-03-03
-Status: Complete - refactor implemented and tested, ready to commit
+Status: Complete - refactor finalized and committed
