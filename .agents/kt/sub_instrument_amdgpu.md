@@ -43,11 +43,16 @@ All plugins use dh_comms bitcode for device-side message submission.
 
 ## Instrumentation Types
 
-| Plugin | Instruments | dh_comms Calls | Currently Used |
-|--------|-------------|----------------|----------------|
-| AMDGCNSubmitAddressMessages | Load/Store | `v_submit_address()` | ✓ Yes |
-| AMDGCNSubmitBBStart | Basic blocks | `s_submit_wave_header()` | Future |
-| AMDGCNSubmitBBInterval | BB timing | `s_submit_time_interval()` | Future |
+| Plugin | Instruments | dh_comms Calls | Used By Analyzers |
+|--------|-------------|----------------|-------------------|
+| AMDGCNSubmitAddressMessages | Load/Store | `v_submit_address()` | AddressLogger, Heatmap, MemoryAnalysis (default) |
+| AMDGCNSubmitBBStart | Basic blocks | `s_submit_wave_header()` | BasicBlockLogger, BasicBlockAnalysis |
+| AMDGCNSubmitBBInterval | BB timing | `s_submit_time_interval()` | *(none - available but unused)* |
+
+**Plugin Selection**:
+- **Default plugin**: `libAMDGCNSubmitAddressMessages-{rocm,triton}.so` used unless analyzer overrides
+- **Triton mode**: Omniprobe sets `LLVM_PASS_PLUGIN_PATH` automatically based on selected analyzer
+- **HIP mode**: Users must manually compile with `-fpass-plugin=<plugin>.so`
 
 ## Also Load
 - Full sub-project KT at `external/instrument-amdgpu-kernels/.agents/kt/architecture.md` (when available)

@@ -8,6 +8,7 @@ Python script that orchestrates running instrumented applications. Sets up envir
 - **Handler Selection**: `-a` flag selects analysis type (e.g., MemoryAnalysis)
 - **Output Location**: `-o` flag specifies output file or "console"
 - **Instrumented Mode**: `-i` flag enables dispatching instrumented kernels
+- **HIP vs Triton**: For HIP, users compile with plugin manually; for Triton, omniprobe sets LLVM_PASS_PLUGIN_PATH for JIT compilation
 
 ## Key Invariants
 - Must be run from installation directory (paths resolved relative to script)
@@ -28,9 +29,28 @@ Python script that orchestrates running instrumented applications. Sets up envir
 | Flag | Purpose |
 |------|---------|
 | `-i` | Enable instrumented kernel dispatch |
-| `-a <handler>` | Select analysis handler (MemoryAnalysis, etc.) |
+| `-a <handler>` | Select analysis handler (see Available Analyzers below) |
 | `-o <path>` | Output location (file path or "console") |
 | `-f <format>` | Output format (csv, json) |
+| `-c <cache>` | Triton cache location (triggers Triton mode, sets LLVM_PASS_PLUGIN_PATH) |
+
+## Available Analyzers
+
+Configured in `omniprobe/config/analytics.py`:
+
+| Analyzer | Description | Message Handler | Triton Plugin |
+|----------|-------------|-----------------|---------------|
+| **AddressLogger** | Log raw memory traces | `libLogMessages64.so` | `libAMDGCNSubmitAddressMessages-triton.so` (default) |
+| **BasicBlockLogger** | Log raw timestamps from basic blocks | `libLogMessages64.so` | `libAMDGCNSubmitBBStart-triton.so` |
+| **Heatmap** | Produce per-dispatch memory heatmap | `libdefaultMessageHandlers64.so` | `libAMDGCNSubmitAddressMessages-triton.so` (default) |
+| **MemoryAnalysis** | Analyze memory access efficiency | `libMemAnalysis64.so` | `libAMDGCNSubmitAddressMessages-triton.so` (default) |
+| **BasicBlockAnalysis** | Analyze basic block execution | `libBasicBlocks64.so` | `libAMDGCNSubmitBBStart-triton.so` |
+
+**Plugin Selection Logic**:
+- Default: `libAMDGCNSubmitAddressMessages-triton.so` (for memory address instrumentation)
+- Override: Analyzers with `llvm_plugin` field in analytics.py override the default
+- HIP mode: Users must compile with `-fpass-plugin=<plugin>` manually
+- Triton mode: Omniprobe sets `LLVM_PASS_PLUGIN_PATH` when `-c <cache>` is provided
 
 ## Dependencies
 - liblogDuration64.so (loaded via HSA_TOOLS_LIB)
@@ -41,9 +61,26 @@ Python script that orchestrates running instrumented applications. Sets up envir
 - `omniprobe/config/` — configuration files
 - `runtime_config.txt` — generated at build time
 
+## HIP vs Triton Instrumentation
+
+### HIP Workflow
+1. User compiles HIP code with `-fpass-plugin=/path/to/libAMDGCNSubmit*-rocm.so`
+2. Executable contains both original and instrumented kernels
+3. Omniprobe sets `HSA_TOOLS_LIB` and `LOGDUR_INSTRUMENTED=1` to enable dispatch interception
+4. liblogDuration64.so swaps to instrumented kernels at runtime
+
+### Triton Workflow
+1. User runs omniprobe with `-c $HOME/.triton/cache` to trigger Triton mode
+2. Omniprobe sets `LLVM_PASS_PLUGIN_PATH` based on selected analyzer
+3. Triton JIT compiler loads plugin during kernel compilation
+4. Rest of workflow same as HIP (dispatch interception, message handling)
+
+**Key Difference**: HIP requires pre-instrumentation; Triton instruments during JIT compilation.
+
 ## Known Limitations
 - Requires pyfiglet for ASCII banner
-- Triton support via separate config
+- Only one LLVM plugin can be loaded at a time (last analyzer wins if multiple specified)
+- `libAMDGCNSubmitBBInterval-triton.so` exists but no analyzer currently uses it
 
 ## Last Verified
-Date: 2026-03-02
+Date: 2026-03-03
