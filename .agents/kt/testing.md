@@ -188,7 +188,7 @@ ninja handler_integration_test
 
 **Primary method** (end-to-end via omniprobe):
 ```bash
-cd /work1/amd/rvanoo/repos/omniprobe
+# From repository root:
 ./tests/run_handler_tests.sh
 ```
 

@@ -5,12 +5,14 @@ Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runti
 
 **Recent Changes** (2026-03-03):
 - Merged agents branch into main (22 commits across 4 repos)
+- Deleted agents branches (local + remote) from all 4 repos after merge
 - Removed passthrough wrapper classes for cleaner architecture
 - Added end-to-end test infrastructure via `tests/run_handler_tests.sh`
 - Created test kernels with `CHECK_HIP` macro for clean error handling
 - Improved test code readability (replaced binary constants with enums)
 - Consolidated L2 cache line size definitions into `gpu_arch_constants.h`
 - Cleaned up instrument-amdgpu-kernels submodule: removed 5 unused plugins, simplified to 3 dh_comms-based plugins (commits 5a5d7e0, 8869a43)
+- Added directory awareness reminders to KT (architecture.md + kt_workflows.md) to prevent relative path errors
 
 ## System Diagram
 
@@ -78,6 +80,24 @@ Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runti
 | dh_comms | `external/dh_comms/` | Device-host message passing | `external/dh_comms/.agents/kt/` |
 | kerneldb | `external/kerneldb/` | ISA extraction, DWARF parsing | `external/kerneldb/.agents/kt/` |
 | instrument-amdgpu-kernels | `external/instrument-amdgpu-kernels/` | LLVM IR instrumentation plugins | `external/instrument-amdgpu-kernels/.agents/kt/` |
+
+### Working with Submodules
+
+**IMPORTANT**: When running commands in submodules, always use absolute paths or ensure you're in the correct directory:
+
+```bash
+# CORRECT: Use absolute path from repo root
+cd $OMNIPROBE_ROOT/external/dh_comms && git status
+
+# WRONG: Relative path from unknown directory
+cd external/dh_comms && git status  # Fails if not in main repo!
+```
+
+**Best practices**:
+- Check `pwd` before using relative paths
+- Use absolute paths when working across multiple repos in parallel
+- Relative paths in examples assume you're in the omniprobe repository root
+- Each submodule is independent git repo with its own branches, commits, remotes
 
 ## Build
 

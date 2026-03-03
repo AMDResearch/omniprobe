@@ -84,6 +84,12 @@ When working on a sub-project, load both the top-level architecture and the sub-
 - If you'd explain it separately to a new team member, it deserves a dossier
 - Sub-projects get their own KT; top-level describes integration only
 
+**Portability requirements**:
+- NEVER use machine-specific absolute paths in KT documents
+- Use generic references: "repository root", `<repo-root>`, or relative paths from repo root
+- Code examples and commands must work for anyone cloning the repository
+- Remember: KT is version-controlled and shared with all contributors
+
 ---
 
 ## Command: `kt-load`
@@ -152,6 +158,12 @@ When working on a sub-project, load both the top-level architecture and the sub-
    - Record structural impossibilities, not anecdotal failures
    - Good: "X cannot work because of constraint Y"
    - Bad: "We tried X and it didn't work"
+
+7. **Portability check**:
+   - NEVER use machine-specific absolute paths (e.g., `/home/user/repos/project`)
+   - Use generic references: "repository root", `<repo-root>`, or relative paths
+   - Code examples should work for anyone who clones the repository
+   - Remember: KT documents are version-controlled and shared
 
 ---
 
@@ -680,3 +692,71 @@ Suggestions:
 - **Scope**: Knowledge tree is for structural understanding, not code documentation
 - **Validation**: Run `kt-validate` if you suspect staleness or skipped updates
 - **Granularity**: Run `kt-reflect` to assess if KT matched the task; adjust during `kt-update`
+- **Portability**: NEVER use machine-specific paths (e.g., `/work1/amd/rvanoo/repos/omniprobe`) in KT documents. Use generic references like "repository root", `<repo-root>`, or relative paths from repo root. KT documents are checked into git and must work for all users.
+
+## Common Pitfalls
+
+### Directory Awareness
+
+**CRITICAL**: Always be aware of your current working directory before executing commands, especially with multi-repo projects.
+
+**Common mistakes**:
+```bash
+# WRONG: Assuming you're in a specific directory
+cd external/dh_comms        # Fails if not in main repo
+git branch -a | grep agents  # Executes in wrong repo
+
+# CORRECT: Check or use absolute paths
+pwd                          # Verify current directory first
+cd <omniprobe-repo-root>/external/dh_comms
+```
+
+**Recommendations**:
+- Use `pwd` or absolute paths in Bash commands
+- When working with multiple repos, use full paths for each
+- Avoid chaining relative `cd` commands across tool calls
+- Remember: each Bash command starts fresh, working directory persists but you may not know where you are
+
+### Path Portability
+
+**CRITICAL**: Never hardcode machine-specific paths in version-controlled files. This applies to KT documents, scripts, configuration files, and code.
+
+**What NOT to do**:
+```bash
+# WRONG: Machine-specific absolute paths
+BUILD_DIR=/home/username/projects/omniprobe/build
+cd /work1/amd/rvanoo/repos/omniprobe
+
+# WRONG: User-specific installation paths
+ROCM_PATH=/home/jane/local/rocm-6.0
+```
+
+**What to do instead**:
+```bash
+# CORRECT: Relative to repo root
+BUILD_DIR=./build
+cd "$(git rev-parse --show-toplevel)"
+
+# CORRECT: Environment variables or configurable paths
+ROCM_PATH=${ROCM_PATH:-/opt/rocm}
+
+# CORRECT: Detect at runtime
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+```
+
+**Applies to**:
+- **KT documents**: Use "repository root", `<repo-root>`, or relative paths in examples
+- **Build/test scripts**: Use relative paths or environment variables
+- **Configuration files**: Provide defaults, allow overrides via env vars
+- **Code comments**: Use generic references, not specific paths from your machine
+
+**Why this matters**:
+- Files are version-controlled and shared with all contributors
+- Different users have different directory layouts
+- CI/CD systems use different paths than developer machines
+- Hardcoded paths break portability and cause frustration
+
+**Exception**: It's OK to use absolute paths in:
+- Local `.gitignore`d files (personal build configs, IDE settings)
+- Interactive shell commands during development (not saved to repo)
+- User-specific configuration files that aren't version-controlled
