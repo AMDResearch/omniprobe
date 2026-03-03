@@ -40,9 +40,15 @@ __global__ void test_address_kernel(float *dst, float *src, size_t array_size,
     }
 
     // Emit address messages for both src and dst accesses
-    dh_comms::v_submit_address(rsrc, src + idx, 0, __LINE__, 0, 0b01, 0b01, sizeof(*src));
+    dh_comms::v_submit_address(rsrc, src + idx, 0, __LINE__, 0,
+                               dh_comms::memory_access::read,
+                               dh_comms::address_space::global,
+                               sizeof(*src));
     dst[idx] = src[idx] * 2.0f;
-    dh_comms::v_submit_address(rsrc, dst + idx, 0, __LINE__, 0, 0b10, 0b01, sizeof(*dst));
+    dh_comms::v_submit_address(rsrc, dst + idx, 0, __LINE__, 0,
+                               dh_comms::memory_access::write,
+                               dh_comms::address_space::global,
+                               sizeof(*dst));
 }
 
 // Test kernel that emits time interval messages
