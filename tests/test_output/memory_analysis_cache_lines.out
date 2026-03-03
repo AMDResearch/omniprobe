@@ -1,0 +1,117 @@
+  ___                  _                 _          
+ / _ \ _ __ ___  _ __ (_)_ __  _ __ ___ | |__   ___ 
+| | | | '_ ` _ \| '_ \| | '_ \| '__/ _ \| '_ \ / _ \
+| |_| | | | | | | | | | | |_) | | | (_) | |_) |  __/
+ \___/|_| |_| |_|_| |_|_| .__/|_|  \___/|_.__/ \___|
+                        |_|                         
+
+Found config file at /home1/rvanoo/work/.local/bin/logDuration/runtime_config.txt
+
+Omniprobe is developed by Advanced Micro Devices, Research and Advanced Development
+Copyright (c) 2025 Advanced Micro Devices. All rights reserved.
+
+No Triton cache location provided; assuming HIP run.
+starting main
+HANDLER: libMemAnalysis64.so
+Memory Analysis Wrapper loaded (constructor).
+handlerManager: OpenedlibMemAnalysis64.so
+Total Clang Offload Bundles found: 1
+Total Clang Offload Bundles found: 1
+Adding /work1/amd/rvanoo/repos/mem_analysis_dwordx4/dwordx4_inst
+Total Clang Offload Bundles found: 1
+Marker Count: 10 Kernel Count: 10
+Mapping disassembly to source for /work1/amd/rvanoo/repos/mem_analysis_dwordx4/dwordx4_inst
+Adding linux-vdso.so.1
+Adding /opt/rocm-7.1.0/lib/libamdhip64.so.7
+Adding /opt/ohpc/pub/compiler/gcc/12.2.0/lib64/libstdc++.so.6
+Adding /lib64/libm.so.6
+Adding /opt/ohpc/pub/compiler/gcc/12.2.0/lib64/libgcc_s.so.1
+Adding /lib64/libc.so.6
+Adding /lib64/libdl.so.2
+Adding /opt/rocm-7.1.0/lib/librocprofiler-register.so.0
+Adding /lib64/librt.so.1
+Adding /opt/rocm-7.1.0/lib/libamd_comgr.so.3
+Adding /opt/rocm-7.1.0/lib/libhsa-runtime64.so.1
+Adding /lib64/libnuma.so.1
+Adding /lib64/libpthread.so.0
+Adding /lib64/ld-linux-x86-64.so.2
+Adding /lib64/libz.so.1
+Adding /lib64/libzstd.so.1
+Adding /lib64/libelf.so.1
+Adding /opt/amdgpu/lib64/libdrm.so.2
+Adding /opt/amdgpu/lib64/libdrm_amdgpu.so.1
+Adding /work1/amd/rvanoo/.local/lib/logDuration/liblogDuration64.so
+Adding /work1/amd/rvanoo/.local/lib/libdh_comms.so
+Adding /work1/amd/rvanoo/.local/lib/libkernelDB64.so.1
+Adding /lib64/libdwarf.so.0
+Adding /work1/amd/rvanoo/.local/lib/libMemAnalysis64.so
+>>>>>>>> HSA intercept registered.
+Found instrumented alternative for sxpy_strided(int*, int*, unsigned long) [clone .kd]
+comms_mgr::checkoutCommsObject START for kernel sxpy_strided(int*, int*, unsigned long) [clone .kd]
+dh_comms object 0 ctor
+comms_mgr::checkoutCommsObject created dh_comms at 0x2f1b500
+comms_mgr::checkoutCommsObject END - returning 0x2f1b500
+signalCompleted checking in comms_obj for signal 140610665183872
+comms_mgr::checkinCommsObject START for object at 0x2f1b500
+comms_mgr::checkinCommsObject calling object->stop()
+main thread done
+atexit handler called - ensuring cleanup before process exit
+Comms Runner shutting down
+comms_mgr::checkinCommsObject calling object->report()
+dh_comms object 0 report() START - about to call handler chain report
+=== L2 cache line use report ======================
+/home1/rvanoo/repos/mem_analysis_dwordx4/dwordx4.cpp:27:12
+    a[idx] += b[idx];
+           ^
+	read of 4 bytes at IR level (4 bytes at ISA level: "global_load_dword")
+	executed 1 times, 2 cache lines needed, 8 cache lines used
+/home1/rvanoo/repos/mem_analysis_dwordx4/dwordx4.cpp:27:12
+    a[idx] += b[idx];
+           ^
+	write of 4 bytes at IR level (4 bytes at ISA level: "global_store_dword")
+	executed 1 times, 2 cache lines needed, 8 cache lines used
+/home1/rvanoo/repos/mem_analysis_dwordx4/dwordx4.cpp:27:15
+    a[idx] += b[idx];
+              ^
+	read of 4 bytes at IR level (4 bytes at ISA level: "global_load_dword")
+	executed 1 times, 2 cache lines needed, 8 cache lines used
+=== End of L2 cache line use report ===============
+=== Bank conflicts report =========================
+No bank conflicts found
+=== End of bank conflicts report ====================
+dh_comms object 0 report() - handler chain report returned
+2496 bytes processed in 0.000422 seconds (5.9 MiB/s)
+dh_comms object 0 report() END
+comms_mgr::checkinCommsObject calling object->delete_handlers()
+comms_mgr::checkinCommsObject deleting object
+dh_comms object 0 dtor START
+Cache Watcher shutting down
+dh_comms object 0 dtor END
+comms_mgr::checkinCommsObject delete completed
+signalCompleted checked in comms_obj
+atexit handler: all operations completed, calling cleanup
+hsaInterceptor destructor START
+hsaInterceptor joining signal_runner
+signal_runner is shutting down
+hsaInterceptor signal_runner joined
+hsaInterceptor joining cache_watcher
+hsaInterceptor cache_watcher joined
+hsaInterceptor joining comms_runner
+hsaInterceptor comms_runner joined
+hsaInterceptor starting cleanup
+hsaInterceptor destructor END
+Ending kernelDB
+Found 10 kernels.
+comms_mgr destructor START
+comms_mgr deleting mem_mgr
+comms_mgr destructor END
+handlerManager destructor START - calling dlclose on handler libraries
+handlerManager calling dlclose on 0x20c8d60
+handlerManager dlclose returned
+handlerManager destructor END
+atexit handler: cleanup finished
+Memory Analysis Wrapper unloaded (destructor).
+process_exit_cleanup() called
+process_exit_cleanup() - singleton already cleaned up by atexit (expected)
+OnUnload() called
+OnUnload() - already cleaned up by atexit handler
