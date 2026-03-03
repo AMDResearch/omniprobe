@@ -1,7 +1,7 @@
 # Refactor: Remove Passthrough Handler Wrappers
 
 ## Status
-- [x] In Progress
+- [x] Done
 
 ## Objective
 Remove `memory_analysis_wrapper_t` and `memory_heatmap_wrapper` classes that are pure passthroughs to their wrapped handlers, reducing code complexity without changing behavior.
@@ -63,7 +63,7 @@ Delete wrapper classes that add no functionality beyond delegating to wrapped ha
 10. [x] Integration test with omniprobe script — Gate: output matches ✓
 
 ### Current Step
-**Phase 2 COMPLETE!** All wrappers removed, tests passing. Ready to commit.
+**REFACTOR COMPLETE** - Committed and KT updated.
 
 ## Progress Log
 
@@ -98,6 +98,15 @@ Delete wrapper classes that add no functionality beyond delegating to wrapped ha
 - **All 3 tests PASS after wrapper removal** ✓
 
 **Refactor complete!** Handlers work identically without wrapper indirection.
+
+### Session 2026-03-03 - Finalization
+- Committed changes in 3 commits:
+  1. `267ed53` - Remove passthrough handler wrapper classes
+  2. `7c97556` - Add end-to-end test infrastructure for handlers
+  3. `697f52c` - Update knowledge tree: wrapper removal and test infrastructure
+- Updated KT dossiers: `comms_mgr.md`, `architecture.md`
+- Marked refactor status: Done
+- All verification gates passed ✓
 
 ### Session 2026-03-02 (continued)
 - Created `tests/` directory with GoogleTest integration
@@ -147,6 +156,14 @@ Delete wrapper classes that add no functionality beyond delegating to wrapped ha
 - Can use mock messages to test handler behavior
 - Compare output before/after wrapper removal
 
+## Completion Summary
+
+**Net changes**: -254 lines (removed wrapper code), +1099 lines (test infrastructure)
+**Files deleted**: 4 wrapper files
+**Files modified**: 4 (comms_mgr, 3 CMakeLists.txt)
+**Tests added**: 3 end-to-end tests via omniprobe
+**Test results**: All pass before and after changes ✓
+
 ## Last Verified
-Commit: b24c1cc
-Date: 2026-03-02
+Commit: 697f52c
+Date: 2026-03-03
