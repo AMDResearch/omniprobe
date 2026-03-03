@@ -3,6 +3,7 @@
 
 #include <hip/hip_runtime.h>
 #include <iostream>
+#include "hip_test_utils.h"
 
 // Coalesced access - adjacent threads access adjacent memory
 __global__ void coalesced_kernel(int* data, size_t size) {
@@ -28,35 +29,17 @@ int main() {
     constexpr size_t size = blocksize * no_blocks * 16; // Extra space for strided access
 
     int *data;
-    hipError_t err = hipMalloc(&data, size * sizeof(int));
-    if (err != hipSuccess) {
-        std::cerr << "hipMalloc failed: " << hipGetErrorString(err) << std::endl;
-        return 1;
-    }
+    CHECK_HIP(hipMalloc(&data, size * sizeof(int)));
 
     // First dispatch: coalesced access
     coalesced_kernel<<<no_blocks, blocksize>>>(data, blocksize * no_blocks);
-    err = hipDeviceSynchronize();
-    if (err != hipSuccess) {
-        std::cerr << "hipDeviceSynchronize failed: " << hipGetErrorString(err) << std::endl;
-        (void)hipFree(data);  // Explicitly ignore return on error path
-        return 1;
-    }
+    CHECK_HIP(hipDeviceSynchronize());
 
     // Second dispatch: strided access (uncoalesced)
     strided_kernel<<<no_blocks, blocksize>>>(data, size, 16);
-    err = hipDeviceSynchronize();
-    if (err != hipSuccess) {
-        std::cerr << "hipDeviceSynchronize failed: " << hipGetErrorString(err) << std::endl;
-        (void)hipFree(data);  // Explicitly ignore return on error path
-        return 1;
-    }
+    CHECK_HIP(hipDeviceSynchronize());
 
-    err = hipFree(data);
-    if (err != hipSuccess) {
-        std::cerr << "hipFree failed: " << hipGetErrorString(err) << std::endl;
-        return 1;
-    }
+    CHECK_HIP(hipFree(data));
 
     std::cerr << "simple_memory_analysis_test done" << std::endl;
     return 0;
