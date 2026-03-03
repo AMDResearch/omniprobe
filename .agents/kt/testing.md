@@ -69,11 +69,13 @@ Bash script that orchestrates end-to-end tests:
 ```
 
 **What it does**:
-1. Finds omniprobe binary (`~/work/.local/bin/logDuration/omniprobe` or via `which`)
-2. Sets `ROCR_VISIBLE_DEVICES=0` to target GPU 0
-3. Runs instrumented test kernels with specific analyzers
-4. Captures output and validates against expected patterns
-5. Reports pass/fail with colored output
+1. Auto-detects build directory (`build/` relative to repo root)
+2. Finds omniprobe binary (`~/work/.local/bin/logDuration/omniprobe`)
+3. Sets `ROCR_VISIBLE_DEVICES=0` to target GPU 0
+4. Runs instrumented test kernels from `build/tests/test_kernels/`
+5. Captures output and validates against expected patterns
+6. Reports pass/fail with colored output
+7. Provides helpful error messages if tests aren't built
 
 **Test format**:
 ```bash
@@ -88,36 +90,44 @@ run_test "test_name" \
 2. `memory_analysis_cache_lines` — Memory analysis reports cache line usage
 3. `heatmap_page_accesses` — Heatmap counts page accesses
 
-**Test kernel**: Uses pre-instrumented kernel from external repository:
-- `/home1/rvanoo/repos/mem_analysis_dwordx4/dwordx4_inst`
-- Known memory access patterns for validation
+**Test kernels**: Uses project's own automatically instrumented test kernels:
+- `build/tests/test_kernels/simple_heatmap_test`
+- `build/tests/test_kernels/simple_memory_analysis_test`
+- Instrumented at build time via LLVM pass plugin
 
 ### Test Kernels: `tests/test_kernels/`
 
-Simple HIP kernels for testing specific scenarios (not yet integrated into test runner):
+Simple HIP kernels for testing specific scenarios. These are automatically instrumented at build time and used by the test runner.
 
 **`simple_heatmap_test.cpp`**:
 - Basic kernel with sequential memory access
-- Tests: address message emission
-- Usage: Will be instrumented and used for heatmap handler testing
+- Tests: address message emission for memory heatmap handler
+- Automatically instrumented and used by `heatmap_basic` test
 
 **`simple_memory_analysis_test.cpp`**:
 - Two kernels: coalesced and strided memory access
 - Tests: uncoalesced access detection
-- Usage: Will test memory analysis handler pattern detection
+- Automatically instrumented and used by `memory_analysis_cache_lines` test
 
 **`hip_test_utils.h`**:
 - `CHECK_HIP(call)` macro for clean HIP error checking
 - Provides ASSERT_EQ-like functionality without GoogleTest
-- Used by simple test kernels
+- Used by all test kernels
 
-**Building test kernels** (when ready):
+**Automatic Instrumentation** (via `tests/test_kernels/CMakeLists.txt`):
+- Test kernels compiled with `-fpass-plugin=${INST_PLUGIN}`
+- Plugin path: `build/external/instrument-amdgpu-kernels-rocm/build/lib/libAMDGCNSubmitAddressMessages-rocm.so`
+- Bitcode files automatically copied from dh_comms to plugin directory via `copy_bitcode_files` target
+- Instrumentation happens at compile time, producing ready-to-run instrumented executables
+
+**Building test kernels**:
 ```bash
-cd tests/test_kernels
-hipcc -o simple_heatmap_test simple_heatmap_test.cpp
+cd build
+cmake .. -DINTERCEPTOR_BUILD_TESTING=ON
+ninja
 ```
 
-These kernels will be instrumented using the LLVM passes and integrated into `run_handler_tests.sh`.
+Output: `build/tests/test_kernels/simple_heatmap_test`, `simple_memory_analysis_test`
 
 ## GoogleTest Integration (Currently Disabled)
 
@@ -240,7 +250,17 @@ ninja handler_integration_test
 - What refactoring is needed to enable true unit tests with GoogleTest?
 - Should we create a test fixture library for handler testing?
 
+## Recent Changes
+
+**2026-03-03** (commit 7d7da52):
+- Enabled automatic instrumentation of test kernels at build time
+- Test kernels now compiled with `-fpass-plugin` to automatically instrument
+- Added `copy_bitcode_files` target to copy dh_comms bitcode to plugin directory
+- Test runner updated to use project's own test kernels instead of external kernel
+- Test runner auto-detects build directory and provides better error messages
+- Test kernels now in `build/tests/test_kernels/` (automatically instrumented)
+
 ## Last Verified
-Commit: 6ce0281
+Commit: 7d7da52
 Date: 2026-03-03
-All 3 end-to-end tests passing ✓
+All 3 end-to-end tests passing with automatically instrumented kernels ✓

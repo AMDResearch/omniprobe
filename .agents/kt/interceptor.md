@@ -25,8 +25,8 @@ HSA tools library that intercepts kernel dispatches at runtime. When a dispatch 
 6. Signal runner thread processes completed kernels, invokes handler reports
 
 ## Interfaces
-- `OnLoad(HsaApiTable*, ...)` — HSA entry point — `src/interceptor.cc:186`
-- `OnUnload()` — HSA cleanup — `src/interceptor.cc:188`
+- `OnLoad(HsaApiTable*, ...)` — HSA entry point — `src/interceptor.cc:990`
+- `OnUnload()` — HSA cleanup — `src/interceptor.cc:1028`
 - `hsaInterceptor::getInstance()` — singleton accessor — `inc/interceptor.h:120`
 - `hsaInterceptor::doPackets()` — packet interception logic — `inc/interceptor.h:113`
 - `hsaInterceptor::fixupPacket()` — modify dispatch packet — `inc/interceptor.h:112`
