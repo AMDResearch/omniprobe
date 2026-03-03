@@ -10,6 +10,7 @@ Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runti
 - Created test kernels with `CHECK_HIP` macro for clean error handling
 - Improved test code readability (replaced binary constants with enums)
 - Consolidated L2 cache line size definitions into `gpu_arch_constants.h`
+- Cleaned up instrument-amdgpu-kernels submodule: removed 5 unused plugins, simplified to 3 dh_comms-based plugins (commits 5a5d7e0, 8869a43)
 
 ## System Diagram
 
@@ -107,5 +108,5 @@ Useful build artifacts:
 | `LOGDUR_LOG_FORMAT` | Output format (csv, json) |
 
 ## Last Verified
-Commit: 6ce0281
+Commit: 8869a43 (main repo), 5a5d7e0 (instrument-amdgpu-kernels submodule)
 Date: 2026-03-03
