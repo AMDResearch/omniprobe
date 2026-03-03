@@ -83,21 +83,28 @@ Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runti
 
 ### Working with Submodules
 
-**IMPORTANT**: When running commands in submodules, always use absolute paths or ensure you're in the correct directory:
+**IMPORTANT**: Use `git -C` for submodule git operations instead of `cd && git` compound commands.
+
+**Why**: Compound `cd && git` commands trigger security prompts (bare repository attack prevention) and are error-prone with directory state. Using `git -C` is explicit, single-command, and avoids these issues.
 
 ```bash
-# CORRECT: Use absolute path from repo root
-cd $OMNIPROBE_ROOT/external/dh_comms && git status
+# PREFERRED: Use git -C with absolute path
+git -C "$(git rev-parse --show-toplevel)/external/dh_comms" status
+git -C "$(git rev-parse --show-toplevel)/external/kerneldb" log -3
 
-# WRONG: Relative path from unknown directory
-cd external/dh_comms && git status  # Fails if not in main repo!
+# ALSO OK: Separate commands (but requires tracking directory state)
+cd external/dh_comms
+git status
+
+# AVOID: Compound cd && git (triggers security prompts)
+cd external/dh_comms && git status
 ```
 
 **Best practices**:
-- Check `pwd` before using relative paths
-- Use absolute paths when working across multiple repos in parallel
-- Relative paths in examples assume you're in the omniprobe repository root
+- Use `git -C <path>` for all submodule git operations
+- Use `$(git rev-parse --show-toplevel)` to get repo root reliably
 - Each submodule is independent git repo with its own branches, commits, remotes
+- When non-git commands need to run in submodule, use separate `cd` then run commands
 
 ## Build
 

@@ -700,22 +700,32 @@ Suggestions:
 
 **CRITICAL**: Always be aware of your current working directory before executing commands, especially with multi-repo projects.
 
-**Common mistakes**:
+**For git commands in submodules**, use `git -C` instead of `cd && git`:
 ```bash
-# WRONG: Assuming you're in a specific directory
-cd external/dh_comms        # Fails if not in main repo
-git branch -a | grep agents  # Executes in wrong repo
+# PREFERRED: Use git -C (explicit, no directory state, no security prompts)
+git -C "$(git rev-parse --show-toplevel)/external/dh_comms" status
+git -C "$(git rev-parse --show-toplevel)/external/kerneldb" log -3
 
-# CORRECT: Check or use absolute paths
-pwd                          # Verify current directory first
-cd <omniprobe-repo-root>/external/dh_comms
+# AVOID: Compound cd && git (triggers bare repository attack security prompts)
+cd external/dh_comms && git status
+```
+
+**For non-git commands**, use separate commands or absolute paths:
+```bash
+# OK: Separate commands
+cd external/dh_comms
+make clean
+
+# OK: Absolute paths
+make -C "$(git rev-parse --show-toplevel)/external/dh_comms" clean
 ```
 
 **Recommendations**:
-- Use `pwd` or absolute paths in Bash commands
-- When working with multiple repos, use full paths for each
-- Avoid chaining relative `cd` commands across tool calls
-- Remember: each Bash command starts fresh, working directory persists but you may not know where you are
+- Use `git -C <path>` for all git operations in submodules
+- Use `$(git rev-parse --show-toplevel)` to get repo root portably
+- Avoid chaining `cd && git` — it triggers security prompts
+- For non-git commands, separate `cd` from subsequent commands
+- Remember: working directory persists across Bash calls but you may not know where you are
 
 ### Path Portability
 
