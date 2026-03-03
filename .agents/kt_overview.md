@@ -36,8 +36,10 @@ The Knowledge Tree lives in `.agents/kt/` and contains:
     <subsystem>.md      # Per-subsystem dossiers
     glossary.md         # Domain terminology
     sub_<name>.md       # Integration dossiers for sub-projects
-    refactors/          # Active and completed refactor dossiers
+    refactors/          # Active refactor dossiers (In Progress, Blocked)
       rf_<slug>.md
+      done/             # Completed refactor dossiers (Done)
+        rf_<slug>.md
 ```
 
 ### Dossiers

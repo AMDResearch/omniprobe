@@ -243,7 +243,7 @@ The user provides the *goal*; we discover the *scope* and *constraints* together
 
 1. **Create refactor dossier**:
    - Generate slug from goal description
-   - Location: `.agents/kt/refactors/rf_<slug>.md`
+   - Location: `.agents/kt/refactors/rf_<slug>.md` (active refactors in `refactors/`, completed in `refactors/done/`)
    - Create from template
 
 2. **Survey the code**:
@@ -311,10 +311,12 @@ The user provides the *goal*; we discover the *scope* and *constraints* together
 
 **Input**: Slug of existing refactor, or omit if only one active refactor.
 
+**Note**: Only considers refactors with status "In Progress" (not "Done" or "Blocked"). Completed refactors are in `refactors/done/` and cannot be resumed.
+
 **Steps**:
 
 1. **Load refactor dossier**:
-   - Read `.agents/kt/refactors/rf_<slug>.md`
+   - Search for `.agents/kt/refactors/rf_<slug>.md` with status "In Progress"
    - Load relevant subsystem dossiers referenced in scope
 
 2. **Review state**:
@@ -349,9 +351,10 @@ The user provides the *goal*; we discover the *scope* and *constraints* together
    - Add any new invariants discovered
    - Remove outdated information
 
-4. **Archive**:
-   - Dossier remains in `refactors/` for reference
-   - Completed refactors serve as historical record
+4. **Archive to done/ subdirectory**:
+   - Move dossier from `.agents/kt/refactors/` to `.agents/kt/refactors/done/`
+   - Completed refactors serve as historical record and learning resource
+   - Keeps active refactors list clean
 
 ---
 
@@ -361,7 +364,7 @@ The user provides the *goal*; we discover the *scope* and *constraints* together
 
 **Output**:
 ```
-Active refactors:
+Active refactors (.agents/kt/refactors/):
 
   rf_extract-handler-interface
     Status: In Progress (step 3/5)
@@ -373,17 +376,27 @@ Active refactors:
     Last active: 2026-02-28
     Blocker: Waiting for dh_comms API review
 
-Completed refactors:
+Completed refactors (.agents/kt/refactors/done/):
 
   rf_rename-dispatch-count
     Status: Done
     Completed: 2026-02-15
+
+  rf_remove-passthrough-wrappers
+    Status: Done
+    Completed: 2026-03-03
 ```
+
+**Implementation**:
+- Lists files in `.agents/kt/refactors/` (active: In Progress or Blocked)
+- Lists files in `.agents/kt/refactors/done/` (completed: Done)
+- Parses status from each dossier
 
 **Use cases**:
 - See what refactors are in flight before starting a new one
 - Find the slug to resume an existing refactor
 - Check for blocked refactors that may be unblocked
+- Browse completed refactors for reference
 
 ---
 
