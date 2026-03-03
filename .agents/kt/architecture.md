@@ -4,10 +4,12 @@
 Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runtime information such as memory access patterns, cache line usage, and LDS bank conflicts.
 
 **Recent Changes** (2026-03-03):
+- Merged agents branch into main (22 commits across 4 repos)
 - Removed passthrough wrapper classes for cleaner architecture
 - Added end-to-end test infrastructure via `tests/run_handler_tests.sh`
 - Created test kernels with `CHECK_HIP` macro for clean error handling
 - Improved test code readability (replaced binary constants with enums)
+- Consolidated L2 cache line size definitions into `gpu_arch_constants.h`
 
 ## System Diagram
 
