@@ -3,6 +3,10 @@
 ## Overview
 Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runtime information such as memory access patterns, cache line usage, and LDS bank conflicts.
 
+**Recent Changes** (2026-03-03):
+- Removed passthrough wrapper classes for cleaner architecture
+- Added end-to-end test infrastructure via `tests/run_handler_tests.sh`
+
 ## System Diagram
 
 ```
@@ -74,6 +78,7 @@ Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runti
 - CMake-based, requires ROCm (hipcc, HSA headers)
 - Sub-projects built via `ext_proj_add()` macro
 - Produces: `liblogDuration64.so`, message handler plugins, `omniprobe` script
+- Tests: `cmake -DINTERCEPTOR_BUILD_TESTING=ON`, run via `tests/run_handler_tests.sh`
 
 ### Build Configuration
 Current build config stored in `build/CMakeCache.txt`. Key variables:

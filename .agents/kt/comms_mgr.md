@@ -17,9 +17,11 @@ Manages a pool of `dh_comms` objects and their associated resources (buffers, me
 
 ## Data Flow
 1. `addAgent()` called when new GPU agent discovered
-2. `checkoutCommsObject()` returns available dh_comms or grows pool
+2. `checkoutCommsObject()` creates new dh_comms, attaches handlers:
+   - If custom handlers specified via `LOGDUR_HANDLERS`, uses those
+   - Otherwise attaches default handlers: `memory_heatmap_t`, `time_interval_handler_t`
 3. Caller uses dh_comms for kernel dispatch
-4. `checkinCommsObject()` returns object to pool for reuse
+4. `checkinCommsObject()` stops, reports, deletes handlers, then deletes dh_comms object
 
 ## Interfaces
 - `comms_mgr(HsaApiTable*)` — constructor — `inc/comms_mgr.h:56`
@@ -29,9 +31,10 @@ Manages a pool of `dh_comms` objects and their associated resources (buffers, me
 - `setConfig(config)` — apply configuration — `inc/comms_mgr.h:61`
 
 ## Dependencies
-- dh_comms (the objects being pooled)
+- dh_comms (the objects being created/destroyed per dispatch)
 - HSA API (for memory allocation)
 - Handler plugins (via handlerManager)
+- Default handlers: `memory_heatmap_t`, `time_interval_handler_t` (from liblogDuration64)
 
 ## Also Load
 - `interceptor.md` for usage context
@@ -46,5 +49,10 @@ Manages a pool of `dh_comms` objects and their associated resources (buffers, me
 ## Known Limitations
 - Fixed sub-buffer count/capacity at compile time
 
+## Recent Changes
+- **2026-03-03**: Removed passthrough wrapper classes (`memory_heatmap_wrapper`, `memory_analysis_wrapper_t`)
+  - Now instantiates wrapped handlers directly in `checkoutCommsObject()`
+  - Simplified code: `comms_mgr.cc:80-81`
+
 ## Last Verified
-Date: 2026-03-02
+Date: 2026-03-03
