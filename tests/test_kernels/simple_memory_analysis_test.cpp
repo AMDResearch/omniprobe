@@ -28,17 +28,36 @@ int main() {
     constexpr size_t size = blocksize * no_blocks * 16; // Extra space for strided access
 
     int *data;
-    hipMalloc(&data, size * sizeof(int));
+    hipError_t err = hipMalloc(&data, size * sizeof(int));
+    if (err != hipSuccess) {
+        std::cerr << "hipMalloc failed: " << hipGetErrorString(err) << std::endl;
+        return 1;
+    }
 
     // First dispatch: coalesced access
     coalesced_kernel<<<no_blocks, blocksize>>>(data, blocksize * no_blocks);
-    hipDeviceSynchronize();
+    err = hipDeviceSynchronize();
+    if (err != hipSuccess) {
+        std::cerr << "hipDeviceSynchronize failed: " << hipGetErrorString(err) << std::endl;
+        (void)hipFree(data);  // Explicitly ignore return on error path
+        return 1;
+    }
 
     // Second dispatch: strided access (uncoalesced)
     strided_kernel<<<no_blocks, blocksize>>>(data, size, 16);
-    hipDeviceSynchronize();
+    err = hipDeviceSynchronize();
+    if (err != hipSuccess) {
+        std::cerr << "hipDeviceSynchronize failed: " << hipGetErrorString(err) << std::endl;
+        (void)hipFree(data);  // Explicitly ignore return on error path
+        return 1;
+    }
 
-    hipFree(data);
+    err = hipFree(data);
+    if (err != hipSuccess) {
+        std::cerr << "hipFree failed: " << hipGetErrorString(err) << std::endl;
+        return 1;
+    }
+
     std::cerr << "simple_memory_analysis_test done" << std::endl;
     return 0;
 }

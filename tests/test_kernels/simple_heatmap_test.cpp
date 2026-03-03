@@ -19,12 +19,26 @@ int main() {
     constexpr size_t size = blocksize * no_blocks;
 
     int *data;
-    hipMalloc(&data, size * sizeof(int));
+    hipError_t err = hipMalloc(&data, size * sizeof(int));
+    if (err != hipSuccess) {
+        std::cerr << "hipMalloc failed: " << hipGetErrorString(err) << std::endl;
+        return 1;
+    }
 
     simple_kernel<<<no_blocks, blocksize>>>(data, size);
-    hipDeviceSynchronize();
+    err = hipDeviceSynchronize();
+    if (err != hipSuccess) {
+        std::cerr << "hipDeviceSynchronize failed: " << hipGetErrorString(err) << std::endl;
+        (void)hipFree(data);  // Explicitly ignore return on error path
+        return 1;
+    }
 
-    hipFree(data);
+    err = hipFree(data);
+    if (err != hipSuccess) {
+        std::cerr << "hipFree failed: " << hipGetErrorString(err) << std::endl;
+        return 1;
+    }
+
     std::cerr << "simple_heatmap_test done" << std::endl;
     return 0;
 }
