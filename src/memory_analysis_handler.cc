@@ -22,6 +22,7 @@
 
 #include "inc/memory_analysis_handler.h"
 
+#include "gpu_arch_constants.h"
 #include "hip_utils.h"
 #include "utils.h"
 
@@ -36,17 +37,6 @@
 
 namespace {
 constexpr size_t no_banks = 32;
-
-constexpr uint8_t L2_cache_line_sizes[] = {
-    0,   // unsupported archs
-    64,  // gfx906
-    64,  // gfx908
-    128, // gfx90a
-    128, // gfx940
-    128, // gfx941
-    128  // gfx942
-};
-
 } // namespace
 
 namespace dh_comms {
@@ -364,7 +354,7 @@ get_dwarf_info(const dh_comms::message_t &message, const std::string &kernel_nam
 }
 
 bool memory_analysis_handler_t::handle_cache_line_count_analysis(const message_t &message) {
-  uint8_t L2_cache_line_size = L2_cache_line_sizes[message.wave_header().arch];
+  uint8_t L2_cache_line_size = gpu_arch_constants::get_l2_cache_line_size(message.wave_header().arch);
   if (L2_cache_line_size == 0) {
     if (verbose_) {
       printf("Memory analysis handler: message from unsupported GPU hardware, skipping.\n");
@@ -943,17 +933,11 @@ void memory_analysis_handler_t::report_json() {
         arch = gcnArchName_str;
       }
 
-      std::map<std::string, int> arch_to_cache_size = {
-          {"gfx906", 64},
-          {"gfx908", 64},
-          {"gfx90a", 128},
-          {"gfx940", 128},
-          {"gfx941", 128},
-          {"gfx942", 128}
-      };
-
-      if (arch_to_cache_size.count(arch)) {
-          cache_line_size = arch_to_cache_size[arch];
+      // Convert arch string to enum and lookup cache line size
+      uint8_t arch_enum = gpu_arch_constants::arch_string_to_enum(arch);
+      cache_line_size = gpu_arch_constants::get_l2_cache_line_size(arch_enum);
+      if (cache_line_size == 0) {
+          cache_line_size = 128; // fallback to default
       }
     }
   }

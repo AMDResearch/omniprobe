@@ -10,7 +10,9 @@ Analyzes memory access messages from instrumented kernels. For global memory: de
 - **Source Location Tracking**: Issues tracked by file/line/column from DWARF info
 
 ## Key Invariants
-- Cache line size assumed 64 bytes (configurable?)
+- Cache line sizes are architecture-specific (gfx906/908: 64 bytes, gfx90a/940/941/942: 128 bytes)
+  - Defined in `external/dh_comms/include/gpu_arch_constants.h`
+  - Indexed by `gcnarch` enum from message wave header
 - Bank conflict analysis depends on access size (1/2/4 bytes → {0..31}, {32..63}; 8 bytes → 4 sets; 16 bytes → 8 non-contiguous sets)
 - ISA-level access size may differ from IR-level (dwordx4 optimization)
 
@@ -30,7 +32,8 @@ Analyzes memory access messages from instrumented kernels. For global memory: de
 - `report(kernel_name, kdb)` — with ISA details — `inc/memory_analysis_handler.h:90`
 
 ## Dependencies
-- dh_comms (message types, handler base class)
+- dh_comms (message types, handler base class, GPU architecture constants)
+  - `gpu_arch_constants.h` — L2 cache line sizes indexed by gcnarch enum
 - kerneldb (ISA instruction matching for access size correction)
 
 ## Also Load
@@ -61,6 +64,7 @@ Main handler class. Inherits from `message_handler_base`.
 - Conflict set calculation for 16-byte accesses has complex non-contiguous lane groups
 
 ## Recent Changes
+- **2026-03-03**: Consolidated cache line size definitions into `gpu_arch_constants.h` in dh_comms submodule
 - **2026-03-03**: Removed `memory_analysis_wrapper_t` — handler now used directly in plugins and comms_mgr
 
 ## Last Verified
