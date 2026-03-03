@@ -29,7 +29,6 @@ set ( LIB_SRC
   ${LIB_DIR}/hsa_mem_mgr.cc
   ${LIB_DIR}/comms_mgr.cc
   ${LIB_DIR}/pyHandler.cc
-  ${LIB_DIR}/memory_heatmap_wrapper.cc
   ${LIB_DIR}/memory_heatmap.cc
   ${LIB_DIR}/time_interval_handler_wrapper.cc
   ${LIB_DIR}/time_interval_handler.cc

@@ -21,8 +21,8 @@ THE SOFTWARE.
 *******************************************************************************/
 #include "inc/comms_mgr.h"
 #include "inc/hsa_mem_mgr.h"
-#include "inc/memory_heatmap_wrapper.h"
-#include "inc/time_interval_handler_wrapper.h"
+#include "inc/memory_heatmap.h"
+#include "inc/time_interval_handler.h"
 
 comms_mgr::comms_mgr(HsaApiTable *pTable) : kern_arg_allocator_(pTable, std::cerr), pTable_(pTable)
 {
@@ -77,8 +77,8 @@ dh_comms::dh_comms * comms_mgr::checkoutCommsObject(hsa_agent_t agent, std::stri
         }
         else
         {
-            obj->append_handler(std::make_unique<memory_heatmap_wrapper>(strKernelName, dispatch_id));
-            obj->append_handler(std::make_unique<time_interval_handler_wrapper>(strKernelName, dispatch_id));
+            obj->append_handler(std::make_unique<dh_comms::memory_heatmap_t>(strKernelName, dispatch_id, "console"));
+            obj->append_handler(std::make_unique<dh_comms::time_interval_handler_t>(strKernelName, dispatch_id, "console", false));
         }
         obj->start(strKernelName);
         std::cerr << "comms_mgr::checkoutCommsObject END - returning " << static_cast<void*>(obj) << std::endl;
