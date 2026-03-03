@@ -56,3 +56,13 @@ target_compile_options(simple_memory_analysis_test PRIVATE
 target_link_options(simple_memory_analysis_test PRIVATE -fgpu-rdc)
 add_dependencies(simple_memory_analysis_test copy_bitcode_files)
 
+# Block filter test kernel
+add_executable(block_filter_test block_filter_test.cpp)
+set_source_files_properties(block_filter_test.cpp PROPERTIES LANGUAGE HIP)
+target_compile_options(block_filter_test PRIVATE
+    ${TEST_KERNEL_COMPILE_FLAGS}
+    -fpass-plugin=${INST_PLUGIN}
+)
+target_link_options(block_filter_test PRIVATE -fgpu-rdc)
+add_dependencies(block_filter_test copy_bitcode_files)
+

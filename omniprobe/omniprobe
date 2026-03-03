@@ -392,6 +392,17 @@ def setup_env(parms):
     env_dump['HSA_TOOLS_LIB'] = op_run_env['HSA_TOOLS_LIB']
     env['LOGDUR_HANDLERS'] = ','.join(parms.handlers)
     env_dump['LOGDUR_HANDLERS'] = ','.join(parms.handlers)
+
+    # Block index filters
+    if parms.filter_x:
+        env['DH_COMMS_GROUP_FILTER_X'] = parms.filter_x
+        env_dump['DH_COMMS_GROUP_FILTER_X'] = parms.filter_x
+    if parms.filter_y:
+        env['DH_COMMS_GROUP_FILTER_Y'] = parms.filter_y
+        env_dump['DH_COMMS_GROUP_FILTER_Y'] = parms.filter_y
+    if parms.filter_z:
+        env['DH_COMMS_GROUP_FILTER_Z'] = parms.filter_z
+        env_dump['DH_COMMS_GROUP_FILTER_Z'] = parms.filter_z
     if 'LD_LIBRARY_PATH' in env:
         env['LD_LIBRARY_PATH'] = ':'.join([f"{get_omniprobe_home()}/lib",env["LD_LIBRARY_PATH"]])
         env_dump['LD_LIBRARY_PATH'] = env['LD_LIBRARY_PATH']
@@ -625,6 +636,39 @@ def add_general_group(parser):
         default=None,
         nargs=argparse.REMAINDER,
         help="\tProvide command for instrumenting after a double dash.",
+    )
+
+    # Block index filter arguments
+    filter_help = (
+        "\tFilter messages by block index. "
+        "Format: N (single value) or N:M (half-open range [N,M), as in Python slices or C++ iterators)."
+    )
+    general_group.add_argument(
+        "--filter-x",
+        type=str,
+        metavar="RANGE",
+        dest="filter_x",
+        required=False,
+        default="",
+        help=f"{filter_help}\n\tFilters on blockIdx.x.",
+    )
+    general_group.add_argument(
+        "--filter-y",
+        type=str,
+        metavar="RANGE",
+        dest="filter_y",
+        required=False,
+        default="",
+        help=f"{filter_help}\n\tFilters on blockIdx.y.",
+    )
+    general_group.add_argument(
+        "--filter-z",
+        type=str,
+        metavar="RANGE",
+        dest="filter_z",
+        required=False,
+        default="",
+        help=f"{filter_help}\n\tFilters on blockIdx.z.",
     )
     return
 
