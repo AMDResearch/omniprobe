@@ -12,12 +12,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="${REPO_ROOT}/build"
 
-# Use repo's omniprobe with build directory's runtime_config.txt
+# Use repo's omniprobe - it finds build/runtime_config.txt via relative path
 OMNIPROBE="${REPO_ROOT}/omniprobe/omniprobe"
-# Copy runtime_config.txt to omniprobe directory so it can find build artifacts
-if [ -f "${BUILD_DIR}/runtime_config.txt" ]; then
-    cp "${BUILD_DIR}/runtime_config.txt" "${REPO_ROOT}/omniprobe/runtime_config.txt"
-fi
 
 TEST_KERNELS_DIR="${SCRIPT_DIR}/test_kernels"
 OUTPUT_DIR="${SCRIPT_DIR}/test_output"
