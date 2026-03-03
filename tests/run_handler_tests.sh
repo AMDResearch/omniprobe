@@ -87,33 +87,45 @@ echo "Output directory: $OUTPUT_DIR"
 echo "GPU: ROCR_VISIBLE_DEVICES=$ROCR_VISIBLE_DEVICES"
 echo "================================================================================"
 
-# Use existing instrumented test kernel (dwordx4_inst)
-# TODO: Later we can instrument our own test kernels via the LLVM plugin
-DWORDX4_KERNEL="/home1/rvanoo/repos/mem_analysis_dwordx4/dwordx4_inst"
+# Use project's instrumented test kernels
+# Find the build directory - support running from repo root or build directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+BUILD_DIR="${REPO_ROOT}/build"
 
-if [ ! -x "$DWORDX4_KERNEL" ]; then
-    echo -e "${YELLOW}WARNING: dwordx4_inst not found at $DWORDX4_KERNEL${NC}"
-    echo "Using local test kernels (note: these may not be instrumented)"
-    DWORDX4_KERNEL="$(dirname "$0")/../build/tests/test_kernels/simple_memory_analysis_test"
+HEATMAP_TEST="${BUILD_DIR}/tests/test_kernels/simple_heatmap_test"
+MEMORY_ANALYSIS_TEST="${BUILD_DIR}/tests/test_kernels/simple_memory_analysis_test"
+
+if [ ! -x "$HEATMAP_TEST" ]; then
+    echo -e "${RED}ERROR: Test kernel not found at $HEATMAP_TEST${NC}"
+    echo "Make sure you have built the project with: ninja"
+    exit 1
 fi
 
-check_kernel "$DWORDX4_KERNEL"
+if [ ! -x "$MEMORY_ANALYSIS_TEST" ]; then
+    echo -e "${RED}ERROR: Test kernel not found at $MEMORY_ANALYSIS_TEST${NC}"
+    echo "Make sure you have built the project with: ninja"
+    exit 1
+fi
+
+check_kernel "$HEATMAP_TEST"
+check_kernel "$MEMORY_ANALYSIS_TEST"
 
 # Test 1: Memory heatmap handler
 run_test "heatmap_basic" \
-    "$DWORDX4_KERNEL" \
+    "$HEATMAP_TEST" \
     "Heatmap" \
     "memory heatmap report"
 
 # Test 2: Memory analysis handler - should report cache line usage
 run_test "memory_analysis_cache_lines" \
-    "$DWORDX4_KERNEL" \
+    "$MEMORY_ANALYSIS_TEST" \
     "MemoryAnalysis" \
     "L2 cache line use report"
 
 # Test 3: Verify heatmap handler produces page access counts
 run_test "heatmap_page_accesses" \
-    "$DWORDX4_KERNEL" \
+    "$HEATMAP_TEST" \
     "Heatmap" \
     "accesses"
 
