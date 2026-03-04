@@ -42,6 +42,7 @@ THE SOFTWARE.
 #include "hsa_mem_mgr.h"
 #include "comms_mgr.h"
 #include "kernelDB.h"
+#include "library_filter.h"
 
 class hsaInterceptor;
 void signal_runner();
@@ -176,6 +177,7 @@ private:
     std::atomic<uint64_t> dispatch_count_;
     dispatchController dispatcher_;
     std::map<hsa_agent_t, std::unique_ptr<kernelDB::kernelDB>, hsa_cmp<hsa_agent_t>> kdbs_;
+    LibraryFilter library_filter_;
     static std::mutex singleton_mutex_;
     static std::shared_mutex stop_mutex_;
     static hsaInterceptor *singleton_;

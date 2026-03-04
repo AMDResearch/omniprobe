@@ -159,6 +159,13 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
     getLogDurConfig(config_);
     comms_mgr_.setConfig(config_);
     log_.setLocation(config_["LOGDUR_LOG_LOCATION"]);
+
+    // Initialize library filter if config file specified
+    if (!config_["LOGDUR_LIBRARY_FILTER"].empty()) {
+        if (!library_filter_.loadConfig(config_["LOGDUR_LIBRARY_FILTER"])) {
+            std::cerr << "Warning: Failed to load library filter config, proceeding without filtering" << std::endl;
+        }
+    }
     if (config_["LOGDUR_INSTRUMENTED"] == "true")
     {
         run_instrumented_ = true;
@@ -201,14 +208,32 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                             std::vector<std::string>files;
                             files.push_back(getExecutablePath());
                             KernelArgHelper::getSharedLibraries(files);
+                            // Add files from library filter include list
+                            if (library_filter_.isActive()) {
+                                for (const auto& includePath : library_filter_.getIncludedFiles()) {
+                                    files.push_back(includePath);
+                                }
+                                for (const auto& includePath : library_filter_.getIncludedFilesWithDeps()) {
+                                    files.push_back(includePath);
+                                }
+                            }
+
+                            // Create kernelDB with single-argument constructor to avoid auto-discovery
+                            // (we'll add files manually after filtering)
+                            kdbs_[agent] = std::make_unique<kernelDB::kernelDB>(agent);
+
                             for (auto file : files)
                             {
+                                // Apply exclusion filter
+                                if (library_filter_.isActive() && library_filter_.isExcluded(file)) {
+                                    continue;  // Skip excluded files
+                                }
                                 //std::cerr << "File with a possible .fatbin section: " << file << std::endl;
                                 try
                                 {
                                     kernel_cache_.addFile(file, agent, strFilter);
                                 }
-                                catch (const std::runtime_error e)
+                                catch (const std::runtime_error& e)
                                 {
                                     /* I catch this exception because the shared libraries returned by getSharedLibraries
                                      * can include system libs that do not have the full path to the .so file
@@ -217,11 +242,17 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                                      * we might be interested in (i.e. the ones that contain .hip_fatbin sections)
                                      * will enumerate from getSharedLibraries with a full path to the file.
                                      * so we catch this exception and continue */
-                                    continue;
+                                }
+                                // Also add to kernelDB for source mapping (in separate try to ensure both are called)
+                                try
+                                {
+                                    kdbs_[agent]->addFile(file, agent, strFilter);
+                                }
+                                catch (const std::runtime_error& e)
+                                {
+                                    // Ignore - same rationale as above
                                 }
                             }
-
-                            kdbs_[agent] = std::make_unique<kernelDB::kernelDB>(agent, "");
                         }
                         comms_mgr_.addAgent(agent);
                     }

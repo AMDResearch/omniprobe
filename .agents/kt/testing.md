@@ -77,18 +77,24 @@ Bash script that orchestrates end-to-end tests:
 6. Reports pass/fail with colored output
 7. Provides helpful error messages if tests aren't built
 
-**Test format**:
+**Test helpers**:
 ```bash
-run_test "test_name" \
-    "/path/to/instrumented/kernel" \
-    "AnalyzerName" \
-    "expected pattern in output"
+# Basic pattern matching test
+run_test "test_name" "/path/to/kernel" "AnalyzerName" "expected pattern"
+
+# Block filter test (validates message counts and block_idx ranges)
+run_filter_test "test_name" "/path/to/kernel" expected_count "x_filter" "y_filter" "z_filter"
+
+# Library filter test (validates library scanning with JSON config)
+run_library_filter_test "test_name" "/path/to/kernel" '{"exclude":[...]}' "present|absent" "pattern"
 ```
 
 **Current tests**:
 1. `heatmap_basic` — Memory heatmap produces report
 2. `memory_analysis_cache_lines` — Memory analysis reports cache line usage
 3. `heatmap_page_accesses` — Heatmap counts page accesses
+4-9. Block filter tests — Validate `--filter-x/y/z` CLI filtering
+10-12. Library filter tests — Validate `--library-filter` exclude/include
 
 **Test kernels**: Uses project's own automatically instrumented test kernels:
 - `build/tests/test_kernels/simple_heatmap_test`
@@ -261,6 +267,5 @@ ninja handler_integration_test
 - Test kernels now in `build/tests/test_kernels/` (automatically instrumented)
 
 ## Last Verified
-Commit: 7d7da52
-Date: 2026-03-03
-All 3 end-to-end tests passing with automatically instrumented kernels ✓
+Date: 2026-03-04
+All 12 end-to-end tests passing (3 handler + 6 block filter + 3 library filter) ✓

@@ -133,7 +133,8 @@ Useful build artifacts:
 | `LOGDUR_INSTRUMENTED` | Enable instrumented kernel dispatch |
 | `LLVM_PASS_PLUGIN_PATH` | Path to instrumentation plugin |
 | `LOGDUR_LOG_FORMAT` | Output format (csv, json) |
+| `LOGDUR_LIBRARY_FILTER` | Path to JSON config for library include/exclude filtering |
+| `DH_COMMS_GROUP_FILTER_X/Y/Z` | Block index filters (N or N:M range) |
 
 ## Last Verified
-Commit: 8869a43 (main repo), 5a5d7e0 (instrument-amdgpu-kernels submodule)
-Date: 2026-03-03
+Date: 2026-03-04

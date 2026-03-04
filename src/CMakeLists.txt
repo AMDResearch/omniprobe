@@ -35,6 +35,7 @@ set ( LIB_SRC
   ${LIB_DIR}/reconfigure.cc
   ${LIB_DIR}/json_helpers.cc
   ${LIB_DIR}/memory_analysis_handler.cc
+  ${LIB_DIR}/library_filter.cc
 )
 
 set (HEATMAP_EXAMPLE "example_heatmap")

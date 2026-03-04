@@ -33,6 +33,8 @@ Python script that orchestrates running instrumented applications. Sets up envir
 | `-o <path>` | Output location (file path or "console") |
 | `-f <format>` | Output format (csv, json) |
 | `-c <cache>` | Triton cache location (triggers Triton mode, sets LLVM_PASS_PLUGIN_PATH) |
+| `--filter-x/y/z` | Filter messages by block index (N or N:M range) |
+| `--library-filter FILE` | JSON config for library include/exclude filtering |
 
 ## Available Analyzers
 
@@ -83,4 +85,4 @@ Configured in `omniprobe/config/analytics.py`:
 - `libAMDGCNSubmitBBInterval-triton.so` exists but no analyzer currently uses it
 
 ## Last Verified
-Date: 2026-03-03
+Date: 2026-03-04

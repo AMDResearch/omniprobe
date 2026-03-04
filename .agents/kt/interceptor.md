@@ -54,6 +54,7 @@ Central singleton managing all interception state.
 - `comms_mgr_` — manages dh_comms object pool
 - `kdbs_` — per-agent kernelDB instances
 - `dispatcher_` — dispatch selection logic
+- `library_filter_` — filters which libraries are scanned (via `LOGDUR_LIBRARY_FILTER`)
 
 **Key methods**:
 - `hookApi()` — install function intercepts
@@ -67,9 +68,10 @@ Central singleton managing all interception state.
 
 ## Rejected Approaches
 - **Per-dispatch dh_comms allocation**: Too slow; pooling required for performance
+- **kernelDB auto-discovery with filter**: The `kernelDB(agent, "")` constructor auto-discovers all shared libraries, bypassing any filter. Must use `kernelDB(agent)` single-arg constructor and manually call `addFile()` for each filtered file.
 
 ## Open Questions
 - None currently documented
 
 ## Last Verified
-Date: 2026-03-02
+Date: 2026-03-04
