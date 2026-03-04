@@ -28,6 +28,11 @@ THE SOFTWARE.
 #include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
+#include <libelf.h>
+#include <gelf.h>
+#include <link.h>
+#include <sys/stat.h>
+#include <cstdlib>
 
 // Simple JSON parsing helpers (no external dependency)
 namespace {
@@ -248,11 +253,146 @@ std::vector<std::string> LibraryFilter::getIncludedFiles() const {
     return result;
 }
 
+// Resolve a library name (e.g., "libfoo.so.1") to a full path
+// by searching standard library directories and the directory of the parent lib
+static std::string resolveLibraryPath(const std::string& libName,
+                                       const std::string& parentDir) {
+    // Check if it's already an absolute path
+    if (!libName.empty() && libName[0] == '/') {
+        struct stat st;
+        if (stat(libName.c_str(), &st) == 0) {
+            return libName;
+        }
+        return "";
+    }
+
+    // Search paths: parent directory first, then standard paths
+    std::vector<std::string> searchPaths = {
+        parentDir,
+        "/lib64",
+        "/usr/lib64",
+        "/lib",
+        "/usr/lib",
+        "/usr/local/lib64",
+        "/usr/local/lib"
+    };
+
+    // Add LD_LIBRARY_PATH directories
+    const char* ldPath = std::getenv("LD_LIBRARY_PATH");
+    if (ldPath) {
+        std::string pathStr(ldPath);
+        size_t start = 0;
+        size_t end;
+        while ((end = pathStr.find(':', start)) != std::string::npos) {
+            if (end > start) {
+                searchPaths.push_back(pathStr.substr(start, end - start));
+            }
+            start = end + 1;
+        }
+        if (start < pathStr.size()) {
+            searchPaths.push_back(pathStr.substr(start));
+        }
+    }
+
+    // Search for the library
+    for (const auto& dir : searchPaths) {
+        std::string fullPath = dir + "/" + libName;
+        struct stat st;
+        if (stat(fullPath.c_str(), &st) == 0) {
+            // Resolve to real path (follow symlinks)
+            char* realPath = realpath(fullPath.c_str(), nullptr);
+            if (realPath) {
+                std::string result(realPath);
+                free(realPath);
+                return result;
+            }
+            return fullPath;
+        }
+    }
+
+    return "";
+}
+
 std::vector<std::string> LibraryFilter::getElfDependencies(
     const std::string& path) {
-    // TODO: Implement ELF dependency resolution
-    // For now, return empty - will implement in Phase 4
-    return {};
+    std::vector<std::string> deps;
+
+    // Initialize libelf
+    if (elf_version(EV_CURRENT) == EV_NONE) {
+        std::cerr << "LibraryFilter: libelf initialization failed" << std::endl;
+        return deps;
+    }
+
+    int fd = open(path.c_str(), O_RDONLY);
+    if (fd < 0) {
+        return deps;
+    }
+
+    Elf* elf = elf_begin(fd, ELF_C_READ, nullptr);
+    if (!elf) {
+        close(fd);
+        return deps;
+    }
+
+    // Get the directory containing the library (for RPATH resolution)
+    std::string parentDir;
+    size_t lastSlash = path.rfind('/');
+    if (lastSlash != std::string::npos) {
+        parentDir = path.substr(0, lastSlash);
+    }
+
+    // Find the dynamic section
+    Elf_Scn* scn = nullptr;
+    GElf_Shdr shdr;
+
+    while ((scn = elf_nextscn(elf, scn)) != nullptr) {
+        if (gelf_getshdr(scn, &shdr) == nullptr) {
+            continue;
+        }
+
+        if (shdr.sh_type == SHT_DYNAMIC) {
+            // Get the string table for this section
+            Elf_Data* data = elf_getdata(scn, nullptr);
+            if (!data) continue;
+
+            // Get the string table section
+            Elf_Scn* strScn = elf_getscn(elf, shdr.sh_link);
+            if (!strScn) continue;
+
+            Elf_Data* strData = elf_getdata(strScn, nullptr);
+            if (!strData) continue;
+
+            // Iterate through dynamic entries
+            size_t numEntries = shdr.sh_size / shdr.sh_entsize;
+            for (size_t i = 0; i < numEntries; i++) {
+                GElf_Dyn dyn;
+                if (gelf_getdyn(data, i, &dyn) == nullptr) {
+                    continue;
+                }
+
+                if (dyn.d_tag == DT_NEEDED) {
+                    const char* name = static_cast<const char*>(strData->d_buf) +
+                                       dyn.d_un.d_val;
+                    if (name && *name) {
+                        std::string resolved = resolveLibraryPath(name, parentDir);
+                        if (!resolved.empty() && isValidElf(resolved)) {
+                            deps.push_back(resolved);
+                        }
+                    }
+                }
+
+                if (dyn.d_tag == DT_NULL) {
+                    break;
+                }
+            }
+            break;  // Found dynamic section, done
+        }
+    }
+
+    elf_end(elf);
+    close(fd);
+
+    return deps;
 }
 
 std::vector<std::string> LibraryFilter::getIncludedFilesWithDeps() const {

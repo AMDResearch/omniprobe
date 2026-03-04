@@ -122,6 +122,7 @@ target_link_libraries(
     ${DH_COMMS_LIBRARIES}/libdh_comms.so
     kernelDB64
     amd_comgr
+    elf
 )
 
 find_path(LIBDWARF_INCLUDE_DIR
