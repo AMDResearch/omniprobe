@@ -36,6 +36,18 @@ Python script that orchestrates running instrumented applications. Sets up envir
 | `--filter-x/y/z` | Filter messages by block index (N or N:M range) |
 | `--library-filter FILE` | JSON config for library include/exclude filtering |
 
+### Library Filter Config Format
+```json
+{
+  "include": ["/path/to/lib.so"],           // Add specific files to scan
+  "include_with_deps": ["/path/to/*.so"],   // Add files + ELF dependencies
+  "exclude": ["**/libm.so*", "/opt/ohpc/**"] // Remove from scanning (wins)
+}
+```
+- Patterns support `*` (any except `/`) and `**` (any including `/`)
+- `exclude` always wins (applied last)
+- `include_with_deps` resolves DT_NEEDED entries recursively
+
 ## Available Analyzers
 
 Configured in `omniprobe/config/analytics.py`:

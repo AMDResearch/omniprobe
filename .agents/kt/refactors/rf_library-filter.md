@@ -94,10 +94,9 @@ omniprobe CLI
 **Phase 1: Initial Tests (before implementation)**
 
 Based on current scanning output from `tests/test_output/results.txt`, these libraries are scanned:
-- `/opt/rocm-7.1.0/lib/libamdhip64.so.7`
-- `/opt/ohpc/pub/compiler/gcc/12.2.0/lib64/libstdc++.so.6`
-- `/lib64/libm.so.6`, `/lib64/libc.so.6`, etc.
-- `/work1/amd/rvanoo/.local/lib/libMemAnalysis64.so`
+- ROCm libraries (e.g., `libamdhip64.so`)
+- System libraries (`/lib64/libm.so.6`, `/lib64/libc.so.6`, etc.)
+- Handler plugins (e.g., `libMemAnalysis64.so`)
 
 ### Micro-steps
 
@@ -120,31 +119,75 @@ Based on current scanning output from `tests/test_output/results.txt`, these lib
 12. [x] Implement `getIncludedFiles()` with glob expansion — Gate: compile
 13. [x] Integrate include files in interceptor — Gate: Test 3 passes
 
-**Phase 4: Advanced Features**
+**Phase 4: Comprehensive Test Infrastructure**
 14. [x] Implement `isValidElf()` to check ELF magic bytes — Gate: compile
-15. [ ] Implement `getElfDependencies()` for include_with_deps — Gate: compile
-16. [x] Implement `getIncludedFilesWithDeps()` (basic, deps TODO) — Gate: compile
-17. [ ] Test 4: Transitive exclusion preserved — Gate: test passes
-18. [ ] Test 5: include_with_deps works — Gate: test passes
-19. [ ] Test 6: Invalid include (README.md) handled gracefully — Gate: test passes
-20. [ ] Test 7: Exclude overrides include — Gate: test passes
+15. [x] Create `tests/library_filter_chain/` directory structure — Gate: exists
+16. [x] Create lib_static_tail (no deps, simple kernel) — Gate: compiles standalone
+17. [x] Create lib_static_mid (links lib_static_tail) — Gate: compiles
+18. [x] Create lib_static_head (links lib_static_mid) — Gate: compiles
+19. [x] Create lib_dynamic_tail, lib_dynamic_mid, lib_dynamic_head (same pattern) — Gate: compiles
+20. [x] Create app (links lib_static_head, dlopen's lib_dynamic_head) — Gate: compiles
+21. [x] Run without instrumentation to verify cross-library calls work — Gate: runs successfully
+22. [x] Compile with instrumentation, run under omniprobe — Gate: static kernels instrumented, dynamic NOT
+23. [x] Test: Exclude linked libs — Gate: test passes (static libs excluded, kernels not instrumented)
+24. [x] Test: Include dlopen'd libs (without deps) — Gate: test passes (dynamic_head added + instrumented)
+25. [x] Implement `getElfDependencies()` for include_with_deps — Gate: compile, uses libelf
+26. [x] Test: Include dlopen'd libs with deps — Gate: test passes (all 3 dynamic libs added + instrumented)
 
-**Phase 5: Finalization**
-21. [ ] Run full test suite — Gate: all tests pass
-22. [ ] Manual verification with real application — Gate: works as expected
+**Phase 5: Test Script Refactoring**
+27. [x] Split run_handler_tests.sh into feature-specific subscripts — Gate: all 12 tests pass
+28. [x] Run full test suite — Gate: all tests pass
+
+**Phase 6: Real-World Validation**
+29. [ ] Test with rocBLAS + Tensile kernels (dynamically loaded) — Gate: works as expected
+30. [ ] Manual verification with other real applications — Gate: works as expected
 
 ### Current Step
-Step 15: Implement getElfDependencies() for include_with_deps
+Step 29: Test with rocBLAS + Tensile kernels (dynamically loaded)
 
-**State at suspension:**
-- All code compiles and tests pass (12/12)
-- Core exclude/include functionality working
-- ELF dependency resolution is stubbed (returns empty)
-- Ready to implement `getElfDependencies()` or add more test coverage
+**All implementation and unit testing complete:**
+- Core library-filter functionality working (include, include_with_deps, exclude)
+- `getElfDependencies()` implemented using libelf (parses DT_NEEDED, resolves paths)
+- `tests/library_filter_chain/` — 5 comprehensive tests passing
+- Main test suite refactored into modular scripts (12 tests passing)
+
+**Test script structure:**
+- `test_common.sh` — shared utilities and counters
+- `run_basic_tests.sh` — Heatmap/MemoryAnalysis handler tests
+- `run_block_filter_tests.sh` — --filter-x/y/z tests
+- `run_library_filter_tests.sh` — --library-filter tests
+- `run_handler_tests.sh` — orchestrator that sources all subscripts
+
+**Next:** Validate with rocBLAS + Tensile kernels (real-world dlopen use case)
+
+**Status: SUSPENDED** — Resume with `/kt-refactor resume library-filter`
 
 ## Progress Log
 
-### Session 2026-03-04 (continued)
+### Session 2026-03-04 (session 3)
+- Created comprehensive test infrastructure: `tests/library_filter_chain/`
+  - 6 libraries in 2 chains (static_head/mid/tail, dynamic_head/mid/tail)
+  - App links static chain, dlopen's dynamic chain
+  - Verified baseline: static instrumented, dynamic not (without filter)
+- Implemented test cases 3-5:
+  - Exclude static libs (works - kernels not instrumented)
+  - Include dynamic (no deps) - works
+  - Include with deps - works after implementing getElfDependencies()
+- Implemented `getElfDependencies()` using libelf:
+  - Parses ELF DT_NEEDED entries from dynamic section
+  - Resolves library names using parent dir, LD_LIBRARY_PATH, standard paths
+  - All 3 dynamic libs now added + instrumented with include_with_deps
+- Refactored test scripts into modular structure:
+  - `test_common.sh` — shared utilities and counters
+  - `run_basic_tests.sh`, `run_block_filter_tests.sh`, `run_library_filter_tests.sh`
+  - Main `run_handler_tests.sh` orchestrates all (12 tests pass)
+- Fixed KT documentation issues:
+  - Removed hardcoded path in testing.md line 73
+  - Added "Path Guidelines" section to architecture.md
+- All tests passing: 12 main + 5 library_filter_chain
+- Next session: Validate with rocBLAS + Tensile (real-world dlopen use case)
+
+### Session 2026-03-04 (session 2)
 - Completed Phase 1-3 (steps 1-13) + partial Phase 4
 - Added `run_library_filter_test()` helper and 3 test cases to run_handler_tests.sh
 - Added `--library-filter FILE` CLI argument to omniprobe Python script
@@ -177,4 +220,4 @@ None currently.
 ## Last Verified
 Commit: uncommitted (working tree)
 Date: 2026-03-04
-Tests: 12/12 passing
+Tests: 12/12 main tests + 5/5 library_filter_chain tests passing

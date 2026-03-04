@@ -62,6 +62,19 @@ Central singleton managing all interception state.
 - `doPackets()` — intercept and possibly modify dispatch
 - `shutdown()` — clean shutdown sequence
 
+### LibraryFilter
+Filters which libraries are scanned for kernels, configured via `--library-filter` CLI / `LOGDUR_LIBRARY_FILTER` env var.
+
+**Location**: `inc/library_filter.h`, `src/library_filter.cc`
+
+**Key methods**:
+- `loadConfig(path)` — parse JSON config with include/include_with_deps/exclude arrays
+- `isExcluded(path)` — check if library should be skipped (glob patterns → regex)
+- `getIncludedFiles()` — expand include patterns to file list
+- `getIncludedFilesWithDeps()` — expand include_with_deps + resolve ELF dependencies
+
+**Dependencies**: libelf (for `getElfDependencies()` which parses DT_NEEDED entries)
+
 ## Known Limitations
 - Assumes single interceptor (singleton)
 - Thread model: one signal runner, one comms runner

@@ -59,47 +59,74 @@ GoogleTest integration is prepared but currently disabled (`INTERCEPTOR_BUILD_TE
 
 ### Test Runner: `tests/run_handler_tests.sh`
 
-Bash script that orchestrates end-to-end tests:
-
-**Location**: `tests/run_handler_tests.sh`
+Orchestrates end-to-end tests by sourcing feature-specific subscripts.
 
 **Usage**:
 ```bash
 ./tests/run_handler_tests.sh
 ```
 
+**Modular structure** (refactored 2026-03-04):
+- `test_common.sh` — shared utilities, counters, colors, helper functions
+- `run_basic_tests.sh` — Heatmap/MemoryAnalysis handler tests (tests 1-3)
+- `run_block_filter_tests.sh` — `--filter-x/y/z` tests (tests 4-9)
+- `run_library_filter_tests.sh` — `--library-filter` tests (tests 10-12)
+- `run_handler_tests.sh` — main orchestrator that sources all subscripts
+
 **What it does**:
 1. Auto-detects build directory (`build/` relative to repo root)
-2. Finds omniprobe binary (`~/work/.local/bin/logDuration/omniprobe`)
+2. Uses repo's omniprobe script (`${REPO_ROOT}/omniprobe/omniprobe`) - never hardcoded paths
 3. Sets `ROCR_VISIBLE_DEVICES=0` to target GPU 0
 4. Runs instrumented test kernels from `build/tests/test_kernels/`
 5. Captures output and validates against expected patterns
 6. Reports pass/fail with colored output
-7. Provides helpful error messages if tests aren't built
 
-**Test helpers**:
+**Test helpers** (defined in subscripts):
 ```bash
-# Basic pattern matching test
+# Basic pattern matching test (run_basic_tests.sh)
 run_test "test_name" "/path/to/kernel" "AnalyzerName" "expected pattern"
 
-# Block filter test (validates message counts and block_idx ranges)
+# Block filter test (run_block_filter_tests.sh)
 run_filter_test "test_name" "/path/to/kernel" expected_count "x_filter" "y_filter" "z_filter"
 
-# Library filter test (validates library scanning with JSON config)
+# Library filter test (run_library_filter_tests.sh)
 run_library_filter_test "test_name" "/path/to/kernel" '{"exclude":[...]}' "present|absent" "pattern"
 ```
 
-**Current tests**:
-1. `heatmap_basic` — Memory heatmap produces report
-2. `memory_analysis_cache_lines` — Memory analysis reports cache line usage
-3. `heatmap_page_accesses` — Heatmap counts page accesses
-4-9. Block filter tests — Validate `--filter-x/y/z` CLI filtering
-10-12. Library filter tests — Validate `--library-filter` exclude/include
+**Current tests** (12 total):
+1-3. Basic handler tests (Heatmap, MemoryAnalysis)
+4-9. Block filter tests (`--filter-x/y/z` CLI)
+10-12. Library filter tests (`--library-filter` exclude/include)
 
-**Test kernels**: Uses project's own automatically instrumented test kernels:
-- `build/tests/test_kernels/simple_heatmap_test`
-- `build/tests/test_kernels/simple_memory_analysis_test`
-- Instrumented at build time via LLVM pass plugin
+### Library Filter Chain Tests: `tests/library_filter_chain/`
+
+Comprehensive tests for library include/exclude with dependency chains.
+
+**Structure**:
+- Standalone test with own `CMakeLists.txt`
+- 6 shared libraries in 2 chains:
+  - Static: `lib_static_head` → `lib_static_mid` → `lib_static_tail`
+  - Dynamic: `lib_dynamic_head` → `lib_dynamic_mid` → `lib_dynamic_tail`
+- Main app links static chain, dlopen's dynamic chain
+
+**Usage**:
+```bash
+cd tests/library_filter_chain
+./run_test.sh              # Full test (build + run)
+./run_test.sh --no-instrument  # Test without instrumentation
+./run_test.sh --build-only    # Build only
+```
+
+**Tests** (5 total):
+1. App runs without omniprobe (basic functionality)
+2. Baseline: static kernels instrumented, dynamic not
+3. Exclude static libs: kernels not instrumented
+4. Include dynamic_head (no deps): only head added + instrumented
+5. Include with deps: all 3 dynamic libs added + instrumented
+
+### Test Kernels: `tests/test_kernels/`
+
+Simple HIP kernels for testing specific scenarios (auto-instrumented at build time)
 
 ### Test Kernels: `tests/test_kernels/`
 
@@ -252,20 +279,23 @@ ninja handler_integration_test
 
 ## Open Questions
 
-- Should simple test kernels be instrumented and integrated into `run_handler_tests.sh`?
 - What refactoring is needed to enable true unit tests with GoogleTest?
 - Should we create a test fixture library for handler testing?
 
 ## Recent Changes
+
+**2026-03-04**:
+- Refactored test scripts into modular structure (test_common.sh + feature subscripts)
+- Added `tests/library_filter_chain/` comprehensive test for library include/exclude
+- Tests now cover: basic handlers, block filters, library filters, dependency resolution
 
 **2026-03-03** (commit 7d7da52):
 - Enabled automatic instrumentation of test kernels at build time
 - Test kernels now compiled with `-fpass-plugin` to automatically instrument
 - Added `copy_bitcode_files` target to copy dh_comms bitcode to plugin directory
 - Test runner updated to use project's own test kernels instead of external kernel
-- Test runner auto-detects build directory and provides better error messages
-- Test kernels now in `build/tests/test_kernels/` (automatically instrumented)
 
 ## Last Verified
 Date: 2026-03-04
-All 12 end-to-end tests passing (3 handler + 6 block filter + 3 library filter) ✓
+- Main test suite: 12/12 tests passing (3 handler + 6 block filter + 3 library filter)
+- Library filter chain: 5/5 tests passing

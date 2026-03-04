@@ -106,6 +106,25 @@ cd external/dh_comms && git status
 - Each submodule is independent git repo with its own branches, commits, remotes
 - When non-git commands need to run in submodule, use separate `cd` then run commands
 
+## Path Guidelines
+
+**IMPORTANT**: Always use repo-relative paths in scripts and tests. Never hardcode installation paths.
+
+- **Test scripts**: Use `REPO_ROOT` derived from `SCRIPT_DIR` to find omniprobe and build artifacts
+- **omniprobe location**: `${REPO_ROOT}/omniprobe/omniprobe` (source), not `~/.local/bin/...` (installation)
+- **Build artifacts**: `${REPO_ROOT}/build/...` (relative to repo root)
+- **Why**: Hardcoded paths break portability. Other developers cloning the repo must be able to run tests without modification.
+
+```bash
+# CORRECT: Derive paths from script location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+OMNIPROBE="${REPO_ROOT}/omniprobe/omniprobe"
+
+# WRONG: Hardcoded installation path
+OMNIPROBE="~/.local/bin/logDuration/omniprobe"
+```
+
 ## Build
 
 - CMake-based, requires ROCm (hipcc, HSA headers)
