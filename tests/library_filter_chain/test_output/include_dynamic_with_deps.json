@@ -1,0 +1,5 @@
+{
+  "include_with_deps": [
+    "/work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/libdynamic_head.so"
+  ]
+}

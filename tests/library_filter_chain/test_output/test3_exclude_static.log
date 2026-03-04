@@ -1,0 +1,176 @@
+  ___                  _                 _          
+ / _ \ _ __ ___  _ __ (_)_ __  _ __ ___ | |__   ___ 
+| | | | '_ ` _ \| '_ \| | '_ \| '__/ _ \| '_ \ / _ \
+| |_| | | | | | | | | | | |_) | | | (_) | |_) |  __/
+ \___/|_| |_| |_|_| |_|_| .__/|_|  \___/|_.__/ \___|
+                        |_|                         
+
+Found config file at /work1/amd/rvanoo/repos/omniprobe/build/runtime_config.txt
+
+Omniprobe is developed by Advanced Micro Devices, Research and Advanced Development
+Copyright (c) 2025 Advanced Micro Devices. All rights reserved.
+
+No Triton cache location provided; assuming HIP run.
+=== Library Filter Chain Test ===
+HANDLER: libMemAnalysis64.so
+handlerManager: OpenedlibMemAnalysis64.so
+Total Clang Offload Bundles found: 1
+Total Clang Offload Bundles found: 1
+Adding /work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/library_filter_chain_app
+Total Clang Offload Bundles found: 1
+Marker Count: 11 Kernel Count: 11
+Mapping disassembly to source for /work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/library_filter_chain_app
+Warning: Unable to build address map for /work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/library_filter_chain_app (no debug information available). Kernels will lack source line mapping.
+Adding linux-vdso.so.1
+Adding /opt/rocm-7.1.0/lib/libamdhip64.so.7
+Adding /opt/ohpc/pub/compiler/gcc/12.2.0/lib64/libstdc++.so.6
+Adding /lib64/libm.so.6
+Adding /opt/ohpc/pub/compiler/gcc/12.2.0/lib64/libgcc_s.so.1
+Adding /lib64/libc.so.6
+Adding /lib64/libdl.so.2
+Adding /opt/rocm-7.1.0/lib/librocprofiler-register.so.0
+Adding /lib64/librt.so.1
+Adding /opt/rocm-7.1.0/lib/libamd_comgr.so.3
+Adding /opt/rocm-7.1.0/lib/libhsa-runtime64.so.1
+Adding /lib64/libnuma.so.1
+Adding /lib64/libpthread.so.0
+Adding /lib64/ld-linux-x86-64.so.2
+Adding /lib64/libz.so.1
+Adding /lib64/libzstd.so.1
+Adding /lib64/libelf.so.1
+Adding /opt/amdgpu/lib64/libdrm.so.2
+Adding /opt/amdgpu/lib64/libdrm_amdgpu.so.1
+Adding /work1/amd/rvanoo/repos/omniprobe/build/liblogDuration64.so
+Adding /work1/amd/rvanoo/repos/omniprobe/build/external/dh_comms/lib/libdh_comms.so
+Adding /work1/amd/rvanoo/repos/omniprobe/build/external/kerneldb/libkernelDB64.so.1
+Adding /lib64/libdwarf.so.0
+Adding /work1/amd/rvanoo/.local/lib/libMemAnalysis64.so
+Total Clang Offload Bundles found: 1
+Total Clang Offload Bundles found: 1
+Adding /work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/library_filter_chain_app
+Total Clang Offload Bundles found: 1
+Marker Count: 11 Kernel Count: 11
+Mapping disassembly to source for /work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/library_filter_chain_app
+Warning: Unable to build address map for /work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/library_filter_chain_app (no debug information available). Kernels will lack source line mapping.
+Adding linux-vdso.so.1
+Adding /opt/rocm-7.1.0/lib/libamdhip64.so.7
+Adding /opt/ohpc/pub/compiler/gcc/12.2.0/lib64/libstdc++.so.6
+Adding /lib64/libm.so.6
+Adding /opt/ohpc/pub/compiler/gcc/12.2.0/lib64/libgcc_s.so.1
+Adding /lib64/libc.so.6
+Adding /lib64/libdl.so.2
+Adding /opt/rocm-7.1.0/lib/librocprofiler-register.so.0
+Adding /lib64/librt.so.1
+Adding /opt/rocm-7.1.0/lib/libamd_comgr.so.3
+Adding /opt/rocm-7.1.0/lib/libhsa-runtime64.so.1
+Adding /lib64/libnuma.so.1
+Adding /lib64/libpthread.so.0
+Adding /lib64/ld-linux-x86-64.so.2
+Adding /lib64/libz.so.1
+Adding /lib64/libzstd.so.1
+Adding /lib64/libelf.so.1
+Adding /opt/amdgpu/lib64/libdrm.so.2
+Adding /opt/amdgpu/lib64/libdrm_amdgpu.so.1
+Adding /work1/amd/rvanoo/repos/omniprobe/build/liblogDuration64.so
+Adding /work1/amd/rvanoo/repos/omniprobe/build/external/dh_comms/lib/libdh_comms.so
+Adding /work1/amd/rvanoo/repos/omniprobe/build/external/kerneldb/libkernelDB64.so.1
+Adding /lib64/libdwarf.so.0
+Adding /work1/amd/rvanoo/.local/lib/libMemAnalysis64.so
+Total Clang Offload Bundles found: 1
+Total Clang Offload Bundles found: 1
+Adding /work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/library_filter_chain_app
+Total Clang Offload Bundles found: 1
+Marker Count: 11 Kernel Count: 11
+Mapping disassembly to source for /work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/library_filter_chain_app
+Warning: Unable to build address map for /work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/library_filter_chain_app (no debug information available). Kernels will lack source line mapping.
+Adding linux-vdso.so.1
+Adding /opt/rocm-7.1.0/lib/libamdhip64.so.7
+Adding /opt/ohpc/pub/compiler/gcc/12.2.0/lib64/libstdc++.so.6
+Adding /lib64/libm.so.6
+Adding /opt/ohpc/pub/compiler/gcc/12.2.0/lib64/libgcc_s.so.1
+Adding /lib64/libc.so.6
+Adding /lib64/libdl.so.2
+Adding /opt/rocm-7.1.0/lib/librocprofiler-register.so.0
+Adding /lib64/librt.so.1
+Adding /opt/rocm-7.1.0/lib/libamd_comgr.so.3
+Adding /opt/rocm-7.1.0/lib/libhsa-runtime64.so.1
+Adding /lib64/libnuma.so.1
+Adding /lib64/libpthread.so.0
+Adding /lib64/ld-linux-x86-64.so.2
+Adding /lib64/libz.so.1
+Adding /lib64/libzstd.so.1
+Adding /lib64/libelf.so.1
+Adding /opt/amdgpu/lib64/libdrm.so.2
+Adding /opt/amdgpu/lib64/libdrm_amdgpu.so.1
+Adding /work1/amd/rvanoo/repos/omniprobe/build/liblogDuration64.so
+Adding /work1/amd/rvanoo/repos/omniprobe/build/external/dh_comms/lib/libdh_comms.so
+Adding /work1/amd/rvanoo/repos/omniprobe/build/external/kerneldb/libkernelDB64.so.1
+Adding /lib64/libdwarf.so.0
+Adding /work1/amd/rvanoo/.local/lib/libMemAnalysis64.so
+Total Clang Offload Bundles found: 1
+Total Clang Offload Bundles found: 1
+Adding /work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/library_filter_chain_app
+Total Clang Offload Bundles found: 1
+Marker Count: 11 Kernel Count: 11
+Mapping disassembly to source for /work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/library_filter_chain_app
+Warning: Unable to build address map for /work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/library_filter_chain_app (no debug information available). Kernels will lack source line mapping.
+Adding linux-vdso.so.1
+Adding /opt/rocm-7.1.0/lib/libamdhip64.so.7
+Adding /opt/ohpc/pub/compiler/gcc/12.2.0/lib64/libstdc++.so.6
+Adding /lib64/libm.so.6
+Adding /opt/ohpc/pub/compiler/gcc/12.2.0/lib64/libgcc_s.so.1
+Adding /lib64/libc.so.6
+Adding /lib64/libdl.so.2
+Adding /opt/rocm-7.1.0/lib/librocprofiler-register.so.0
+Adding /lib64/librt.so.1
+Adding /opt/rocm-7.1.0/lib/libamd_comgr.so.3
+Adding /opt/rocm-7.1.0/lib/libhsa-runtime64.so.1
+Adding /lib64/libnuma.so.1
+Adding /lib64/libpthread.so.0
+Adding /lib64/ld-linux-x86-64.so.2
+Adding /lib64/libz.so.1
+Adding /lib64/libzstd.so.1
+Adding /lib64/libelf.so.1
+Adding /opt/amdgpu/lib64/libdrm.so.2
+Adding /opt/amdgpu/lib64/libdrm_amdgpu.so.1
+Adding /work1/amd/rvanoo/repos/omniprobe/build/liblogDuration64.so
+Adding /work1/amd/rvanoo/repos/omniprobe/build/external/dh_comms/lib/libdh_comms.so
+Adding /work1/amd/rvanoo/repos/omniprobe/build/external/kerneldb/libkernelDB64.so.1
+Adding /lib64/libdwarf.so.0
+Adding /work1/amd/rvanoo/.local/lib/libMemAnalysis64.so
+Launching app_kernel...
+>>>>>>>> HSA intercept registered.
+No instrumented alternative found for __amd_rocclr_initHeap.kd
+Found instrumented alternative for app_kernel(int*, unsigned long) [clone .kd]
+  app_kernel done
+Launching static library kernels...
+=== L2 cache line use report ======================
+No excess cache lines used for global memory accesses
+=== End of L2 cache line use report ===============
+=== Bank conflicts report =========================
+No bank conflicts found
+=== End of bank conflicts report ====================
+18304 bytes processed in 0.000595 seconds (30.8 MiB/s)
+No instrumented alternative found for static_head_kernel(int*, unsigned long) [clone .kd]
+No instrumented alternative found for static_mid_kernel(int*, unsigned long) [clone .kd]
+No instrumented alternative found for static_tail_kernel(int*, unsigned long) [clone .kd]
+  static kernels done
+Loading dynamic library: /work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/libdynamic_head.so
+  dlopen succeeded
+Launching dynamic library kernels...
+No instrumented alternative found for dynamic_head_kernel(int*, unsigned long) [clone .kd]
+No instrumented alternative found for dynamic_mid_kernel(int*, unsigned long) [clone .kd]
+No instrumented alternative found for dynamic_tail_kernel(int*, unsigned long) [clone .kd]
+  dynamic kernels done
+=== Test completed successfully ===
+signal_runner is shutting down
+Comms Runner shutting down
+Cache Watcher shutting down
+Ending kernelDB
+Found 11 kernels.
+Ending kernelDB
+Found 11 kernels.
+Ending kernelDB
+Found 11 kernels.
+Ending kernelDB
+Found 11 kernels.
