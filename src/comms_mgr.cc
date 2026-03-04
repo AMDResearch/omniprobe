@@ -29,15 +29,12 @@ comms_mgr::comms_mgr(HsaApiTable *pTable) : kern_arg_allocator_(pTable, std::cer
 }
 comms_mgr::~comms_mgr()
 {
-    std::cerr << "comms_mgr destructor START" << std::endl;
     std::lock_guard<std::mutex> lock(mutex_);
     for (auto item : mem_mgrs_)
     {
-        std::cerr << "comms_mgr deleting mem_mgr" << std::endl;
         delete item.second;
     }
     mem_mgrs_.clear();
-    std::cerr << "comms_mgr destructor END" << std::endl;
 }
 
 
@@ -56,7 +53,6 @@ void comms_mgr::setConfig(const std::map<std::string, std::string>& config)
 
 dh_comms::dh_comms * comms_mgr::checkoutCommsObject(hsa_agent_t agent, std::string& strKernelName, uint64_t dispatch_id, kernelDB::kernelDB *kdb)
 {
-    std::cerr << "comms_mgr::checkoutCommsObject START for kernel " << strKernelName << std::endl;
     std::lock_guard<std::mutex> lock(mutex_);
     dh_comms::dh_comms_mem_mgr *mem_mgr = NULL;
     auto it = mem_mgrs_.find(agent);
@@ -64,7 +60,6 @@ dh_comms::dh_comms * comms_mgr::checkoutCommsObject(hsa_agent_t agent, std::stri
     {
         mem_mgr = it->second;
         dh_comms::dh_comms *obj = new dh_comms::dh_comms(DH_SUB_BUFFER_COUNT, DH_SUB_BUFFER_CAPACITY, kdb, false, false, mem_mgr);
-        std::cerr << "comms_mgr::checkoutCommsObject created dh_comms at " << static_cast<void*>(obj) << std::endl;
         std::vector<dh_comms::message_handler_base *> handlers;
         handler_mgr_.getMessageHandlers(strKernelName, dispatch_id, handlers);
         if (handlers.size())
@@ -81,29 +76,21 @@ dh_comms::dh_comms * comms_mgr::checkoutCommsObject(hsa_agent_t agent, std::stri
             obj->append_handler(std::make_unique<dh_comms::time_interval_handler_t>(strKernelName, dispatch_id, "console", false));
         }
         obj->start(strKernelName);
-        std::cerr << "comms_mgr::checkoutCommsObject END - returning " << static_cast<void*>(obj) << std::endl;
         return obj;
 
     }
-    std::cerr << "comms_mgr::checkoutCommsObject END - no mem_mgr found, returning NULL" << std::endl;
     return NULL;
 }
 
 bool comms_mgr::checkinCommsObject(hsa_agent_t agent, dh_comms::dh_comms *object)
 {
-    std::cerr << "comms_mgr::checkinCommsObject START for object at " << static_cast<void*>(object) << std::endl;
     std::lock_guard<std::mutex> lock(mutex_);
     try
     {
-        std::cerr << "comms_mgr::checkinCommsObject calling object->stop()" << std::endl;
         object->stop();
-        std::cerr << "comms_mgr::checkinCommsObject calling object->report()" << std::endl;
         object->report();
-        std::cerr << "comms_mgr::checkinCommsObject calling object->delete_handlers()" << std::endl;
         object->delete_handlers();
-        std::cerr << "comms_mgr::checkinCommsObject deleting object" << std::endl;
         delete object;
-        std::cerr << "comms_mgr::checkinCommsObject delete completed" << std::endl;
     }
     catch (const exception& e)
     {
