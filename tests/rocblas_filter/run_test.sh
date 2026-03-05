@@ -82,10 +82,12 @@ echo "  Run rocblas_sscal with MemoryAnalysis instrumentation"
 
 OUTPUT_FILE="$OUTPUT_DIR/${TEST_NAME}.out"
 
+SECONDS=0
 if ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
    LD_LIBRARY_PATH="$ROCBLAS_LIB_DIR:$LD_LIBRARY_PATH" \
    "$OMNIPROBE" -i -a MemoryAnalysis \
    -- "$TEST_BINARY" > "$OUTPUT_FILE" 2>&1; then
+    ELAPSED_SECONDS=$SECONDS
 
     # Check that the scal kernel result is correct
     if grep -q "rocblas_sscal: PASS" "$OUTPUT_FILE"; then
@@ -157,21 +159,19 @@ else
 fi
 
 ################################################################################
-# Test 5: Startup completes in reasonable time (< 30 seconds)
+# Test 5: Total run completes in reasonable time (< 60 seconds)
 ################################################################################
 
 TESTS_RUN=$((TESTS_RUN + 1))
-TEST_NAME="rocblas_scal_startup_time"
+TEST_NAME="rocblas_scal_elapsed_time"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
-echo "  Verify startup scanning completes in < 30 seconds"
+echo "  Verify total elapsed time < 60 seconds"
 
-STARTUP_MS=$(grep '\[TIMING\] Total startup scanning loop' "$OUTPUT_DIR/rocblas_scal_instrumented.out" | grep -oP '\d+(?= ms)' || echo "0")
-
-if [ "$STARTUP_MS" -gt 0 ] && [ "$STARTUP_MS" -lt 30000 ]; then
-    echo -e "  ${GREEN}✓ PASS${NC} - Startup scanning took ${STARTUP_MS} ms"
+if [ "$ELAPSED_SECONDS" -lt 60 ] 2>/dev/null; then
+    echo -e "  ${GREEN}✓ PASS${NC} - Total elapsed time: ${ELAPSED_SECONDS}s"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo -e "  ${RED}✗ FAIL${NC} - Startup scanning took ${STARTUP_MS} ms (limit: 30000 ms)"
+    echo -e "  ${RED}✗ FAIL${NC} - Total elapsed time: ${ELAPSED_SECONDS:-unknown}s (limit: 60s)"
     echo "  Output saved to: $OUTPUT_DIR/rocblas_scal_instrumented.out"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi

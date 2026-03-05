@@ -222,7 +222,6 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                             // (we'll add files manually after filtering)
                             kdbs_[agent] = std::make_unique<kernelDB::kernelDB>(agent);
 
-                            auto t_loop_start = std::chrono::steady_clock::now();
                             for (auto file : files)
                             {
                                 // Apply exclusion filter
@@ -232,11 +231,7 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                                 std::cout << "Adding " << file << std::endl;
                                 try
                                 {
-                                    auto t0 = std::chrono::steady_clock::now();
                                     kernel_cache_.addFile(file, agent, strFilter);
-                                    auto t1 = std::chrono::steady_clock::now();
-                                    std::cerr << "[TIMING] coCache::addFile(" << file << "): "
-                                              << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms" << std::endl;
                                 }
                                 catch (const std::runtime_error& e)
                                 {
@@ -250,9 +245,6 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                                 }
                                 // kernelDB scanning is now deferred to dispatch time via scanCodeObject()
                             }
-                            auto t_loop_end = std::chrono::steady_clock::now();
-                            std::cerr << "[TIMING] Total startup scanning loop: "
-                                      << std::chrono::duration_cast<std::chrono::milliseconds>(t_loop_end - t_loop_start).count() << " ms" << std::endl;
                         }
                         comms_mgr_.addAgent(agent);
                     }
