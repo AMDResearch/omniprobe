@@ -98,6 +98,29 @@ run_library_filter_test "test_name" "/path/to/kernel" '{"exclude":[...]}' "prese
 4-9. Block filter tests (`--filter-x/y/z` CLI)
 10-12. Library filter tests (`--library-filter` exclude/include)
 
+### Triton Integration Tests: `tests/triton/`
+
+End-to-end test for Triton-compiled kernels, verifying the full pipeline works with JIT-compiled code.
+
+**Structure**:
+- `run_test.sh` — test runner (requires `TRITON_REPO` env var; skips if unset)
+- `vector_add.py` — minimal Triton vector-add kernel (4096 elements, 3 dispatches)
+
+**Usage**:
+```bash
+TRITON_REPO=/path/to/triton ./tests/triton/run_test.sh
+```
+
+**Tests** (4 total):
+1. Instrumentation plugin invoked during Triton JIT compilation
+2. Instrumented kernel alternative found for `add_kernel`
+3. L2 cache line use report generated
+4. Bank conflicts report generated
+
+**Prerequisites**:
+- `TRITON_REPO` environment variable pointing to a Triton repo with `.venv/`
+- omniprobe built with `TRITON_LLVM` (enables Triton plugin + co5 bitcode copy)
+
 ### Library Filter Chain Tests: `tests/library_filter_chain/`
 
 Comprehensive tests for library include/exclude with dependency chains.
@@ -150,7 +173,9 @@ Simple HIP kernels for testing specific scenarios. These are automatically instr
 **Automatic Instrumentation** (via `tests/test_kernels/CMakeLists.txt`):
 - Test kernels compiled with `-fpass-plugin=${INST_PLUGIN}`
 - Plugin path: `build/external/instrument-amdgpu-kernels-rocm/build/lib/libAMDGCNSubmitAddressMessages-rocm.so`
-- Bitcode files automatically copied from dh_comms to plugin directory via `copy_bitcode_files` target
+- Bitcode files copied from dh_comms to plugin directories:
+  - `copy_bitcode_to_rocm` — copies co6 files to ROCm plugin dir
+  - `copy_bitcode_to_triton` — copies co5 files to Triton plugin dir (if `TRITON_LLVM` defined)
 - Instrumentation happens at compile time, producing ready-to-run instrumented executables
 
 **Building test kernels**:
@@ -219,10 +244,18 @@ ninja handler_integration_test
 
 ### Running Tests
 
-**Primary method** (end-to-end via omniprobe):
+**Primary method** (all suites via top-level runner):
 ```bash
-# From repository root:
+# From repository root (runs handler, library filter chain, and Triton suites):
+TRITON_REPO=/path/to/triton ./tests/run_all_tests.sh
+
+# Without Triton (Triton suite skips):
+./tests/run_all_tests.sh
+
+# Individual suites:
 ./tests/run_handler_tests.sh
+./tests/library_filter_chain/run_test.sh
+TRITON_REPO=/path/to/triton ./tests/triton/run_test.sh
 ```
 
 **Expected output**:
@@ -284,6 +317,11 @@ ninja handler_integration_test
 
 ## Recent Changes
 
+**2026-03-05**:
+- Added Triton integration test suite (`tests/triton/`)
+- Split `copy_bitcode_files` into `copy_bitcode_to_rocm` (co6) and `copy_bitcode_to_triton` (co5)
+- Triton test uses `TRITON_REPO` env var; skips gracefully if unset
+
 **2026-03-04**:
 - Refactored test scripts into modular structure (test_common.sh + feature subscripts)
 - Added `tests/library_filter_chain/` comprehensive test for library include/exclude
@@ -292,10 +330,11 @@ ninja handler_integration_test
 **2026-03-03** (commit 7d7da52):
 - Enabled automatic instrumentation of test kernels at build time
 - Test kernels now compiled with `-fpass-plugin` to automatically instrument
-- Added `copy_bitcode_files` target to copy dh_comms bitcode to plugin directory
+- Added bitcode copy targets to copy dh_comms bitcode to plugin directories
 - Test runner updated to use project's own test kernels instead of external kernel
 
 ## Last Verified
-Date: 2026-03-04
-- Main test suite: 12/12 tests passing (3 handler + 6 block filter + 3 library filter)
-- Library filter chain: 5/5 tests passing
+Date: 2026-03-05
+- Handler tests: 12/12 passing (3 handler + 6 block filter + 3 library filter)
+- Library filter chain: 5/5 passing
+- Triton integration: 4/4 passing (requires `TRITON_REPO`; skips otherwise)
