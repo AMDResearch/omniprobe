@@ -759,7 +759,12 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                 {
                     alt_kernel_object = kernel_cache_.findInstrumentedAlternative(it->second.symbol_, it->second.name_, queues_[queue]);
                     if(alt_kernel_object){
-                        std::cerr << "Found instrumented alternative for " << it->second.name_ << std::endl;
+                        CodeObjectRef coRef;
+                        if (kernel_cache_.getCodeObjectRef(queues_[queue], it->second.name_, coRef))
+                            std::cerr << "Found instrumented alternative for " << it->second.name_
+                                      << " (in " << coRef.source_file << ")" << std::endl;
+                        else
+                            std::cerr << "Found instrumented alternative for " << it->second.name_ << std::endl;
                     } else {
                         std::cerr << "No instrumented alternative found for " << it->second.name_ << std::endl;
                     }
