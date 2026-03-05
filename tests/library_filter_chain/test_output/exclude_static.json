@@ -1,7 +1,0 @@
-{
-  "exclude": [
-    "/work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/libstatic_head.so",
-    "/work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/libstatic_mid.so",
-    "/work1/amd/rvanoo/repos/omniprobe/tests/library_filter_chain/build/libstatic_tail.so"
-  ]
-}

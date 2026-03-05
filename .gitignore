@@ -5,3 +5,4 @@ build
 
 # Test output
 tests/test_output/
+tests/library_filter_chain/test_output/
