@@ -229,7 +229,7 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                                 if (library_filter_.isActive() && library_filter_.isExcluded(file)) {
                                     continue;  // Skip excluded files
                                 }
-                                //std::cerr << "File with a possible .fatbin section: " << file << std::endl;
+                                std::cout << "Adding " << file << std::endl;
                                 try
                                 {
                                     auto t0 = std::chrono::steady_clock::now();
@@ -248,19 +248,7 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                                      * will enumerate from getSharedLibraries with a full path to the file.
                                      * so we catch this exception and continue */
                                 }
-                                // Also add to kernelDB for source mapping (in separate try to ensure both are called)
-                                try
-                                {
-                                    auto t0 = std::chrono::steady_clock::now();
-                                    kdbs_[agent]->addFile(file, agent, strFilter);
-                                    auto t1 = std::chrono::steady_clock::now();
-                                    std::cerr << "[TIMING] kernelDB::addFile(" << file << "): "
-                                              << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms" << std::endl;
-                                }
-                                catch (const std::runtime_error& e)
-                                {
-                                    // Ignore - same rationale as above
-                                }
+                                // kernelDB scanning is now deferred to dispatch time via scanCodeObject()
                             }
                             auto t_loop_end = std::chrono::steady_clock::now();
                             std::cerr << "[TIMING] Total startup scanning loop: "
@@ -317,12 +305,12 @@ bool hsaInterceptor::addCodeObject(const std::string& name)
             for (auto agent : gpus)
             {
                 kernel_cache_.addFile(name, agent, config_["LOGDUR_FILTER"]);
-                lock_guard<std::mutex> lock(mutex_);
-                auto it = kdbs_.find(agent);
-                if (it != kdbs_.end())
-                    it->second.get()->addFile(name, agent, config_["LOGDUR_FILTER"]);
-                else
-                    kdbs_[agent] = std::make_unique<kernelDB::kernelDB>(agent, name);
+                // kernelDB scanning is deferred to dispatch time via scanCodeObject()
+                {
+                    lock_guard<std::mutex> lock(mutex_);
+                    if (kdbs_.find(agent) == kdbs_.end())
+                        kdbs_[agent] = std::make_unique<kernelDB::kernelDB>(agent);
+                }
             }
         }
     }
@@ -802,6 +790,14 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                             void *new_kernargs = allocator_.allocate(args.kernarg_length,queues_[queue]);
 
                             kernelDB::kernelDB *kdb = kdbs_[queues_[queue]].get();
+
+                            // On-demand: scan the code object for this kernel if not already scanned
+                            if (kdb && !kdb->hasKernel(it->second.name_))
+                            {
+                                CodeObjectRef coRef;
+                                if (kernel_cache_.getCodeObjectRef(queues_[queue], it->second.name_, coRef))
+                                    kdb->scanCodeObject(coRef.co_file);
+                            }
 
                             comms = comms_mgr_.checkoutCommsObject(queues_[queue], it->second.name_, dispatch_id, kdb);
 
