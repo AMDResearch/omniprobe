@@ -152,6 +152,12 @@ typedef struct cache_object{
     std::chrono::time_point<std::chrono::system_clock> timestamp_;
 }cache_object_t;
 
+struct CodeObjectRef {
+    std::string source_file;     // Original binary (executable or .so)
+    std::string co_file;         // Extracted code object temp file (or .hsaco path)
+    std::string mangled_name;    // Mangled symbol name from HSA
+};
+
 class coCache{
 public:
     coCache(HsaApiTable *apiTable);
@@ -163,6 +169,7 @@ public:
     uint32_t getArgSize(uint64_t kernel_object);
     bool addFile(const std::string& name, hsa_agent_t agent, const std::string& strFilter);
     bool getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descriptor_t& desc, bool instrumented);
+    bool getCodeObjectRef(hsa_agent_t agent, const std::string& name, CodeObjectRef& ref);
     uint8_t getArgumentAlignment(uint64_t kernel_object);
     const amd_kernel_code_t* getKernelCode(uint64_t kernel_object);
 private:
@@ -177,6 +184,7 @@ private:
     std::map<hsa_agent_t, cache_object_t, hsa_cmp<hsa_agent_t>> cache_objects_;
     std::map<hsa_agent_t, std::map<hsa_executable_symbol_t, uint64_t, hsa_cmp<hsa_executable_symbol_t>>, hsa_cmp<hsa_agent_t>> alternatives_;
     std::map<uint64_t, uint32_t> kernarg_sizes_;
+    std::map<hsa_agent_t, std::map<std::string, CodeObjectRef>, hsa_cmp<hsa_agent_t>> kernel_co_map_;
 };
 
 class KernelArgHelper {

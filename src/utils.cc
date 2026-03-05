@@ -238,6 +238,22 @@ bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descrip
     return bReturn;
 }
 
+bool coCache::getCodeObjectRef(hsa_agent_t agent, const std::string& name, CodeObjectRef& ref)
+{
+    lock_guard<std::mutex> lock(mutex_);
+    auto it = kernel_co_map_.find(agent);
+    if (it != kernel_co_map_.end())
+    {
+        auto it2 = it->second.find(name);
+        if (it2 != it->second.end())
+        {
+            ref = it2->second;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::string& strFilter)
 {
     bool bResult = false;
@@ -253,6 +269,7 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
     // Create and load an HSA executable for each code object
     std::vector<hsa_executable_t> executables;
     std::vector<KernelArgHelper *> arg_helpers;
+    std::vector<std::string> loaded_co_files;  // Track which co_files were successfully loaded
 
     for (const auto& co_file : code_object_files)
     {
@@ -289,6 +306,7 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
 
         executables.push_back(executable);
         arg_helpers.push_back(new KernelArgHelper(co_file));
+        loaded_co_files.push_back(co_file);
         close(file_handle);
     }
 
@@ -378,6 +396,7 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
                             it->second[strName] = sym;
                         else
                             lookup_map_[agent] = {{strName,sym}};
+                        kernel_co_map_[agent][strName] = {name, loaded_co_files[exec_idx], mangledName};
                     }
                 }
             }
