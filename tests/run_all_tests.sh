@@ -7,9 +7,8 @@
 # Test suites:
 #   1. Handler tests (basic, block filter, library filter)
 #   2. Library filter chain tests (builds its own test libraries)
-#
-# Not included:
-#   - rocblas_filter/ (WIP, long-running, run manually)
+#   3. rocBLAS integration (requires ROCBLAS_LIB_DIR env var)
+#   4. Triton integration (requires TRITON_REPO env var)
 ################################################################################
 
 set -e
@@ -65,7 +64,10 @@ run_suite "Handler tests" "${SCRIPT_DIR}/run_handler_tests.sh"
 # Suite 2: Library filter chain (has its own build step)
 run_suite "Library filter chain" "${SCRIPT_DIR}/library_filter_chain/run_test.sh"
 
-# Suite 3: Triton integration
+# Suite 3: rocBLAS integration (requires ROCBLAS_LIB_DIR)
+run_suite "rocBLAS integration" "${SCRIPT_DIR}/rocblas_filter/run_test.sh"
+
+# Suite 4: Triton integration
 run_suite "Triton integration" "${SCRIPT_DIR}/triton/run_test.sh"
 
 # Summary
