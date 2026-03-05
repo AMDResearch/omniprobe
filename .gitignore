@@ -3,6 +3,7 @@ build
 .vscode/
 *.sif
 .claude
+.untracked
 
 # Test output
 tests/test_output/
