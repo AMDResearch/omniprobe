@@ -259,13 +259,13 @@ The fat-binary re-read code paths in `mapDisassemblyToSource()` and
 dead code paths, simplifying both functions to always iterate over `file_map_` entries.
 Gate: build + all tests pass.
 
-#### 1.3: Expose code-object info from kernelDB for coCache consumption
-Add a method to kernelDB that returns the extracted code object data (paths to temp
-hsaco files, or byte ranges within the fat binary) so that coCache can use them instead
-of independently parsing the fat binary.
-- Possible API: `kernelDB::getExtractedCodeObjects(filename)` returning file paths, or
-  `kernelDB::getCodeObjectBytes(filename, index)` returning byte spans.
-- Gate: build (new API, no callers yet)
+#### 1.3: Expose code-object info from kernelDB for coCache consumption — DONE (no-op)
+The needed APIs already exist:
+- `extractCodeObjects(agent, fileName)` — free function, public, returns temp file paths
+- `kernelDB::getElfSectionBits()` — static public, returns fatbin bytes + offset
+- `kernelDB::getCodeObjectInfo()` — static public, returns code object metadata
+- `KernelArgHelper(file_name)` constructor — already handles individual .hsaco files
+No new API needed. Proceeding directly to step 1.4.
 
 #### 1.4: Refactor coCache::addFile() to use kernelDB's code objects
 Change `coCache::addFile()` to:
@@ -371,7 +371,7 @@ for this investigation.
 - Gate: discuss with user
 
 ### Current Step
-Step 1.3: Expose code-object info from kernelDB for coCache consumption
+Step 1.4: Refactor coCache::addFile() to use kernelDB's code objects
 
 ## Progress Log
 

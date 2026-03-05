@@ -241,93 +241,65 @@ bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descrip
 bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::string& strFilter)
 {
     bool bResult = false;
-    // Build the code object filename
-    //std::clog << "Code object filename: " << name << std::endl;
-    hsa_code_object_reader_t code_obj_rdr = {0};
-    hsa_file_t file_handle = open(name.c_str(), O_RDONLY);
     hsa_status_t status;
-    std::vector<uint8_t> co_bits;
 
-    // Vector to hold executables (one for .hsaco, possibly multiple for fat binaries)
+    // Extract code objects — returns temp .hsaco file paths for fat binaries,
+    // or {name} for .hsaco files. Uses kernelDB's extractCodeObjects() to avoid
+    // duplicating fat-binary parsing logic.
+    std::vector<std::string> code_object_files = extractCodeObjects(agent, name);
+    if (code_object_files.empty())
+        return false;
+
+    // Create and load an HSA executable for each code object
     std::vector<hsa_executable_t> executables;
-    KernelArgHelper *p_kh = NULL;
+    std::vector<KernelArgHelper *> arg_helpers;
 
-    // Open the file containing code object
-    if (name.ends_with(".hsaco"))
+    for (const auto& co_file : code_object_files)
     {
+        hsa_file_t file_handle = open(co_file.c_str(), O_RDONLY);
         if (file_handle == -1) {
-            std::cerr << "Error: failed to load '" << name << "'" << std::endl;
-            assert(false);
-            return false;
+            std::cerr << "Error: failed to load '" << co_file << "'" << std::endl;
+            continue;
         }
 
-        // Create executable.
         hsa_executable_t executable;
         status = apiTable_->core_->hsa_executable_create_alt_fn(HSA_PROFILE_FULL, HSA_DEFAULT_FLOAT_ROUNDING_MODE_DEFAULT,
                                              NULL, &executable);
         CHECK_STATUS("Error in creating executable object", status);
 
-        // Create code object reader
+        hsa_code_object_reader_t code_obj_rdr;
         status = apiTable_->core_->hsa_code_object_reader_create_from_file_fn(file_handle, &code_obj_rdr);
         if (status != HSA_STATUS_SUCCESS) {
-            std::cerr << "Failed to create code object reader '" << name << "'" << std::endl;
-            return false;
+            std::cerr << "Failed to create code object reader '" << co_file << "'" << std::endl;
+            apiTable_->core_->hsa_executable_destroy_fn(executable);
+            close(file_handle);
+            continue;
         }
-        // Load code object.
-        status = apiTable_->core_->hsa_executable_load_agent_code_object_fn(executable, agent, code_obj_rdr,
-                                                         NULL, NULL);
+
+        status = apiTable_->core_->hsa_executable_load_agent_code_object_fn(executable, agent, code_obj_rdr, NULL, NULL);
         if (status == HSA_STATUS_ERROR_INCOMPATIBLE_ARGUMENTS)
         {
-            cerr << "Looks like " << name << " is not ISA compatible with this GPU\n";
+            cerr << "Looks like " << co_file << " is not ISA compatible with this GPU\n";
             apiTable_->core_->hsa_executable_destroy_fn(executable);
-            return false;
+            close(file_handle);
+            continue;
         }
         else
             CHECK_STATUS("Error in loading executable object", status);
 
         executables.push_back(executable);
-        p_kh = new KernelArgHelper(name);
-    }
-    else
-    {
-        KernelArgHelper::getElfSectionBits(name,std::string(".hip_fatbin"), co_bits);
-        if (co_bits.size())
-        {
-            std::vector<amd_comgr_code_object_info_t> code_objects = KernelArgHelper::getCodeObjectInfo(agent, co_bits);
-
-            // Create and load an executable for each code object
-            for (const auto& info : code_objects)
-            {
-                if (info.size)
-                {
-                    hsa_executable_t executable;
-                    status = apiTable_->core_->hsa_executable_create_alt_fn(HSA_PROFILE_FULL, HSA_DEFAULT_FLOAT_ROUNDING_MODE_DEFAULT,
-                                                         NULL, &executable);
-                    CHECK_STATUS("Error in creating executable object", status);
-
-                    status = apiTable_->core_->hsa_code_object_reader_create_from_memory_fn(co_bits.data() + info.offset, info.size, &code_obj_rdr);
-                    if (status != HSA_STATUS_SUCCESS)
-                        throw std::runtime_error("Could not create code reader from fat binary bits");
-                    status = apiTable_->core_->hsa_executable_load_agent_code_object_fn(executable, agent, code_obj_rdr, NULL, NULL);
-                    if (status != HSA_STATUS_SUCCESS)
-                        throw std::runtime_error("Could not load code object from fat binary bits");
-
-                    executables.push_back(executable);
-                }
-            }
-            // Create KernelArgHelper once - its constructor already handles all code objects
-            p_kh = new KernelArgHelper(agent, co_bits);
-        }
-        else
-            return false;
+        arg_helpers.push_back(new KernelArgHelper(co_file));
+        close(file_handle);
     }
 
     // Process all executables to extract symbols
-    for (auto executable : executables)
+    for (size_t exec_idx = 0; exec_idx < executables.size(); exec_idx++)
     {
+        auto executable = executables[exec_idx];
+        KernelArgHelper *p_kh = arg_helpers[exec_idx];
+
         // Freeze executable.
         status = apiTable_->core_->hsa_executable_freeze_fn(executable, "");
-        //std::cerr << "Status on freeze: " << std::hex << status << std::endl;
         CHECK_STATUS("Error in freezing executable object", status);
 
         // Get symbol handle.
@@ -339,9 +311,6 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
             return HSA_STATUS_SUCCESS;
         }, reinterpret_cast<void *>(&symbols));
 
-        //KernelArgHelper kh(name);
-
-        //cerr << "coCache found " << symbols.size() << " symbols\n";
         for (auto sym : symbols)
         {
             hsa_symbol_kind_t kind;
@@ -363,15 +332,14 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
                 uint32_t length;
                 CHECK_STATUS("Can't retrieve the length of kernel name from a valid symbol",
                     apiTable_->core_->hsa_executable_symbol_get_info_fn(sym, HSA_EXECUTABLE_SYMBOL_INFO_NAME_LENGTH,&length));
-                char *name = reinterpret_cast<char *>(malloc(length + 1));
-                if (name)
+                char *sym_name = reinterpret_cast<char *>(malloc(length + 1));
+                if (sym_name)
                 {
-                    name[length] = '\0';
-                    CHECK_STATUS("Can't retrieve name from valid symbol", apiTable_->core_->hsa_executable_symbol_get_info_fn(sym, HSA_EXECUTABLE_SYMBOL_INFO_NAME, name));
-                    std::string mangledName(name);
+                    sym_name[length] = '\0';
+                    CHECK_STATUS("Can't retrieve name from valid symbol", apiTable_->core_->hsa_executable_symbol_get_info_fn(sym, HSA_EXECUTABLE_SYMBOL_INFO_NAME, sym_name));
+                    std::string mangledName(sym_name);
 
-                    string strName = kernelDB::demangleName(name);
-                    //std::cout << "Kernel Name Found: " << strName << std::endl;
+                    string strName = kernelDB::demangleName(sym_name);
                     // If a kernel filter was supplied, match the demangled name to the filter. If there's no match,
                     // skip this symbol because we don't want to run instrumented for kernels whose names don't
                     // match on the filter
@@ -393,7 +361,6 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
                     arg_descriptor_t desc;
                     if (p_kh->getArgDescriptor(strName, desc))
                     {
-                       //std::cerr << "Adding arg descriptor to coCache for " << strName << " of length " << std::dec << strName.size() << std::endl;
                        lock_guard<std::mutex> lock(mutex_);
                        auto itMap = arg_map_.find(agent);
                        if (itMap != arg_map_.end())
@@ -403,7 +370,7 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
                     }
                     else
                         std::cerr << "Unable to find arg descriptor for " << strName << std::endl;
-                    free(reinterpret_cast<void *>(name));
+                    free(reinterpret_cast<void *>(sym_name));
                     {
                         lock_guard<std::mutex> lock(mutex_);
                         auto it = lookup_map_.find(agent);
@@ -423,10 +390,10 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
             lock_guard<std::mutex> lock(mutex_);
             cache_objects_[agent] = {executable, name, std::chrono::system_clock::now()};
         }
+
+        delete p_kh;
     }
 
-    close(file_handle);
-    delete p_kh;
     return bResult;
 }
 
