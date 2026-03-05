@@ -52,7 +52,7 @@ done
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
+YELLOW='\033[38;5;208m'
 NC='\033[0m' # No Color
 
 log_info() {
@@ -68,7 +68,7 @@ log_error() {
 }
 
 ################################################################################
-# Build
+# Build (output suppressed; logged to test_output/build.log)
 ################################################################################
 
 if [ "$CLEAN" = true ] && [ -d "$BUILD_DIR" ]; then
@@ -91,7 +91,6 @@ if [ "$NO_INSTRUMENT" = false ]; then
     INST_PLUGIN="${OMNIPROBE_BUILD}/external/instrument-amdgpu-kernels-rocm/build/lib/libAMDGCNSubmitAddressMessages-rocm.so"
 
     if [ -f "$INST_PLUGIN" ]; then
-        log_info "Using instrumentation plugin: $INST_PLUGIN"
         CMAKE_ARGS+=("-DINST_PLUGIN=${INST_PLUGIN}")
     else
         log_warn "Instrumentation plugin not found at: $INST_PLUGIN"
@@ -99,11 +98,9 @@ if [ "$NO_INSTRUMENT" = false ]; then
     fi
 fi
 
-log_info "Configuring..."
-cmake "${CMAKE_ARGS[@]}" ..
-
-log_info "Building..."
-cmake --build . --parallel
+log_info "Building test libraries..."
+cmake "${CMAKE_ARGS[@]}" .. > "${TEST_OUTPUT_DIR}/build.log" 2>&1
+cmake --build . --parallel >> "${TEST_OUTPUT_DIR}/build.log" 2>&1
 
 if [ "$BUILD_ONLY" = true ]; then
     log_info "Build complete. Skipping tests."
@@ -111,7 +108,7 @@ if [ "$BUILD_ONLY" = true ]; then
 fi
 
 ################################################################################
-# Test: Run without omniprobe (verify cross-library calls work)
+# Test 1: Run without omniprobe (verify cross-library calls work)
 ################################################################################
 
 log_info "=== Test 1: Run without omniprobe (basic functionality) ==="
@@ -124,32 +121,16 @@ if [ ! -f "$LIB_DYNAMIC_HEAD_PATH" ]; then
     exit 1
 fi
 
-log_info "Running app without omniprobe..."
-./library_filter_chain_app 2>&1 | tee "${TEST_OUTPUT_DIR}/run_no_omniprobe.log"
-
-if [ ${PIPESTATUS[0]} -eq 0 ]; then
+if ./library_filter_chain_app > "${TEST_OUTPUT_DIR}/run_no_omniprobe.log" 2>&1; then
     log_info "Test 1 PASSED: App runs successfully without omniprobe"
 else
     log_error "Test 1 FAILED: App failed to run"
+    echo "  Output saved to: ${TEST_OUTPUT_DIR}/run_no_omniprobe.log"
     exit 1
 fi
 
 ################################################################################
-# Verify library dependencies
-################################################################################
-
-log_info "=== Library dependency verification ==="
-
-log_info "Static library chain:"
-echo "  libstatic_head.so dependencies:"
-ldd libstatic_head.so 2>/dev/null | grep -E "static_(mid|tail)" || echo "    (none found - may be using rpath)"
-
-log_info "Dynamic library chain:"
-echo "  libdynamic_head.so dependencies:"
-ldd libdynamic_head.so 2>/dev/null | grep -E "dynamic_(mid|tail)" || echo "    (none found - may be using rpath)"
-
-################################################################################
-# Test: Run under omniprobe (verify instrumented kernels are detected)
+# Test 2: Run under omniprobe (verify instrumented kernels are detected)
 ################################################################################
 
 log_info "=== Test 2: Run under omniprobe (instrumented) ==="
@@ -164,24 +145,14 @@ else
         log_warn "omniprobe build directory not found at $OMNIPROBE_BUILD_DIR - skipping omniprobe tests"
         log_warn "Build omniprobe first: cd ${REPO_ROOT}/build && ninja"
     else
-        log_info "Running app under omniprobe (MemoryAnalysis handler)..."
-
-        # Run with omniprobe - expect to see static lib kernels but NOT dynamic lib kernels
-        # (dynamic libs are loaded via dlopen, not visible to dl_iterate_phdr at startup)
-        # omniprobe auto-detects build dir from runtime_config.txt relative to script location
         "$OMNIPROBE" \
             -a MemoryAnalysis \
             -i \
-            -- ./library_filter_chain_app 2>&1 | tee "${TEST_OUTPUT_DIR}/run_with_omniprobe.log"
+            -- ./library_filter_chain_app > "${TEST_OUTPUT_DIR}/run_with_omniprobe.log" 2>&1
 
-        OMNIPROBE_EXIT=${PIPESTATUS[0]}
+        OMNIPROBE_EXIT=$?
 
         if [ $OMNIPROBE_EXIT -eq 0 ]; then
-            log_info "omniprobe completed successfully"
-
-            # Check which kernels were instrumented
-            log_info "Checking kernel instrumentation..."
-
             # Static kernels should be instrumented (linked at compile time, in kernel cache)
             if grep -q "Found instrumented alternative for static_head_kernel\|Found instrumented alternative for static_mid_kernel\|Found instrumented alternative for static_tail_kernel" "${TEST_OUTPUT_DIR}/run_with_omniprobe.log"; then
                 log_info "  Static library kernels: INSTRUMENTED (expected)"
@@ -189,17 +160,10 @@ else
                 log_warn "  Static library kernels: NOT INSTRUMENTED (unexpected)"
             fi
 
-            # Dynamic kernels should NOT be instrumented without library-filter include
-            # (dlopen'd libraries not in kernel cache built at startup)
-            if grep -q "No instrumented alternative found for dynamic_head_kernel\|No instrumented alternative found for dynamic_mid_kernel\|No instrumented alternative found for dynamic_tail_kernel" "${TEST_OUTPUT_DIR}/run_with_omniprobe.log"; then
-                log_info "  Dynamic library kernels: NOT INSTRUMENTED (expected without library-filter)"
-            else
-                log_warn "  Dynamic library kernels: INSTRUMENTED (unexpected without library-filter)"
-            fi
-
             log_info "Test 2 PASSED: omniprobe ran successfully"
         else
             log_error "Test 2 FAILED: omniprobe failed with exit code $OMNIPROBE_EXIT"
+            echo "  Output saved to: ${TEST_OUTPUT_DIR}/run_with_omniprobe.log"
             exit 1
         fi
 
@@ -221,16 +185,13 @@ else
 }
 EOF
 
-        log_info "Filter config: $FILTER_FILE"
-        cat "$FILTER_FILE"
-
         "$OMNIPROBE" \
             -a MemoryAnalysis \
             -i \
             --library-filter "$FILTER_FILE" \
-            -- ./library_filter_chain_app 2>&1 | tee "${TEST_OUTPUT_DIR}/test3_exclude_static.log"
+            -- ./library_filter_chain_app > "${TEST_OUTPUT_DIR}/test3_exclude_static.log" 2>&1
 
-        OMNIPROBE_EXIT=${PIPESTATUS[0]}
+        OMNIPROBE_EXIT=$?
 
         if [ $OMNIPROBE_EXIT -eq 0 ]; then
             # Static libs should NOT be scanned (excluded)
@@ -252,6 +213,7 @@ EOF
             log_info "Test 3 PASSED: Static libraries excluded correctly"
         else
             log_error "Test 3 FAILED: omniprobe failed with exit code $OMNIPROBE_EXIT"
+            echo "  Output saved to: ${TEST_OUTPUT_DIR}/test3_exclude_static.log"
             exit 1
         fi
 
@@ -271,16 +233,13 @@ EOF
 }
 EOF
 
-        log_info "Filter config: $FILTER_FILE"
-        cat "$FILTER_FILE"
-
         "$OMNIPROBE" \
             -a MemoryAnalysis \
             -i \
             --library-filter "$FILTER_FILE" \
-            -- ./library_filter_chain_app 2>&1 | tee "${TEST_OUTPUT_DIR}/test4_include_dynamic_head.log"
+            -- ./library_filter_chain_app > "${TEST_OUTPUT_DIR}/test4_include_dynamic_head.log" 2>&1
 
-        OMNIPROBE_EXIT=${PIPESTATUS[0]}
+        OMNIPROBE_EXIT=$?
 
         if [ $OMNIPROBE_EXIT -eq 0 ]; then
             # dynamic_head should be added
@@ -289,13 +248,6 @@ EOF
             else
                 log_error "Test 4 FAILED: libdynamic_head.so was NOT added"
                 exit 1
-            fi
-
-            # dynamic_mid and dynamic_tail should NOT be added (no deps resolution)
-            if grep -q "Adding ${BUILD_DIR}/libdynamic_mid.so" "${TEST_OUTPUT_DIR}/test4_include_dynamic_head.log"; then
-                log_warn "  libdynamic_mid.so: ADDED (unexpected for include without deps)"
-            else
-                log_info "  libdynamic_mid.so: NOT ADDED (expected for include without deps)"
             fi
 
             # dynamic_head kernel should now be instrumented
@@ -309,6 +261,7 @@ EOF
             log_info "Test 4 PASSED: Dynamic library included correctly"
         else
             log_error "Test 4 FAILED: omniprobe failed with exit code $OMNIPROBE_EXIT"
+            echo "  Output saved to: ${TEST_OUTPUT_DIR}/test4_include_dynamic_head.log"
             exit 1
         fi
 
@@ -328,16 +281,13 @@ EOF
 }
 EOF
 
-        log_info "Filter config: $FILTER_FILE"
-        cat "$FILTER_FILE"
-
         "$OMNIPROBE" \
             -a MemoryAnalysis \
             -i \
             --library-filter "$FILTER_FILE" \
-            -- ./library_filter_chain_app 2>&1 | tee "${TEST_OUTPUT_DIR}/test5_include_dynamic_with_deps.log"
+            -- ./library_filter_chain_app > "${TEST_OUTPUT_DIR}/test5_include_dynamic_with_deps.log" 2>&1
 
-        OMNIPROBE_EXIT=${PIPESTATUS[0]}
+        OMNIPROBE_EXIT=$?
 
         if [ $OMNIPROBE_EXIT -eq 0 ]; then
             # All dynamic libs should be added (head + deps)
@@ -364,6 +314,7 @@ EOF
             log_info "Test 5 PASSED: include_with_deps works with dependency resolution"
         else
             log_error "Test 5 FAILED: omniprobe failed with exit code $OMNIPROBE_EXIT"
+            echo "  Output saved to: ${TEST_OUTPUT_DIR}/test5_include_dynamic_with_deps.log"
             exit 1
         fi
 
@@ -375,5 +326,3 @@ fi
 ################################################################################
 
 log_info "=== All tests passed ==="
-log_info "Build directory: $BUILD_DIR"
-log_info "Test output: $TEST_OUTPUT_DIR"

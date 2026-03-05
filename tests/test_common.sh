@@ -19,7 +19,7 @@ ROCR_VISIBLE_DEVICES="${ROCR_VISIBLE_DEVICES:-0}"
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
+YELLOW='\033[38;5;208m'
 NC='\033[0m' # No Color
 
 # Test counters (use export so they persist across sourced scripts)
