@@ -2,6 +2,7 @@ build
 *.pyc
 .vscode/
 *.sif
+.claude
 
 # Test output
 tests/test_output/
