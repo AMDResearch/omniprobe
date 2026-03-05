@@ -8,7 +8,8 @@
 #   1. Handler tests (basic, block filter, library filter)
 #   2. Library filter chain tests (builds its own test libraries)
 #   3. rocBLAS integration (requires ROCBLAS_LIB_DIR env var)
-#   4. Triton integration (requires TRITON_REPO env var)
+#   4. rocBLAS offload compression (requires ROCBLAS_COMPRESSED_LIB_DIR env var)
+#   5. Triton integration (requires TRITON_REPO env var)
 ################################################################################
 
 set -e
@@ -67,7 +68,10 @@ run_suite "Library filter chain" "${SCRIPT_DIR}/library_filter_chain/run_test.sh
 # Suite 3: rocBLAS integration (requires ROCBLAS_LIB_DIR)
 run_suite "rocBLAS integration" "${SCRIPT_DIR}/rocblas_filter/run_test.sh"
 
-# Suite 4: Triton integration
+# Suite 4: rocBLAS offload compression (requires ROCBLAS_COMPRESSED_LIB_DIR)
+run_suite "rocBLAS offload compression" "${SCRIPT_DIR}/rocblas_offload_compression/run_test.sh"
+
+# Suite 5: Triton integration
 run_suite "Triton integration" "${SCRIPT_DIR}/triton/run_test.sh"
 
 # Summary
