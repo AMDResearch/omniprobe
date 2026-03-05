@@ -252,6 +252,7 @@ private:
 unsigned int getLogDurConfig(std::map<std::string, std::string>& config);
 void clipInstrumentedKernelName(std::string& str);
 void clipKernelName(std::string& str);
+std::string getInstrumentedName(const std::string& func_decl);
 bool isFileNewer(const std::chrono::system_clock::time_point& timestamp, const std::string& fileName);
 std::string getExecutablePath();
 
