@@ -20,9 +20,11 @@ HSA tools library that intercepts kernel dispatches at runtime. When a dispatch 
 1. `OnLoad()` called by HSA runtime → creates singleton, hooks API
 2. `hsa_queue_create()` intercepted → registers queue + agent
 3. `hsa_executable_symbol_get_info()` intercepted → captures kernel objects
-4. `OnSubmitPackets()` intercepted → `doPackets()` decides instrumented vs original
-5. If instrumented: `fixupPacket()` + `fixupKernArgs()` add dh_comms descriptor
-6. Signal runner thread processes completed kernels, invokes handler reports
+4. Startup: code objects registered in `kernel_cache_` (coCache) but kernelDB scanning is **deferred**
+5. `OnSubmitPackets()` intercepted → `doPackets()` decides instrumented vs original
+6. `fixupPacket()`: on-demand scanning — if kernel not in kernelDB, `scanCodeObject()` is called for that kernel's code object
+7. If instrumented: `fixupPacket()` + `fixupKernArgs()` add dh_comms descriptor; logs source library paths
+8. Signal runner thread processes completed kernels, invokes handler reports
 
 ## Interfaces
 - `OnLoad(HsaApiTable*, ...)` — HSA entry point — `src/interceptor.cc:990`
@@ -82,9 +84,10 @@ Filters which libraries are scanned for kernels, configured via `--library-filte
 ## Rejected Approaches
 - **Per-dispatch dh_comms allocation**: Too slow; pooling required for performance
 - **kernelDB auto-discovery with filter**: The `kernelDB(agent, "")` constructor auto-discovers all shared libraries, bypassing any filter. Must use `kernelDB(agent)` single-arg constructor and manually call `addFile()` for each filtered file.
+- **Scan-everything-at-startup**: Scanning all code objects (disassembly + DWARF) at startup caused >10 min delays with large libraries like rocBLAS (~12,000 kernels). Replaced with on-demand per-code-object scanning at dispatch time via `kernelDB::scanCodeObject()`.
 
 ## Open Questions
 - None currently documented
 
 ## Last Verified
-Date: 2026-03-04
+Date: 2026-03-05

@@ -121,6 +121,29 @@ TRITON_REPO=/path/to/triton ./tests/triton/run_test.sh
 - `TRITON_REPO` environment variable pointing to a Triton repo with `.venv/`
 - omniprobe built with `TRITON_LLVM` (enables Triton plugin + co5 bitcode copy)
 
+### rocBLAS Integration Tests: `tests/rocblas_filter/`
+
+End-to-end test for rocBLAS kernel instrumentation (non-Tensile BLAS Level 1 kernels).
+
+**Structure**:
+- `run_test.sh` — test runner (requires `ROCBLAS_LIB_DIR` env var; skips if unset)
+
+**Usage**:
+```bash
+ROCBLAS_LIB_DIR=/path/to/rocblas/lib ./tests/rocblas_filter/run_test.sh
+```
+
+**Tests** (5 total):
+1. rocblas_sscal runs with MemoryAnalysis instrumentation (computation correct)
+2. Instrumented alternative found for sscal kernel
+3. L2 cache line use report generated
+4. Bank conflicts report generated
+5. Total elapsed time < 60 seconds
+
+**Prerequisites**:
+- `ROCBLAS_LIB_DIR` pointing to directory containing instrumented `librocblas.so`
+- Note: Only non-Tensile kernels (in librocblas.so itself) are tested. Tensile CCOB kernels not yet supported.
+
 ### Library Filter Chain Tests: `tests/library_filter_chain/`
 
 Comprehensive tests for library include/exclude with dependency chains.
@@ -246,15 +269,16 @@ ninja handler_integration_test
 
 **Primary method** (all suites via top-level runner):
 ```bash
-# From repository root (runs handler, library filter chain, and Triton suites):
-TRITON_REPO=/path/to/triton ./tests/run_all_tests.sh
+# From repository root (runs all 4 suites):
+ROCBLAS_LIB_DIR=/path/to/rocblas/lib TRITON_REPO=/path/to/triton ./tests/run_all_tests.sh
 
-# Without Triton (Triton suite skips):
+# Without optional env vars (rocBLAS + Triton suites skip):
 ./tests/run_all_tests.sh
 
 # Individual suites:
 ./tests/run_handler_tests.sh
 ./tests/library_filter_chain/run_test.sh
+ROCBLAS_LIB_DIR=/path/to/rocblas/lib ./tests/rocblas_filter/run_test.sh
 TRITON_REPO=/path/to/triton ./tests/triton/run_test.sh
 ```
 
@@ -318,9 +342,13 @@ ninja handler_integration_test
 ## Recent Changes
 
 **2026-03-05**:
+- Added rocBLAS integration test suite (`tests/rocblas_filter/`) — uses `ROCBLAS_LIB_DIR` env var
 - Added Triton integration test suite (`tests/triton/`)
 - Split `copy_bitcode_files` into `copy_bitcode_to_rocm` (co6) and `copy_bitcode_to_triton` (co5)
 - Triton test uses `TRITON_REPO` env var; skips gracefully if unset
+- Test output colors changed from yellow to orange (256-color ANSI) for readability on light backgrounds
+- Suite 2 (library filter chain) output cleaned up: build/run output suppressed, only test summaries shown
+- `run_all_tests.sh` now runs 4 suites: handler, library filter chain, rocBLAS, Triton
 
 **2026-03-04**:
 - Refactored test scripts into modular structure (test_common.sh + feature subscripts)
@@ -337,4 +365,5 @@ ninja handler_integration_test
 Date: 2026-03-05
 - Handler tests: 12/12 passing (3 handler + 6 block filter + 3 library filter)
 - Library filter chain: 5/5 passing
+- rocBLAS integration: 5/5 passing (requires `ROCBLAS_LIB_DIR`; skips otherwise)
 - Triton integration: 4/4 passing (requires `TRITON_REPO`; skips otherwise)

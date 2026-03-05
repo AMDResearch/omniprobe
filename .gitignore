@@ -9,3 +9,7 @@ build
 tests/test_output/
 tests/library_filter_chain/test_output/
 tests/triton/test_output/
+
+# Compiled test binaries (rocBLAS tests are pre-built externally)
+tests/rocblas_filter/test_rocblas_scal
+tests/rocblas_filter/test_rocblas_gemm

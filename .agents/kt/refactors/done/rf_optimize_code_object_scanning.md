@@ -2,9 +2,9 @@
 
 ## Status
 - [ ] TODO
-- [x] In Progress
+- [ ] In Progress
 - [ ] Blocked
-- [ ] Done
+- [x] Done
 
 ## Objective
 
@@ -367,7 +367,7 @@ for this investigation.
 - Gate: discuss with user
 
 ### Current Step
-Phase 1 complete. Next: Phase 2 (on-demand per-kernel scanning)
+All phases complete. Refactor finished.
 
 ## Progress Log
 
@@ -389,19 +389,70 @@ Phase 1 complete. Next: Phase 2 (on-demand per-kernel scanning)
 - Gates: build passes, dual_kernel_test runs correctly
 - Next: Step 1.0 — investigate arg_descriptor_t vs KernelArgument
 
+### Session 2026-03-05 (continued — Phase 2)
+- Completed: Steps 2.1-2.3 — Added `scanCodeObject()` and `hasKernel()` to kernelDB
+  - Design pivot: `llvm-objdump --disassemble-symbols` not supported for AMDGPU target,
+    so `scanCodeObject()` does lazy full-disassembly per code object instead of per-symbol
+  - `scanCodeObject()` tracks already-scanned files in `scanned_code_objects_` set
+  - Performs: getDisassembly → parseDisassembly → DWARF mapping → argument extraction
+  - Commit: a0fc450 (kerneldb), 920a289 (top-level)
+- Completed: Steps 2.4-2.6 — Wired on-demand scanning into dispatch path
+  - Removed `kdbs_[agent]->addFile()` from startup loop and Triton `addCodeObject()` path
+  - Added on-demand scanning in `fixupPacket()`: checks `hasKernel()`, looks up
+    `CodeObjectRef` from coCache, calls `scanCodeObject()` if needed
+  - Added "Adding" log line in interceptor startup loop (was previously in kernelDB::addFile)
+  - Triton path: `addCodeObject()` now only calls `kernel_cache_.addFile()` and ensures
+    kernelDB instance exists; scanning deferred to dispatch
+  - Commit: 2bc43b8
+- Gates: build passes, all 3 test suites pass (handler 12/12, filter chain 5/5, Triton skip)
+- Next: Phase 3 (cleanup) — pending user check-up
+
+### Session 2026-03-05 (continued — Phase 3 + finish)
+- Completed: Step 3.0 — Removed all `[TIMING]` debug prints and `#include <chrono>`
+  from `kernelDB.cc` and `interceptor.cc`. Updated rocBLAS test to use bash `SECONDS`
+  for wall-clock timing instead of parsing `[TIMING]` output.
+  - Commit: e3373b1 (kerneldb), b34929d (top-level)
+- Completed: Step 3.1 — dual_kernel_test retained (useful for ongoing testing)
+- Added: rocBLAS integration test suite (`tests/rocblas_filter/run_test.sh`, 5 tests)
+  using `ROCBLAS_LIB_DIR` env var pattern. Added to `run_all_tests.sh` as Suite 3.
+  - Commit: 571346d
+- Improved: Test output cleanup — Suite 2 (library filter chain) now suppresses
+  verbose cmake/omniprobe output, matching the style of other suites.
+  - Commit: 0b73ec9
+- Improved: Changed test color from yellow to orange (256-color 38;5;208) across
+  all test scripts for readability on light backgrounds.
+- Added: Source library path in "Found instrumented alternative" output. Shows both
+  uninstrumented and instrumented kernel locations when they differ.
+  - Commits: 1885a4d, ec575de
+- Exposed: `getInstrumentedName()` in `utils.h` for use from interceptor.
+- Final gates: build passes, all 4 test suites pass (handler 12/12, filter chain 5/5,
+  rocBLAS 5/5, Triton skip)
+- **Refactor complete.**
+
+### Final performance results
+
+| Metric | Baseline | After refactor |
+|--------|----------|----------------|
+| coCache::addFile(librocblas) | 14,770 ms | 3,234 ms |
+| kernelDB scanning at startup | >10 min (never completed) | 0 ms (deferred) |
+| Total startup scanning loop | >10 min (never completed) | 3,273 ms |
+| On-demand scan at dispatch | N/A | ~1 code object (302 kernels) |
+| Total elapsed (rocBLAS scal) | N/A (killed) | 4.54 s |
+| Instrumentation | Never reached | Working |
+
 ## Rejected Approaches
-(None yet)
+- **Per-symbol disassembly via `--disassemble-symbols`**: llvm-objdump for AMDGPU does not
+  support this flag. Full disassembly of the entire code object is required. Mitigated by
+  doing lazy full-disassembly-on-first-demand per code object.
 
 ## Open Questions
 1. ~~Can `KernelArgument` (DWARF) replace `arg_descriptor_t` (comgr)?~~ **Resolved: No.**
    DWARF lacks segment sizes, hidden args, and clone_hidden_args_length. Comgr must stay.
-2. Should kernelDB expose code objects as file paths (temp hsacos) or as in-memory byte
-   spans? File paths are simpler but require disk I/O; byte spans avoid temp files but
-   require holding memory. (To be decided in step 1.3 / 2.2)
-3. The Triton cache watcher path must work with the new architecture. (Addressed by
-   step 2.6)
-4. Should `--disassemble-symbols` fall back to full `-d` if the symbol name doesn't
-   match? Or should it be an error? (To be decided in step 2.1)
-5. What is the actual per-kernel latency for `--disassemble-symbols` on a large code
-   object (e.g., one of rocBLAS's code objects with 500+ kernels)? Need to measure.
-   (To be measured in step 2.1)
+2. ~~Should kernelDB expose code objects as file paths or byte spans?~~ **Resolved: File paths.**
+   `scanCodeObject()` takes a file path to a .hsaco temp file.
+3. ~~The Triton cache watcher path must work with the new architecture.~~ **Resolved.**
+   `addCodeObject()` updated to defer scanning; creates empty kernelDB if needed.
+4. ~~Should `--disassemble-symbols` fall back to full `-d`?~~ **Resolved: N/A.**
+   Per-symbol disassembly not supported for AMDGPU. Always use full `-d`.
+5. ~~Per-kernel latency for `--disassemble-symbols`?~~ **Resolved: N/A.**
+   Not applicable since we do full disassembly per code object.
