@@ -1,23 +1,19 @@
 # Refactor: Library Include/Exclude Filtering
 
 ## Status
-- [ ] TODO
+- [x] TODO
 - [ ] In Progress
-- [x] Blocked
+- [ ] Blocked
 - [ ] Done
 
-### Blocker
-**rocBLAS Tensile kernels use compressed .co files (CCOB format)**
+### Blocker (resolved)
+~~rocBLAS Tensile kernels use compressed .co files (CCOB format)~~
+**Resolved**: `rf_offload-compression` refactor completed (2026-03-05). omniprobe now supports
+CCOB decompression for both standalone `.co` files and compressed `.hip_fatbin` sections.
 
-rocBLAS with lazy loading stores optimized Tensile kernels in compressed `.co` files, not `.hsaco`:
-- `.hsaco` files only contain fallback (generic) kernels
-- Optimized kernels (dispatched at runtime) are in `.co` files with CCOB header
-- omniprobe cannot currently read CCOB-format files
-- The `BUILD_OFFLOAD_COMPRESS=OFF` flag only affects `.hsaco` and `librocblas.so`, NOT the `.co` files
-
-**To unblock**, one of:
-1. Complete `rf_offload-compression` refactor (adds CCOB support to omniprobe)
-2. Build rocBLAS with `-DTensile_LAZY_LIBRARY_LOADING=OFF` (produces only `.hsaco`, no `.co`)
+Note: Tensile kernels in `.co` files are NOT instrumented by the LLVM pass (no `__amd_crk_`
+clones). The CCOB decompression works, but instrumented alternatives won't be found for
+Tensile kernels. This is a limitation of the instrumentation pass, not of CCOB support.
 
 **Dependency**: See `.agents/kt/refactors/rf_offload-compression.md` for CCOB support refactor.
 

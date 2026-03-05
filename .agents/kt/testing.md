@@ -142,7 +142,30 @@ ROCBLAS_LIB_DIR=/path/to/rocblas/lib ./tests/rocblas_filter/run_test.sh
 
 **Prerequisites**:
 - `ROCBLAS_LIB_DIR` pointing to directory containing instrumented `librocblas.so`
-- Note: Only non-Tensile kernels (in librocblas.so itself) are tested. Tensile CCOB kernels not yet supported.
+
+### rocBLAS Offload Compression Tests: `tests/rocblas_offload_compression/`
+
+Verifies CCOB (Compressed Clang Offload Bundle) decompression for rocBLAS builds
+with offload compression enabled.
+
+**Structure**:
+- `run_test.sh` — test runner (requires `ROCBLAS_COMPRESSED_LIB_DIR`; skips if unset)
+
+**Usage**:
+```bash
+ROCBLAS_COMPRESSED_LIB_DIR=/path/to/rocblas-with-compression/lib ./tests/rocblas_offload_compression/run_test.sh
+```
+
+**Tests** (5 total):
+1. rocblas_sscal computation correct with compressed librocblas.so
+2. Instrumented alternative found in decompressed `.hip_fatbin`
+3. MemoryAnalysis reports (L2 cache + bank conflicts) generated
+4. Total elapsed time < 120 seconds
+5. rocblas_sgemm computation correct with compressed Tensile .co files
+
+**Prerequisites**:
+- `ROCBLAS_COMPRESSED_LIB_DIR` pointing to instrumented rocBLAS built WITH offload compression
+- Pre-built test binaries in `tests/rocblas_filter/` (shared with Suite 3)
 
 ### Library Filter Chain Tests: `tests/library_filter_chain/`
 
@@ -350,6 +373,11 @@ ninja handler_integration_test
 - Suite 2 (library filter chain) output cleaned up: build/run output suppressed, only test summaries shown
 - `run_all_tests.sh` now runs 4 suites: handler, library filter chain, rocBLAS, Triton
 
+**2026-03-05** (CCOB support):
+- Added rocBLAS offload compression test suite (`tests/rocblas_offload_compression/`)
+- Uses `ROCBLAS_COMPRESSED_LIB_DIR` env var; skips gracefully if unset
+- `run_all_tests.sh` now runs 5 suites: handler, library filter chain, rocBLAS, offload compression, Triton
+
 **2026-03-04**:
 - Refactored test scripts into modular structure (test_common.sh + feature subscripts)
 - Added `tests/library_filter_chain/` comprehensive test for library include/exclude
@@ -366,4 +394,5 @@ Date: 2026-03-05
 - Handler tests: 12/12 passing (3 handler + 6 block filter + 3 library filter)
 - Library filter chain: 5/5 passing
 - rocBLAS integration: 5/5 passing (requires `ROCBLAS_LIB_DIR`; skips otherwise)
+- rocBLAS offload compression: 5/5 passing (requires `ROCBLAS_COMPRESSED_LIB_DIR`; skips otherwise)
 - Triton integration: 4/4 passing (requires `TRITON_REPO`; skips otherwise)

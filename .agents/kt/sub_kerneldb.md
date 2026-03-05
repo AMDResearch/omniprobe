@@ -37,6 +37,10 @@ Kernel database for ISA extraction and DWARF correlation. Provides:
 ### Key APIs Added (2026-03-05)
 - `scanCodeObject(co_file)` — lazy full-disassembly + DWARF mapping + argument extraction for a single code object; idempotent (tracked via `scanned_code_objects_` set)
 - `hasKernel(name)` — thread-safe check if kernel exists in `kernels_` map
+- `extractCodeObjects()` now supports CCOB (Compressed Clang Offload Bundle) files:
+  - Standalone `.co` files: detected by CCOB magic, unbundled via `clang-offload-bundler`
+  - Compressed `.hip_fatbin` sections: multi-block CCOB parsing + per-block unbundling
+  - Transparent to callers — returns temp file paths regardless of compression
 
 ## Key Integration Invariants
 - kernelDB populated on-demand at dispatch time (not at startup)
