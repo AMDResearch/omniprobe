@@ -65,6 +65,9 @@ run_suite "Handler tests" "${SCRIPT_DIR}/run_handler_tests.sh"
 # Suite 2: Library filter chain (has its own build step)
 run_suite "Library filter chain" "${SCRIPT_DIR}/library_filter_chain/run_test.sh"
 
+# Suite 3: Triton integration
+run_suite "Triton integration" "${SCRIPT_DIR}/triton/run_test.sh"
+
 # Summary
 echo ""
 echo "================================================================================"

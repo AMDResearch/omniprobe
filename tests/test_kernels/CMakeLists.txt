@@ -56,6 +56,16 @@ target_compile_options(simple_memory_analysis_test PRIVATE
 target_link_options(simple_memory_analysis_test PRIVATE -fgpu-rdc)
 add_dependencies(simple_memory_analysis_test copy_bitcode_files)
 
+# Dual kernel test - dispatches two kernels to test scanning frequency
+add_executable(dual_kernel_test dual_kernel_test.cpp)
+set_source_files_properties(dual_kernel_test.cpp PROPERTIES LANGUAGE HIP)
+target_compile_options(dual_kernel_test PRIVATE
+    ${TEST_KERNEL_COMPILE_FLAGS}
+    -fpass-plugin=${INST_PLUGIN}
+)
+target_link_options(dual_kernel_test PRIVATE -fgpu-rdc)
+add_dependencies(dual_kernel_test copy_bitcode_files)
+
 # Block filter test kernel
 add_executable(block_filter_test block_filter_test.cpp)
 set_source_files_properties(block_filter_test.cpp PROPERTIES LANGUAGE HIP)
