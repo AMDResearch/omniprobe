@@ -246,22 +246,18 @@ is computed by comparing two kernels' descriptors. `KernelArgHelper` and comgr-b
 `computeKernargData()` must be preserved. Phase 1 deduplication focuses on fat-binary
 parsing only, not on replacing comgr with DWARF.
 
-#### 1.1: Eliminate identical utility functions
-Move `demangleName()` and `getIsaList()` to kernelDB (they're already there). Delete
-the copies from `src/utils.cc`. Have `coCache` call `kernelDB::demangleName()` and
-`kernelDB::getIsaList()`.
-- Gate: build + `tests/run_all_tests.sh`
-- Test: existing tests pass (these are pure utility functions with no behavioral change)
+#### 1.1: Eliminate identical utility functions — DONE
+Exported `demangleName()` and `getIsaList()` from kernelDB namespace with default
+visibility. Removed duplicate implementations from `src/utils.cc`. All callers updated
+to use `kernelDB::` qualification. Gate: build + all tests pass.
 
-#### 1.2: Fix the double fat-binary read in kernelDB
-`mapDisassemblyToSource()` re-reads the fat binary even though `addFile()` already
-extracted the code objects to temp files. Change `mapDisassemblyToSource()` to use
-the already-extracted temp hsaco files from `file_map_` for DWARF parsing, instead of
-re-reading the original binary.
-- Gate: build + `tests/run_all_tests.sh`
-- Test: verify with dual_kernel_test that `[TIMING]` output for kernelDB phase 3 is
-  unchanged or improved. Verify DWARF source mapping still works correctly by checking
-  that MemoryAnalysis output includes source file/line references.
+#### 1.2: Fix the double fat-binary read in kernelDB — DONE
+The fat-binary re-read code paths in `mapDisassemblyToSource()` and
+`extractArgumentsFromDwarf()` were actually dead code: `addFile()` always populates
+`file_map_` with temp file paths via `extractCodeObjects()`, so the condition
+`file_map_[strFile][0] == strFile` was never true for non-.hsaco files. Removed the
+dead code paths, simplifying both functions to always iterate over `file_map_` entries.
+Gate: build + all tests pass.
 
 #### 1.3: Expose code-object info from kernelDB for coCache consumption
 Add a method to kernelDB that returns the extracted code object data (paths to temp
@@ -375,7 +371,7 @@ for this investigation.
 - Gate: discuss with user
 
 ### Current Step
-Step 1.1: Eliminate identical utility functions
+Step 1.3: Expose code-object info from kernelDB for coCache consumption
 
 ## Progress Log
 
