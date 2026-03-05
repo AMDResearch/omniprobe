@@ -222,6 +222,7 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                             // (we'll add files manually after filtering)
                             kdbs_[agent] = std::make_unique<kernelDB::kernelDB>(agent);
 
+                            auto t_loop_start = std::chrono::steady_clock::now();
                             for (auto file : files)
                             {
                                 // Apply exclusion filter
@@ -231,7 +232,11 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                                 //std::cerr << "File with a possible .fatbin section: " << file << std::endl;
                                 try
                                 {
+                                    auto t0 = std::chrono::steady_clock::now();
                                     kernel_cache_.addFile(file, agent, strFilter);
+                                    auto t1 = std::chrono::steady_clock::now();
+                                    std::cerr << "[TIMING] coCache::addFile(" << file << "): "
+                                              << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms" << std::endl;
                                 }
                                 catch (const std::runtime_error& e)
                                 {
@@ -246,13 +251,20 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                                 // Also add to kernelDB for source mapping (in separate try to ensure both are called)
                                 try
                                 {
+                                    auto t0 = std::chrono::steady_clock::now();
                                     kdbs_[agent]->addFile(file, agent, strFilter);
+                                    auto t1 = std::chrono::steady_clock::now();
+                                    std::cerr << "[TIMING] kernelDB::addFile(" << file << "): "
+                                              << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms" << std::endl;
                                 }
                                 catch (const std::runtime_error& e)
                                 {
                                     // Ignore - same rationale as above
                                 }
                             }
+                            auto t_loop_end = std::chrono::steady_clock::now();
+                            std::cerr << "[TIMING] Total startup scanning loop: "
+                                      << std::chrono::duration_cast<std::chrono::milliseconds>(t_loop_end - t_loop_start).count() << " ms" << std::endl;
                         }
                         comms_mgr_.addAgent(agent);
                     }
@@ -929,7 +941,7 @@ void hsaInterceptor::addKernel(uint64_t kernelObject, std::string& name, hsa_exe
    auto it = kernel_objects_.find(kernelObject);
    if (it == kernel_objects_.end())
    {
-        std::string thisName = demangleName(name.c_str());
+        std::string thisName = kernelDB::demangleName(name.c_str());
         kernel_objects_[kernelObject] = {thisName.length() ? thisName : name, symbol, agent, kernarg_size};
    }
 }

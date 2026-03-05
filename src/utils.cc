@@ -21,6 +21,7 @@ THE SOFTWARE.
 *******************************************************************************/
 
 #include "inc/utils.h"
+#include "kernelDB.h"
 #include <algorithm>
 #include <regex>
 
@@ -89,47 +90,6 @@ bool util_is_directory(const std::string& path) {
     return (info.st_mode & S_IFDIR) != 0;
 }
 
-std::string demangleName(const char *name)
-{
-   int status;
-   std::string result;
-   char *realname = abi::__cxa_demangle(name, 0, 0, &status);
-   if (status == 0)
-   {
-       if (realname)
-       {
-           result = realname;
-           free(realname);
-       }
-   }
-   else
-   {
-        if (realname)
-            free(realname);
-        // We're going through these gyrations here because the OMNIPROBE_PREFIX is being
-        // prepended by the LLVM plugin AFTER kernel name mangling has already occurred.
-        // So we have to do some special kind of non-standard de-mangling by stripping the
-        // OMNIPROBE_PREFIX from the name before demangling, then adding it back in the
-        // appropriate place.
-        if (!strncmp(name, OMNIPROBE_PREFIX, strlen(OMNIPROBE_PREFIX)))
-        {
-            realname = abi::__cxa_demangle(&name[strlen(OMNIPROBE_PREFIX)],0,0, &status);
-            if (status == 0 && realname)
-            {
-                result = realname;
-                size_t pos = result.find_first_of(" ");
-                size_t ret_type = result.find_first_of("(");
-                // If pos > ret_type this means that there's no return type in the kernel name
-                if (pos > ret_type)
-                    pos = -1;
-                result.insert(pos+1, OMNIPROBE_PREFIX);
-                free(realname);
-            }
-        }
-   }
-   return result.length() ? result : std::string(name);
-}
-
 bool isFileNewer(const std::chrono::system_clock::time_point& timestamp, const std::string& fileName) {
     try {
         // Get the last write time of the file
@@ -177,37 +137,6 @@ std::string getInstrumentedName(const std::string& func_decl) {
 
     return result;
 }
-
-std::vector<std::string> getIsaList(hsa_agent_t agent)
-{
-    std::vector<std::string> list;
-    hsa_agent_iterate_isas(agent,[](hsa_isa_t isa, void *data){
-        std::vector<std::string> *pList = reinterpret_cast<std::vector<std::string> *> (data);
-           uint32_t length;
-           hsa_status_t status = hsa_isa_get_info(isa, HSA_ISA_INFO_NAME_LENGTH, 0, &length);
-           if (status == HSA_STATUS_SUCCESS)
-           {
-                char *pName = static_cast<char *>(malloc(length + 1));
-                if (pName)
-                {
-                    pName[length] = '\0';
-                    status = hsa_isa_get_info(isa, HSA_ISA_INFO_NAME, 0, pName);
-                    //std::cerr << "Isa name: " << pName << std::endl;
-                    if (status == HSA_STATUS_SUCCESS)
-                        pList->push_back(std::string(pName));
-                    free(pName);
-                }
-                else
-                {
-                    std::cout << "The system is somehow out of memory at line " << __LINE__ << " so I'm aborting this run." << std::endl;
-                    abort();
-                }
-           }
-           return HSA_STATUS_SUCCESS;
-        }, reinterpret_cast<void *>(&list));
-    return list;
-}
-
 
 signalPool::signalPool(int initialSize/* = 8 */)
 {
@@ -441,7 +370,7 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
                     CHECK_STATUS("Can't retrieve name from valid symbol", apiTable_->core_->hsa_executable_symbol_get_info_fn(sym, HSA_EXECUTABLE_SYMBOL_INFO_NAME, name));
                     std::string mangledName(name);
 
-                    string strName = demangleName(name);
+                    string strName = kernelDB::demangleName(name);
                     //std::cout << "Kernel Name Found: " << strName << std::endl;
                     // If a kernel filter was supplied, match the demangled name to the filter. If there's no match,
                     // skip this symbol because we don't want to run instrumented for kernels whose names don't
@@ -938,7 +867,7 @@ std::vector<amd_comgr_code_object_info_t> KernelArgHelper::getCodeObjectInfo(hsa
     for(size_t co_idx = 0; co_idx != code_object_offsets.size(); ++co_idx)
     {
         amd_comgr_data_t bundle;
-        std::vector<std::string> isas = getIsaList(agent);
+        std::vector<std::string> isas = kernelDB::getIsaList(agent);
         CHECK_COMGR(amd_comgr_create_data(AMD_COMGR_DATA_KIND_FATBIN, &bundle));
         CHECK_COMGR(amd_comgr_set_data(bundle, bits.size() - code_object_offsets[co_idx],
                                        reinterpret_cast<const char *>(bits.data() + code_object_offsets[co_idx])));
@@ -977,7 +906,7 @@ KernelArgHelper::KernelArgHelper(hsa_agent_t agent, std::vector<uint8_t>& bits)
     for(size_t co_idx = 0; co_idx != code_object_offsets.size(); ++co_idx)
     {
         amd_comgr_data_t bundle;
-        std::vector<std::string> isas = getIsaList(agent);
+        std::vector<std::string> isas = kernelDB::getIsaList(agent);
         CHECK_COMGR(amd_comgr_create_data(AMD_COMGR_DATA_KIND_FATBIN, &bundle));
         CHECK_COMGR(amd_comgr_set_data(bundle, bits.size() - code_object_offsets[co_idx],
                                        reinterpret_cast<const char *>(bits.data() + code_object_offsets[co_idx])));
@@ -1137,7 +1066,7 @@ void KernelArgHelper::computeKernargData(amd_comgr_metadata_node_t exec_map)
             amd_comgr_metadata_node_t field;
             CHECK_COMGR(amd_comgr_metadata_lookup(value,".symbol", &field));
             std::string strName = get_metadata_string(field);
-            strName = demangleName(strName.c_str());
+            strName = kernelDB::demangleName(strName.c_str());
             arg_descriptor_t desc = {};
             amd_comgr_metadata_node_t args;
             CHECK_COMGR(amd_comgr_metadata_lookup(value, ".args", &args));

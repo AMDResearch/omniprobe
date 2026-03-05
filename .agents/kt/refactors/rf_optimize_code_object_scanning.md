@@ -238,13 +238,13 @@ At dispatch time (when an instrumented kernel is dispatched):
 Consolidate fat-binary parsing, eliminate copy-pasted functions, fix internal
 redundancies. This is groundwork that simplifies Phase 2.
 
-#### 1.0: Investigate arg_descriptor_t vs KernelArgument
-Determine whether DWARF-based `KernelArgument` can provide the same information as
-comgr-based `arg_descriptor_t`. Specifically check:
-- Can we derive `explicit_args_length`, `hidden_args_length` from DWARF data?
-- Does DWARF provide `private_segment_size`, `group_segment_size`?
-- Does DWARF provide `clone_hidden_args_length`?
-- Gate: document findings, no code changes
+#### 1.0: Investigate arg_descriptor_t vs KernelArgument — DONE
+**Finding: DWARF cannot replace comgr.** Segment sizes (`kernarg_length`,
+`private_segment_size`, `group_segment_size`) are comgr/ABI metadata not in DWARF.
+Hidden arguments are compiler-generated and invisible to DWARF. `clone_hidden_args_length`
+is computed by comparing two kernels' descriptors. `KernelArgHelper` and comgr-based
+`computeKernargData()` must be preserved. Phase 1 deduplication focuses on fat-binary
+parsing only, not on replacing comgr with DWARF.
 
 #### 1.1: Eliminate identical utility functions
 Move `demangleName()` and `getIsaList()` to kernelDB (they're already there). Delete
@@ -375,7 +375,7 @@ for this investigation.
 - Gate: discuss with user
 
 ### Current Step
-Step 1.0: Investigate arg_descriptor_t vs KernelArgument
+Step 1.1: Eliminate identical utility functions
 
 ## Progress Log
 
@@ -401,8 +401,8 @@ Step 1.0: Investigate arg_descriptor_t vs KernelArgument
 (None yet)
 
 ## Open Questions
-1. Can `KernelArgument` (DWARF) replace `arg_descriptor_t` (comgr)? Specifically, does
-   DWARF provide hidden arg info and segment sizes? (Addressed by step 1.0)
+1. ~~Can `KernelArgument` (DWARF) replace `arg_descriptor_t` (comgr)?~~ **Resolved: No.**
+   DWARF lacks segment sizes, hidden args, and clone_hidden_args_length. Comgr must stay.
 2. Should kernelDB expose code objects as file paths (temp hsacos) or as in-memory byte
    spans? File paths are simpler but require disk I/O; byte spans avoid temp files but
    require holding memory. (To be decided in step 1.3 / 2.2)
