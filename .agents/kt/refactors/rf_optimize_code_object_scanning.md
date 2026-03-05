@@ -267,16 +267,12 @@ The needed APIs already exist:
 - `KernelArgHelper(file_name)` constructor — already handles individual .hsaco files
 No new API needed. Proceeding directly to step 1.4.
 
-#### 1.4: Refactor coCache::addFile() to use kernelDB's code objects
-Change `coCache::addFile()` to:
-1. Call kernelDB to get the list of code objects (instead of calling
-   `KernelArgHelper::getElfSectionBits` + `getCodeObjectInfo`)
-2. Create HSA executables from the code objects kernelDB already extracted
-3. Keep its own HSA symbol iteration and lookup map construction
-- Gate: build + `tests/run_all_tests.sh`
-- Test: verify `[TIMING]` output shows `coCache::addFile` time is unchanged or reduced
+#### 1.4: Refactor coCache::addFile() to use kernelDB's code objects — DONE
+Unified .hsaco and fat-binary code paths. Now calls `extractCodeObjects(agent, name)`
+and iterates over returned file paths using file-based HSA code object reader. Each
+code object gets its own KernelArgHelper instance. Gate: build + all tests pass.
 
-#### 1.5: Remove duplicated fat-binary parsing from KernelArgHelper
+#### 1.5: Remove duplicated fat-binary parsing from KernelArgHelper — DONE
 After 1.4, `KernelArgHelper` no longer needs its own `getElfSectionBits()`,
 `findCodeObjectOffsets()`, or `getCodeObjectInfo()`. Remove them. `KernelArgHelper` keeps
 only `getArgDescriptor()` / `computeKernargData()` (its unique functionality), and receives
@@ -371,7 +367,7 @@ for this investigation.
 - Gate: discuss with user
 
 ### Current Step
-Step 1.4: Refactor coCache::addFile() to use kernelDB's code objects
+Phase 1 complete. Next: Phase 2 (on-demand per-kernel scanning)
 
 ## Progress Log
 

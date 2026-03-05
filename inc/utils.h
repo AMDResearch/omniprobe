@@ -182,12 +182,9 @@ private:
 class KernelArgHelper {
 public:
     KernelArgHelper(const std::string file_name);
-    KernelArgHelper(hsa_agent_t agent, std::vector<uint8_t>& bits);
     ~KernelArgHelper();
     void addCodeObject(const char *bits, size_t length);
     bool getArgDescriptor(const std::string& strName, arg_descriptor_t& desc);
-    static void getElfSectionBits(const std::string &fileName, const std::string &sectionName, std::vector<uint8_t>& sectionData);
-    static std::vector<amd_comgr_code_object_info_t> getCodeObjectInfo(hsa_agent_t agent, std::vector<uint8_t>& bits);
     static void getSharedLibraries(std::vector<std::string>& libraries);
 private:
     std::string get_metadata_string(amd_comgr_metadata_node_t node);
