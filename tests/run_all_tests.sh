@@ -9,7 +9,8 @@
 #   2. Library filter chain tests (builds its own test libraries)
 #   3. rocBLAS integration (requires ROCBLAS_LIB_DIR env var)
 #   4. rocBLAS offload compression (requires ROCBLAS_COMPRESSED_LIB_DIR env var)
-#   5. Triton integration (requires TRITON_REPO env var)
+#   5. hipBLASLt instrumentation (requires HIPBLASLT_INSTRUMENTED_HSACO + HIPBLASLT_LIB_DIR)
+#   6. Triton integration (requires TRITON_REPO env var)
 ################################################################################
 
 set -e
@@ -71,7 +72,10 @@ run_suite "rocBLAS integration" "${SCRIPT_DIR}/rocblas_filter/run_test.sh"
 # Suite 4: rocBLAS offload compression (requires ROCBLAS_COMPRESSED_LIB_DIR)
 run_suite "rocBLAS offload compression" "${SCRIPT_DIR}/rocblas_offload_compression/run_test.sh"
 
-# Suite 5: Triton integration
+# Suite 5: hipBLASLt instrumentation (requires HIPBLASLT_INSTRUMENTED_HSACO + HIPBLASLT_LIB_DIR)
+run_suite "hipBLASLt instrumentation" "${SCRIPT_DIR}/hipblaslt/run_test.sh"
+
+# Suite 6: Triton integration
 run_suite "Triton integration" "${SCRIPT_DIR}/triton/run_test.sh"
 
 # Summary

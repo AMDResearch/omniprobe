@@ -80,6 +80,8 @@ Filters which libraries are scanned for kernels, configured via `--library-filte
 ## Known Limitations
 - Assumes single interceptor (singleton)
 - Thread model: one signal runner, one comms runner
+- **No runtime code object interception**: The interceptor only scans `.hip_fatbin` sections in shared libraries loaded at startup (via `/proc/self/maps`). Libraries that load device code objects at runtime via `hipModuleLoad()` (e.g., hipBLASLt `.hsaco` files) are NOT auto-discovered. These must be explicitly included via `--library-filter` with a raw ELF (unbundled) `.hsaco` path.
+- **Library filter requires raw ELF**: `isValidElf()` checks for `0x7f ELF` magic bytes. Clang Offload Bundles (magic: `__CLANG_OFFLOAD_BUNDLE__`) produced by `amdclang++ --offload-device-only` are rejected. Must unbundle with `clang-offload-bundler --unbundle` first.
 
 ## Rejected Approaches
 - **Per-dispatch dh_comms allocation**: Too slow; pooling required for performance
@@ -90,4 +92,4 @@ Filters which libraries are scanned for kernels, configured via `--library-filte
 - None currently documented
 
 ## Last Verified
-Date: 2026-03-05
+Date: 2026-03-06

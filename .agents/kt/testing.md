@@ -363,7 +363,44 @@ ninja handler_integration_test
 - What refactoring is needed to enable true unit tests with GoogleTest?
 - Should we create a test fixture library for handler testing?
 
+### hipBLASLt Instrumentation Tests: `tests/hipblaslt/`
+
+End-to-end test for hipBLASLt matrix transform kernel instrumentation.
+
+**Structure**:
+- `run_test.sh` — test runner (requires `HIPBLASLT_INSTRUMENTED_HSACO` + `HIPBLASLT_LIB_DIR`; skips if unset)
+- `test_hipblaslt_transform.cpp` — calls `hipblasLtMatrixTransform()` directly (not through rocBLAS)
+- `include_hipblaslt_transform.json` — library filter config pointing to unbundled instrumented `.hsaco`
+
+**Usage**:
+```bash
+HIPBLASLT_INSTRUMENTED_HSACO=/path/to/hipblasltTransform-gfx90a.hsaco \
+HIPBLASLT_LIB_DIR=/path/to/custom-hipblaslt/lib \
+./tests/hipblaslt/run_test.sh
+```
+
+**Tests** (5 total):
+1. hipblasLtMatrixTransform computation correct with instrumentation
+2. Instrumented alternative found for Transform kernel
+3. L2 cache line use report generated
+4. Bank conflicts report generated
+5. Total elapsed time < 60 seconds
+
+**Key insight**: hipBLASLt loads transform kernels from separate `.hsaco` files via
+`hipModuleLoad()`, not from `.hip_fatbin` sections. The interceptor discovers these
+through the library filter `include` mechanism with a raw ELF (unbundled) `.hsaco`.
+The compilation produces a Clang Offload Bundle which must be unbundled first.
+
+**Prerequisites**:
+- Instrumented `hipblasltTransform.hsaco` built with `-fpass-plugin` and unbundled to raw ELF
+- Custom hipBLASLt installation with instrumented device code objects
+- See `.untracked/hipblaslt-instrumentation.md` for build instructions (not tracked in git)
+
 ## Recent Changes
+
+**2026-03-06**:
+- Added hipBLASLt instrumentation test suite (`tests/hipblaslt/`) — uses `HIPBLASLT_INSTRUMENTED_HSACO` + `HIPBLASLT_LIB_DIR` env vars
+- Added hipBLASLt build instructions (currently untracked in `.untracked/hipblaslt-instrumentation.md`)
 
 **2026-03-05**:
 - Added rocBLAS integration test suite (`tests/rocblas_filter/`) — uses `ROCBLAS_LIB_DIR` env var
@@ -391,9 +428,10 @@ ninja handler_integration_test
 - Test runner updated to use project's own test kernels instead of external kernel
 
 ## Last Verified
-Date: 2026-03-05
+Date: 2026-03-06
 - Handler tests: 12/12 passing (3 handler + 6 block filter + 3 library filter)
 - Library filter chain: 5/5 passing
 - rocBLAS integration: 5/5 passing (requires `ROCBLAS_LIB_DIR`; skips otherwise)
 - rocBLAS offload compression: 5/5 passing (requires `ROCBLAS_COMPRESSED_LIB_DIR`; skips otherwise)
 - Triton integration: 4/4 passing (requires `TRITON_REPO`; skips otherwise)
+- hipBLASLt instrumentation: 5/5 passing (requires `HIPBLASLT_INSTRUMENTED_HSACO` + `HIPBLASLT_LIB_DIR`; skips otherwise)
