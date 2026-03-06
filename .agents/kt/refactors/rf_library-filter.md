@@ -205,7 +205,7 @@ Step 30: Manual verification with other real applications
 ### Session 2026-03-04 (session 4)
 - Validated library-filter with rocBLAS:
   - Created `tests/rocblas_filter/` with test_rocblas_scal.cpp and test_rocblas_gemm.cpp
-  - rocBLAS built with instrumentation (Tensile enabled) at `/work1/amd/rvanoo/repos/rocBLAS/build-without-offload-compression/`
+  - rocBLAS built with instrumentation (Tensile enabled) at `<rocBLAS-repo>/build-without-offload-compression/`
   - Verified: scal calls `rocblas_sscal_2_kernel` (non-Tensile), gemm calls `Cijk_...` (Tensile)
   - Kernel dispatches detected via HSA symbol interception
   - Exclude filter dramatically speeds up init by skipping 6000+ kernel librocblas.so scan
@@ -217,7 +217,7 @@ Step 30: Manual verification with other real applications
   - `.co` files start with `CCOB` header - compressed code object format
   - omniprobe cannot read CCOB files, so instrumented alternatives not found
   - `BUILD_OFFLOAD_COMPRESS=OFF` only affects `.hsaco` and `librocblas.so`, NOT `.co` files
-  - Read `/work1/amd/rvanoo/repos/rocBLAS/Instrumentation.md` - confirms Tensile kernels ARE instrumented
+  - Read `<rocBLAS-repo>/Instrumentation.md` - confirms Tensile kernels ARE instrumented
 
 - Identified future improvements:
   - Add CCOB decompression support to omniprobe

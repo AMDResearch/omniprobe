@@ -46,7 +46,7 @@ Offload Bundle files by shelling out to `clang-offload-bundler --unbundle`.
 
 ## Test Environment: Two Instrumented rocBLAS Builds
 
-Both builds are under `/work1/amd/rvanoo/repos/rocBLAS/`:
+Both builds are under `<rocBLAS-repo>/`:
 
 | Build Directory | `.hip_fatbin` in librocblas.so | Tensile `.co` files |
 |-----------------|-------------------------------|---------------------|
@@ -54,8 +54,8 @@ Both builds are under `/work1/amd/rvanoo/repos/rocBLAS/`:
 | `build-without-offload-compression/` | Uncompressed | Likely compressed (CCOB) — build script settings did not percolate through to Tensile compilation |
 
 Library paths:
-- **With compression**: `/work1/amd/rvanoo/repos/rocBLAS/build-with-offload-compression/release/rocblas-install/lib`
-- **Without compression**: `/work1/amd/rvanoo/repos/rocBLAS/build-without-offload-compression/release/rocblas-install/lib`
+- **With compression**: `<rocBLAS-repo>/build-with-offload-compression/release/rocblas-install/lib`
+- **Without compression**: `<rocBLAS-repo>/build-without-offload-compression/release/rocblas-install/lib`
 
 ### Usage rules
 - Switch between the two by setting `ROCBLAS_LIB_DIR` to the appropriate path.
