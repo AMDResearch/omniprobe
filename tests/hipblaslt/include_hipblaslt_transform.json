@@ -1,0 +1,5 @@
+{
+  "include": [
+    "/work1/amd/rvanoo/repos/hipBLASLt/install/lib/hipblaslt/library/hipblasltTransform-gfx90a.hsaco"
+  ]
+}
