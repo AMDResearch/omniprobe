@@ -143,7 +143,7 @@ else
     # Check if omniprobe build exists
     if [ ! -d "$OMNIPROBE_BUILD_DIR" ]; then
         log_warn "omniprobe build directory not found at $OMNIPROBE_BUILD_DIR - skipping omniprobe tests"
-        log_warn "Build omniprobe first: cd ${REPO_ROOT}/build && ninja"
+        log_warn "Build omniprobe first: cd ${REPO_ROOT}/build && cmake --build ."
     else
         "$OMNIPROBE" \
             -a MemoryAnalysis \

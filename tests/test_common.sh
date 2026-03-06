@@ -41,7 +41,7 @@ check_kernel() {
     local kernel="$1"
     if [ ! -x "$kernel" ]; then
         echo -e "${RED}ERROR: Test kernel not found or not executable: $kernel${NC}"
-        echo "Did you build the tests? Run: cmake .. -DINTERCEPTOR_BUILD_TESTING=ON && ninja"
+        echo "Did you build the tests? Run: cmake .. -DINTERCEPTOR_BUILD_TESTING=ON && cmake --build ."
         exit 1
     fi
 }
