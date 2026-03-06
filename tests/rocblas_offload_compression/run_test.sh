@@ -160,18 +160,14 @@ else
 fi
 
 ################################################################################
-# Test 5: Gemm runs with compressed Tensile .co files (decompression test)
-#
-# Note: Tensile kernels are not instrumented by the LLVM pass, so we only
-# verify that the computation is correct (proves CCOB decompression doesn't
-# break kernel loading). Instrumented alternative is NOT expected.
+# Test 5: Gemm runs correctly (correctness check)
 ################################################################################
 
 if [ -x "$TEST_GEMM" ]; then
     TESTS_RUN=$((TESTS_RUN + 1))
     TEST_NAME="offload_compression_gemm_runs"
     echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
-    echo "  Run rocblas_sgemm with compressed Tensile .co files (correctness check)"
+    echo "  Run rocblas_sgemm correctness check"
 
     OUTPUT_FILE="$OUTPUT_DIR/${TEST_NAME}.out"
 
@@ -181,7 +177,7 @@ if [ -x "$TEST_GEMM" ]; then
        -- "$TEST_GEMM" > "$OUTPUT_FILE" 2>&1; then
 
         if grep -q "rocblas_sgemm: PASS" "$OUTPUT_FILE"; then
-            echo -e "  ${GREEN}✓ PASS${NC} - rocblas_sgemm computation correct with compressed Tensile .co"
+            echo -e "  ${GREEN}✓ PASS${NC} - rocblas_sgemm computation correct"
             TESTS_PASSED=$((TESTS_PASSED + 1))
         else
             echo -e "  ${RED}✗ FAIL${NC} - rocblas_sgemm computation failed"
@@ -193,8 +189,63 @@ if [ -x "$TEST_GEMM" ]; then
         echo "  Output saved to: $OUTPUT_FILE"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
+
+    ############################################################################
+    # Test 6: Gemm with instrumented Tensile kernels via library-filter include
+    #
+    # When Tensile .hsaco files are present (hip_full build), we can use
+    # --library-filter to include them and match instrumented alternatives.
+    ############################################################################
+
+    TENSILE_LIB_DIR="$ROCBLAS_COMPRESSED_LIB_DIR/rocblas/library"
+    TENSILE_HSACO=$(find "$TENSILE_LIB_DIR" -name "*.hsaco" 2>/dev/null | head -1)
+
+    # Only run if a .hsaco contains instrumented sgemm Tensile clones (hip_full build).
+    # The asm_full build may have Kernels.so-*.hsaco but its sgemm kernels come from
+    # assembly .co files and won't have __amd_crk_ clones in the .hsaco.
+    TENSILE_HSACO=""
+    for hsaco in $(find "$TENSILE_LIB_DIR" -name "Kernels.so-*.hsaco" 2>/dev/null); do
+        if readelf -sW "$hsaco" 2>/dev/null | grep -q "__amd_crk_Cijk_Ailk_Bljk_S_"; then
+            TENSILE_HSACO="$hsaco"
+            break
+        fi
+    done
+
+    if [ -n "$TENSILE_HSACO" ]; then
+        TESTS_RUN=$((TESTS_RUN + 1))
+        TEST_NAME="offload_compression_gemm_tensile_instrumented"
+        echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+        echo "  Run rocblas_sgemm with instrumented Tensile kernels via library-filter"
+
+        # Create temporary library-filter config
+        FILTER_CONFIG="$OUTPUT_DIR/tensile_include_filter.json"
+        echo "{\"include\": [\"$TENSILE_HSACO\"]}" > "$FILTER_CONFIG"
+
+        OUTPUT_FILE="$OUTPUT_DIR/${TEST_NAME}.out"
+
+        if ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
+           LD_LIBRARY_PATH="$ROCBLAS_COMPRESSED_LIB_DIR:$LD_LIBRARY_PATH" \
+           "$OMNIPROBE" -i -a MemoryAnalysis --library-filter "$FILTER_CONFIG" \
+           -- "$TEST_GEMM" > "$OUTPUT_FILE" 2>&1; then
+
+            if grep -q "Found instrumented alternative for.*Cijk" "$OUTPUT_FILE"; then
+                echo -e "  ${GREEN}✓ PASS${NC} - Found instrumented alternative for Tensile kernel"
+                TESTS_PASSED=$((TESTS_PASSED + 1))
+            else
+                echo -e "  ${RED}✗ FAIL${NC} - No instrumented alternative found for Tensile kernel"
+                echo "  Output saved to: $OUTPUT_FILE"
+                TESTS_FAILED=$((TESTS_FAILED + 1))
+            fi
+        else
+            echo -e "  ${RED}✗ FAIL${NC} - omniprobe execution failed"
+            echo "  Output saved to: $OUTPUT_FILE"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        echo -e "\n${YELLOW}SKIP${NC}: No instrumented Tensile .hsaco files found (requires hip_full build)"
+    fi
 else
-    echo -e "\n${YELLOW}SKIP${NC}: test_rocblas_gemm not found, skipping gemm test"
+    echo -e "\n${YELLOW}SKIP${NC}: test_rocblas_gemm not found, skipping gemm tests"
 fi
 
 ################################################################################

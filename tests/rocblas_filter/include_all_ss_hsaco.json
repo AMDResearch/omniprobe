@@ -1,0 +1,8 @@
+{
+  "include": [
+    "/work1/amd/rvanoo/repos/rocBLAS/build-without-offload-compression/release/rocblas-install/lib/rocblas/library/TensileLibrary_Type_SS_*gfx90a-xnack-.hsaco"
+  ],
+  "exclude": [
+    "**/librocblas.so*"
+  ]
+}

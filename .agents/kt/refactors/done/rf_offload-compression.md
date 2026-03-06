@@ -303,6 +303,23 @@ All phases complete. Refactor finished.
 - Discovered: Tensile `.co` files are always CCOB-compressed regardless of build flags
 - Next: archive dossier to done/, update KT dossiers
 
+### Session 2026-03-05 (Tensile instrumented kernel matching)
+- Built rocBLAS with `Tensile_LOGIC=hip_full` + `BUILD_OFFLOAD_COMPRESS=ON` at `build-ccob/`
+  - hip_full produces .hsaco files with 3936 `__amd_crk_` instrumented Tensile clones
+  - Key: assembly kernels (asm_full) bypass LLVM IR entirely → can't instrument
+- **Bug fix**: `getInstrumentedName()` in `src/utils.cc` had two bugs:
+  1. Used `find_last_of(".kd")` (finds any char in set) instead of `rfind(".kd")` (finds substring)
+  2. Only added `Pv` suffix for `.kd` names, but not for bare kernel names
+  - The LLVM pass ALWAYS appends `Pv` (from void* parameter), so the lookup must too
+  - Fix: use `rfind(".kd")` and always append `Pv` regardless of `.kd` suffix
+- **Test update**: Added Test 6 to `tests/rocblas_offload_compression/run_test.sh`
+  - Uses `--library-filter` include to add Tensile .hsaco to kernel cache
+  - Verifies `Found instrumented alternative for.*Cijk` in output
+  - Correctly skips when no instrumented sgemm Tensile clones found (asm_full builds)
+- Both acceptance criteria now fully met:
+  - scal (Level 1): compressed .hip_fatbin → decompressed → instrumented alternative found ✓
+  - gemm (Level 3): Tensile .hsaco via library-filter → instrumented alternative found ✓
+
 ## Rejected Approaches
 - **In-memory decompression**: Considered decompressing CCOB bytes in memory and feeding
   to `getCodeObjectInfo()`. Rejected because `create_temp_file_segment()` reads from the
@@ -310,5 +327,6 @@ All phases complete. Refactor finished.
   Instead, each CCOB block is written to a temp file and unbundled via clang-offload-bundler.
 
 ## Last Verified
-Commit: 9cc74e8
+Commit: uncommitted (working tree)
 Date: 2026-03-05
+Tests: Suite 4 — 5/5 (asm_full) or 6/6 (hip_full) passing

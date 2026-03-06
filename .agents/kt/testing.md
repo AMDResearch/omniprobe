@@ -156,12 +156,13 @@ with offload compression enabled.
 ROCBLAS_COMPRESSED_LIB_DIR=/path/to/rocblas-with-compression/lib ./tests/rocblas_offload_compression/run_test.sh
 ```
 
-**Tests** (5 total):
+**Tests** (5-6 total):
 1. rocblas_sscal computation correct with compressed librocblas.so
 2. Instrumented alternative found in decompressed `.hip_fatbin`
 3. MemoryAnalysis reports (L2 cache + bank conflicts) generated
 4. Total elapsed time < 120 seconds
-5. rocblas_sgemm computation correct with compressed Tensile .co files
+5. rocblas_sgemm computation correct
+6. Instrumented Tensile kernel matched via `--library-filter` (hip_full builds only; skips for asm_full)
 
 **Prerequisites**:
 - `ROCBLAS_COMPRESSED_LIB_DIR` pointing to instrumented rocBLAS built WITH offload compression

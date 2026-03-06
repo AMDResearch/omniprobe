@@ -127,13 +127,17 @@ std::string getInstrumentedName(const std::string& func_decl) {
     }
     else
     {
-        pos = result.find_last_of(".kd");
+        // Kernel name without full signature (no parens).
+        // The LLVM instrumentation pass always appends "Pv" to the cloned
+        // function name (for the extra void* parameter).  We must replicate
+        // that here so the lookup matches the symbol in the code object.
+        pos = result.rfind(".kd");
         if (pos != std::string::npos)
-            result.replace(pos-2, 3, "Pv.kd");
+            result.insert(pos, "Pv");   // name.kd → namePv.kd
+        else
+            result += "Pv";             // name → namePv
         result = "__amd_crk_" + result;
     }
-
-    //std::cout << "Instrumented name: " << result << std::endl;
 
     return result;
 }
