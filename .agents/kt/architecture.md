@@ -3,7 +3,16 @@
 ## Overview
 Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runtime information such as memory access patterns, cache line usage, and LDS bank conflicts.
 
-**Recent Changes** (2026-03-03):
+**Recent Changes** (2026-03-08):
+- Standalone `ROCm/hipBLASLt` and `ROCm/rocBLAS` repos are deprecated; source now
+  in `ROCm/rocm-libraries` monorepo. Build/instrumentation docs should reference monorepo.
+- Refactor dossier `rf_rocblas_maximal_support.md` created for migrating to monorepo
+  builds and adding hipBLASLt TensileLite helper kernel instrumentation.
+- Key finding: Tensile `asm_full` and `hip_full` kernel names are fundamentally different
+  (6+ fields differ); cannot combine both for instrumentation. `hip_full` required.
+- User documentation planned for `docs/` directory (tracked in git).
+
+**Changes** (2026-03-03):
 - Merged agents branch into main (22 commits across 4 repos)
 - Deleted agents branches (local + remote) from all 4 repos after merge
 - Removed passthrough wrapper classes for cleaner architecture
@@ -156,4 +165,4 @@ Useful build artifacts:
 | `DH_COMMS_GROUP_FILTER_X/Y/Z` | Block index filters (N or N:M range) |
 
 ## Last Verified
-Date: 2026-03-04
+Date: 2026-03-08
