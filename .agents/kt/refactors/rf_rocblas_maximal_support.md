@@ -255,13 +255,12 @@ nm $SANDBOX/rocblas-install/lib/rocblas/library/Kernels.so-000-gfx90a-*.hsaco | 
 Run the existing test programs against the new builds:
 ```bash
 # Test rocBLAS scal with new build
-ROCBLAS_LIB_DIR=$SANDBOX/rocblas-install/lib \
+INSTRUMENTED_ROCBLAS_LIB_DIR=$SANDBOX/rocblas-install/lib \
     tests/rocblas_filter/run_test.sh
 
 # Test hipBLASLt transform with new build
 # (need to adapt — new build produces different file layout)
-HIPBLASLT_LIB_DIR=$SANDBOX/hipblaslt-install/lib \
-HIPBLASLT_INSTRUMENTED_HSACO=$SANDBOX/hipblaslt-install/lib/hipblaslt/library/hipblasltTransform-gfx90a.hsaco \
+INSTRUMENTED_HIPBLASLT_LIB_DIR=$SANDBOX/hipblaslt-install/lib \
     tests/hipblaslt/run_test.sh
 ```
 
@@ -350,7 +349,7 @@ The most reliable way to trigger helpers is via a GEMM with activation or mixed
 types (which forces a Conversion epilogue kernel). Need to investigate during
 implementation which hipBLASLt API calls reliably dispatch helper kernels.
 
-**Environment variable**: `HIPBLASLT_HELPERS_LIB_DIR` or reuse `HIPBLASLT_LIB_DIR`.
+**Environment variable**: reuse `INSTRUMENTED_HIPBLASLT_LIB_DIR`.
 
 **Risk**: Helper kernels may not be triggered by simple GEMM calls. May need
 specific configurations (activation function, mixed precision, bias). Research
@@ -371,8 +370,8 @@ to force the hipBLASLt backend, triggering hipBLASLt kernels through rocBLAS.
 5. Elapsed time within bounds
 
 **Environment variables**:
-- `ROCBLAS_MAXIMAL_LIB_DIR`: Path to rocBLAS built with maximal instrumentation
-- `HIPBLASLT_MAXIMAL_LIB_DIR`: Path to hipBLASLt built with instrumentation
+- `INSTRUMENTED_ROCBLAS_LIB_DIR`: Path to rocBLAS built with maximal instrumentation
+- `INSTRUMENTED_HIPBLASLT_LIB_DIR`: Path to hipBLASLt built with instrumentation
 
 **Library filter**: Include the hipBLASLt .hsaco files (transform + helpers) since
 they are loaded via `hipModuleLoad()` and not auto-discovered.
@@ -394,13 +393,13 @@ Add environment variables for the new builds:
 ```json
 {
     "action": "env",
-    "name": "ROCBLAS_MAXIMAL_LIB_DIR",
+    "name": "INSTRUMENTED_ROCBLAS_LIB_DIR",
     "value": "/work1/amd/rvanoo/repos/sandbox/rocblas_maximal_support/rocblas-install/lib",
     "note": "rocBLAS with maximal instrumentation (Tensile + hipBLASLt)"
 },
 {
     "action": "env",
-    "name": "HIPBLASLT_MAXIMAL_LIB_DIR",
+    "name": "INSTRUMENTED_HIPBLASLT_LIB_DIR",
     "value": "/work1/amd/rvanoo/repos/sandbox/rocblas_maximal_support/hipblaslt-install/lib",
     "note": "hipBLASLt with full instrumentation (transform + helpers)"
 }
@@ -542,7 +541,7 @@ during implementation.
    boundary guardrail.
 
 6. **No hard-coded paths in test scripts.** Use environment variables, consistent
-   with existing conventions (`ROCBLAS_LIB_DIR`, `TRITON_REPO`, etc.).
+   with existing conventions (`INSTRUMENTED_ROCBLAS_LIB_DIR`, `TRITON_DIR`, etc.).
 
 7. **Existing tests must not break.** The new test suites are additions, not
    replacements. Existing `rocblas_filter/`, `rocblas_offload_compression/`, and

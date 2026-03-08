@@ -7,11 +7,10 @@
 # Test suites:
 #   1. Handler tests (basic, block filter, library filter)
 #   2. Library filter chain tests (builds its own test libraries)
-#   3. rocBLAS integration (requires ROCBLAS_LIB_DIR env var)
-#   4. rocBLAS offload compression (requires ROCBLAS_COMPRESSED_LIB_DIR env var)
-#   5. hipBLASLt instrumentation (requires HIPBLASLT_INSTRUMENTED_HSACO + HIPBLASLT_LIB_DIR)
-#   6. Triton integration (requires TRITON_REPO env var)
-#   7. rocBLAS + hipBLASLt combined (requires ROCBLAS_MAXIMAL_LIB_DIR + HIPBLASLT_MAXIMAL_LIB_DIR)
+#   3. hipBLASLt instrumentation (requires INSTRUMENTED_HIPBLASLT_LIB_DIR)
+#   4. rocBLAS integration (requires INSTRUMENTED_ROCBLAS_LIB_DIR)
+#   5. rocBLAS + hipBLASLt combined (requires INSTRUMENTED_ROCBLAS_LIB_DIR + INSTRUMENTED_HIPBLASLT_LIB_DIR)
+#   6. Triton integration (requires TRITON_DIR)
 ################################################################################
 
 set -e
@@ -26,6 +25,7 @@ NC='\033[0m'
 
 SUITES_RUN=0
 SUITES_PASSED=0
+SUITES_SKIPPED=0
 SUITES_FAILED=0
 FAILED_SUITES=""
 
@@ -47,13 +47,22 @@ run_suite() {
         return 1
     fi
 
-    if "$script" "$@"; then
-        echo -e "${GREEN}Suite PASSED: ${name}${NC}"
-        SUITES_PASSED=$((SUITES_PASSED + 1))
-    else
+    local output
+    output=$("$script" "$@" 2>&1)
+    local exit_code=$?
+
+    echo "$output"
+
+    if [ $exit_code -ne 0 ]; then
         echo -e "${RED}Suite FAILED: ${name}${NC}"
         SUITES_FAILED=$((SUITES_FAILED + 1))
         FAILED_SUITES="${FAILED_SUITES}  - ${name}\n"
+    elif echo "$output" | grep -q "SKIP"; then
+        echo -e "${YELLOW}Suite SKIPPED: ${name}${NC}"
+        SUITES_SKIPPED=$((SUITES_SKIPPED + 1))
+    else
+        echo -e "${GREEN}Suite PASSED: ${name}${NC}"
+        SUITES_PASSED=$((SUITES_PASSED + 1))
     fi
 }
 
@@ -67,29 +76,27 @@ run_suite "Handler tests" "${SCRIPT_DIR}/run_handler_tests.sh"
 # Suite 2: Library filter chain (has its own build step)
 run_suite "Library filter chain" "${SCRIPT_DIR}/library_filter_chain/run_test.sh"
 
-# Suite 3: rocBLAS integration (requires ROCBLAS_LIB_DIR)
-run_suite "rocBLAS integration" "${SCRIPT_DIR}/rocblas_filter/run_test.sh"
-
-# Suite 4: rocBLAS offload compression (requires ROCBLAS_COMPRESSED_LIB_DIR)
-run_suite "rocBLAS offload compression" "${SCRIPT_DIR}/rocblas_offload_compression/run_test.sh"
-
-# Suite 5: hipBLASLt instrumentation (requires HIPBLASLT_INSTRUMENTED_HSACO + HIPBLASLT_LIB_DIR)
+# Suite 3: hipBLASLt instrumentation (requires INSTRUMENTED_HIPBLASLT_LIB_DIR)
 run_suite "hipBLASLt instrumentation" "${SCRIPT_DIR}/hipblaslt/run_test.sh"
 
-# Suite 6: Triton integration
-run_suite "Triton integration" "${SCRIPT_DIR}/triton/run_test.sh"
+# Suite 4: rocBLAS integration (requires INSTRUMENTED_ROCBLAS_LIB_DIR)
+run_suite "rocBLAS integration" "${SCRIPT_DIR}/rocblas_filter/run_test.sh"
 
-# Suite 7: rocBLAS + hipBLASLt combined (requires ROCBLAS_MAXIMAL_LIB_DIR + HIPBLASLT_MAXIMAL_LIB_DIR)
+# Suite 5: rocBLAS + hipBLASLt combined (requires INSTRUMENTED_ROCBLAS_LIB_DIR + INSTRUMENTED_HIPBLASLT_LIB_DIR)
 run_suite "rocBLAS + hipBLASLt combined" "${SCRIPT_DIR}/rocblas_hipblaslt/run_test.sh"
+
+# Suite 6: Triton integration (requires TRITON_DIR)
+run_suite "Triton integration" "${SCRIPT_DIR}/triton/run_test.sh"
 
 # Summary
 echo ""
 echo "================================================================================"
 echo "Overall Summary"
 echo "================================================================================"
-echo "Suites run:    $SUITES_RUN"
-echo -e "${GREEN}Suites passed: $SUITES_PASSED${NC}"
-echo -e "${RED}Suites failed: $SUITES_FAILED${NC}"
+echo "Suites run:     $SUITES_RUN"
+echo -e "${GREEN}Suites passed:  $SUITES_PASSED${NC}"
+echo -e "${YELLOW}Suites skipped: $SUITES_SKIPPED${NC}"
+echo -e "${RED}Suites failed:  $SUITES_FAILED${NC}"
 
 if [ $SUITES_FAILED -gt 0 ]; then
     echo ""

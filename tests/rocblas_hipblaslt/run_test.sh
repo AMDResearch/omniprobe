@@ -6,9 +6,9 @@
 # (Tensile hip_full + hipBLASLt matrix transform) end-to-end.
 #
 # Prerequisites:
-#   - ROCBLAS_MAXIMAL_LIB_DIR: Path to rocBLAS built with maximal
+#   - INSTRUMENTED_ROCBLAS_LIB_DIR: Path to rocBLAS built with maximal
 #     instrumentation (Tensile hip_full + CMAKE_CXX_FLAGS -fpass-plugin).
-#   - HIPBLASLT_MAXIMAL_LIB_DIR: Path to hipBLASLt built with instrumented
+#   - INSTRUMENTED_HIPBLASLT_LIB_DIR: Path to hipBLASLt built with instrumented
 #     matrix transform kernels (custom installation with instrumented device
 #     code objects and symlinked system host library).
 #
@@ -41,25 +41,25 @@ mkdir -p "$OUTPUT_DIR"
 # Preflight checks
 ################################################################################
 
-if [ -z "$ROCBLAS_MAXIMAL_LIB_DIR" ]; then
-    echo -e "${YELLOW}SKIP: ROCBLAS_MAXIMAL_LIB_DIR not set.${NC}"
+if [ -z "$INSTRUMENTED_ROCBLAS_LIB_DIR" ]; then
+    echo -e "${YELLOW}SKIP: INSTRUMENTED_ROCBLAS_LIB_DIR not set.${NC}"
     echo "Set it to the lib directory of a rocBLAS built with Tensile hip_full + instrumentation."
     exit 0
 fi
 
-if [ ! -f "$ROCBLAS_MAXIMAL_LIB_DIR/librocblas.so" ]; then
-    echo -e "${RED}ERROR: librocblas.so not found in $ROCBLAS_MAXIMAL_LIB_DIR${NC}"
+if [ ! -f "$INSTRUMENTED_ROCBLAS_LIB_DIR/librocblas.so" ]; then
+    echo -e "${RED}ERROR: librocblas.so not found in $INSTRUMENTED_ROCBLAS_LIB_DIR${NC}"
     exit 1
 fi
 
-if [ -z "$HIPBLASLT_MAXIMAL_LIB_DIR" ]; then
-    echo -e "${YELLOW}SKIP: HIPBLASLT_MAXIMAL_LIB_DIR not set.${NC}"
+if [ -z "$INSTRUMENTED_HIPBLASLT_LIB_DIR" ]; then
+    echo -e "${YELLOW}SKIP: INSTRUMENTED_HIPBLASLT_LIB_DIR not set.${NC}"
     echo "Set it to the lib directory of hipBLASLt with instrumented matrix transform."
     exit 0
 fi
 
-if [ ! -f "$HIPBLASLT_MAXIMAL_LIB_DIR/libhipblaslt.so" ]; then
-    echo -e "${RED}ERROR: libhipblaslt.so not found in $HIPBLASLT_MAXIMAL_LIB_DIR${NC}"
+if [ ! -f "$INSTRUMENTED_HIPBLASLT_LIB_DIR/libhipblaslt.so" ]; then
+    echo -e "${RED}ERROR: libhipblaslt.so not found in $INSTRUMENTED_HIPBLASLT_LIB_DIR${NC}"
     exit 1
 fi
 
@@ -75,10 +75,10 @@ if [ ! -x "$TEST_SCAL" ] || [ ! -x "$TEST_GEMM" ]; then
 fi
 
 # Set combined LD_LIBRARY_PATH: rocBLAS first, then hipBLASLt, then system
-COMBINED_LIB_PATH="$ROCBLAS_MAXIMAL_LIB_DIR:$HIPBLASLT_MAXIMAL_LIB_DIR:$LD_LIBRARY_PATH"
+COMBINED_LIB_PATH="$INSTRUMENTED_ROCBLAS_LIB_DIR:$INSTRUMENTED_HIPBLASLT_LIB_DIR:$LD_LIBRARY_PATH"
 
 # Find instrumented Tensile .hsaco files for library-filter
-TENSILE_LIB_DIR="$ROCBLAS_MAXIMAL_LIB_DIR/rocblas/library"
+TENSILE_LIB_DIR="$INSTRUMENTED_ROCBLAS_LIB_DIR/rocblas/library"
 TENSILE_HSACO=""
 for hsaco in $(find "$TENSILE_LIB_DIR" -name "Kernels.so-*.hsaco" 2>/dev/null); do
     if readelf -sW "$hsaco" 2>/dev/null | grep -q "__amd_crk_Cijk"; then
@@ -89,7 +89,7 @@ done
 
 # Find instrumented hipBLASLt transform .hsaco (unbundled raw ELF)
 HIPBLASLT_HSACO=""
-HIPBLASLT_LIBRARY_DIR="$HIPBLASLT_MAXIMAL_LIB_DIR/hipblaslt/library"
+HIPBLASLT_LIBRARY_DIR="$INSTRUMENTED_HIPBLASLT_LIB_DIR/hipblaslt/library"
 for hsaco in $(find "$HIPBLASLT_LIBRARY_DIR" -name "hipblasltTransform-*.hsaco" 2>/dev/null); do
     if nm "$hsaco" 2>/dev/null | grep -q "__amd_crk_Transform_"; then
         HIPBLASLT_HSACO="$hsaco"
@@ -101,8 +101,8 @@ echo "==========================================================================
 echo "rocBLAS + hipBLASLt Combined Instrumentation Tests"
 echo "================================================================================"
 echo "Omniprobe:          $OMNIPROBE"
-echo "rocBLAS lib:        $ROCBLAS_MAXIMAL_LIB_DIR"
-echo "hipBLASLt lib:      $HIPBLASLT_MAXIMAL_LIB_DIR"
+echo "rocBLAS lib:        $INSTRUMENTED_ROCBLAS_LIB_DIR"
+echo "hipBLASLt lib:      $INSTRUMENTED_HIPBLASLT_LIB_DIR"
 echo "Tensile .hsaco:     ${TENSILE_HSACO:-not found}"
 echo "hipBLASLt .hsaco:   ${HIPBLASLT_HSACO:-not found}"
 echo "Test binary (scal): $TEST_SCAL"

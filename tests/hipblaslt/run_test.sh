@@ -7,23 +7,12 @@
 # instrumented with the AMDGCNSubmitAddressMessages LLVM IR pass plugin.
 #
 # Prerequisites:
-#   - HIPBLASLT_INSTRUMENTED_HSACO environment variable pointing to the
-#     unbundled (raw ELF) instrumented hipblasltTransform .hsaco file.
-#   - HIPBLASLT_LIB_DIR environment variable pointing to the directory
-#     containing libhipblaslt.so (custom installation with instrumented
-#     device code objects).
+#   - INSTRUMENTED_HIPBLASLT_LIB_DIR environment variable pointing to the
+#     directory containing libhipblaslt.so (custom installation with
+#     instrumented device code objects). The unbundled .hsaco is
+#     auto-discovered from hipblaslt/library/ under this directory.
 #   - The test binary test_hipblaslt_transform must be pre-built in this
 #     directory.
-#
-# Building the instrumented hipblasltTransform.hsaco:
-#   PLUGIN=/path/to/libAMDGCNSubmitAddressMessages-rocm.so
-#   amdclang++ -fpass-plugin=$PLUGIN -x hip matrix_transform.cpp \
-#     --offload-arch=gfx90a -c --offload-device-only \
-#     -Xoffload-linker --build-id=sha1 -O3 -o hipblasltTransform.hsaco
-#   clang-offload-bundler --unbundle --type=o \
-#     --targets=hipv4-amdgcn-amd-amdhsa--gfx90a \
-#     --input=hipblasltTransform.hsaco \
-#     --output=hipblasltTransform-gfx90a.hsaco
 ################################################################################
 
 set -e
@@ -51,25 +40,28 @@ mkdir -p "$OUTPUT_DIR"
 # Preflight checks
 ################################################################################
 
-if [ -z "$HIPBLASLT_INSTRUMENTED_HSACO" ]; then
-    echo -e "${YELLOW}SKIP: HIPBLASLT_INSTRUMENTED_HSACO not set.${NC}"
-    echo "Set it to the path of the unbundled (raw ELF) instrumented hipblasltTransform .hsaco."
+if [ -z "$INSTRUMENTED_HIPBLASLT_LIB_DIR" ]; then
+    echo -e "${YELLOW}SKIP: INSTRUMENTED_HIPBLASLT_LIB_DIR not set.${NC}"
+    echo "Set it to the directory containing libhipblaslt.so (custom installation with instrumented device code)."
     exit 0
 fi
 
-if [ ! -f "$HIPBLASLT_INSTRUMENTED_HSACO" ]; then
-    echo -e "${RED}ERROR: Instrumented .hsaco not found at $HIPBLASLT_INSTRUMENTED_HSACO${NC}"
+if [ ! -f "$INSTRUMENTED_HIPBLASLT_LIB_DIR/libhipblaslt.so" ]; then
+    echo -e "${RED}ERROR: libhipblaslt.so not found in $INSTRUMENTED_HIPBLASLT_LIB_DIR${NC}"
     exit 1
 fi
 
-if [ -z "$HIPBLASLT_LIB_DIR" ]; then
-    echo -e "${YELLOW}SKIP: HIPBLASLT_LIB_DIR not set.${NC}"
-    echo "Set it to the directory containing libhipblaslt.so (custom installation)."
-    exit 0
-fi
+# Auto-discover the unbundled instrumented hipblasltTransform .hsaco
+HIPBLASLT_INSTRUMENTED_HSACO=""
+for hsaco in $(find "$INSTRUMENTED_HIPBLASLT_LIB_DIR/hipblaslt/library" -name "hipblasltTransform-*.hsaco" 2>/dev/null); do
+    if nm "$hsaco" 2>/dev/null | grep -q "__amd_crk_Transform_"; then
+        HIPBLASLT_INSTRUMENTED_HSACO="$hsaco"
+        break
+    fi
+done
 
-if [ ! -f "$HIPBLASLT_LIB_DIR/libhipblaslt.so" ]; then
-    echo -e "${RED}ERROR: libhipblaslt.so not found in $HIPBLASLT_LIB_DIR${NC}"
+if [ -z "$HIPBLASLT_INSTRUMENTED_HSACO" ]; then
+    echo -e "${RED}ERROR: No instrumented hipblasltTransform .hsaco found in $INSTRUMENTED_HIPBLASLT_LIB_DIR/hipblaslt/library/${NC}"
     exit 1
 fi
 
@@ -99,7 +91,7 @@ echo "==========================================================================
 echo "hipBLASLt Instrumentation Tests"
 echo "================================================================================"
 echo "Omniprobe:           $OMNIPROBE"
-echo "hipBLASLt lib:       $HIPBLASLT_LIB_DIR"
+echo "hipBLASLt lib:       $INSTRUMENTED_HIPBLASLT_LIB_DIR"
 echo "Instrumented .hsaco: $HIPBLASLT_INSTRUMENTED_HSACO"
 echo "Test binary:         $TEST_BINARY"
 echo "Output dir:          $OUTPUT_DIR"
@@ -119,7 +111,7 @@ OUTPUT_FILE="$OUTPUT_DIR/${TEST_NAME}.out"
 
 SECONDS=0
 if ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
-   LD_LIBRARY_PATH="$HIPBLASLT_LIB_DIR:$LD_LIBRARY_PATH" \
+   LD_LIBRARY_PATH="$INSTRUMENTED_HIPBLASLT_LIB_DIR:$LD_LIBRARY_PATH" \
    "$OMNIPROBE" -i -a MemoryAnalysis \
    --library-filter "$FILTER_FILE" \
    -- "$TEST_BINARY" > "$OUTPUT_FILE" 2>&1; then

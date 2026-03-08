@@ -6,7 +6,7 @@
 # a minimal vector-add kernel through omniprobe with MemoryAnalysis.
 #
 # Prerequisites:
-#   - TRITON_REPO environment variable pointing to the Triton repository
+#   - TRITON_DIR environment variable pointing to the Triton repository
 #     (must contain a .venv with Triton installed)
 #   - omniprobe built with TRITON_LLVM support
 ################################################################################
@@ -37,12 +37,12 @@ mkdir -p "$OUTPUT_DIR"
 # Preflight checks
 ################################################################################
 
-if [ -z "$TRITON_REPO" ]; then
-    echo -e "${YELLOW}SKIP: TRITON_REPO not set. Set it to the Triton repository path to run Triton tests.${NC}"
+if [ -z "$TRITON_DIR" ]; then
+    echo -e "${YELLOW}SKIP: TRITON_DIR not set. Set it to the Triton repository path to run Triton tests.${NC}"
     exit 0
 fi
 
-TRITON_VENV="${TRITON_REPO}/.venv"
+TRITON_VENV="${TRITON_DIR}/.venv"
 
 if [ ! -x "$OMNIPROBE" ]; then
     echo -e "${RED}ERROR: omniprobe not found at $OMNIPROBE${NC}"
@@ -51,7 +51,7 @@ fi
 
 if [ ! -d "$TRITON_VENV" ]; then
     echo -e "${RED}ERROR: Triton venv not found at $TRITON_VENV${NC}"
-    echo "TRITON_REPO is set to $TRITON_REPO but no .venv directory was found there."
+    echo "TRITON_DIR is set to $TRITON_DIR but no .venv directory was found there."
     exit 1
 fi
 

@@ -6,7 +6,7 @@
 # librocblas.so itself (non-Tensile, BLAS Level 1 kernels like sscal).
 #
 # Prerequisites:
-#   - ROCBLAS_LIB_DIR environment variable pointing to the directory containing
+#   - INSTRUMENTED_ROCBLAS_LIB_DIR environment variable pointing to the directory containing
 #     an instrumented librocblas.so (built with omniprobe instrumentation).
 #   - The test binary test_rocblas_scal must be pre-built in this directory.
 #
@@ -39,14 +39,14 @@ mkdir -p "$OUTPUT_DIR"
 # Preflight checks
 ################################################################################
 
-if [ -z "$ROCBLAS_LIB_DIR" ]; then
-    echo -e "${YELLOW}SKIP: ROCBLAS_LIB_DIR not set. Set it to the directory containing an instrumented librocblas.so to run rocBLAS tests.${NC}"
+if [ -z "$INSTRUMENTED_ROCBLAS_LIB_DIR" ]; then
+    echo -e "${YELLOW}SKIP: INSTRUMENTED_ROCBLAS_LIB_DIR not set. Set it to the directory containing an instrumented librocblas.so to run rocBLAS tests.${NC}"
     exit 0
 fi
 
-if [ ! -f "$ROCBLAS_LIB_DIR/librocblas.so" ]; then
-    echo -e "${RED}ERROR: librocblas.so not found in $ROCBLAS_LIB_DIR${NC}"
-    echo "ROCBLAS_LIB_DIR is set but does not contain librocblas.so."
+if [ ! -f "$INSTRUMENTED_ROCBLAS_LIB_DIR/librocblas.so" ]; then
+    echo -e "${RED}ERROR: librocblas.so not found in $INSTRUMENTED_ROCBLAS_LIB_DIR${NC}"
+    echo "INSTRUMENTED_ROCBLAS_LIB_DIR is set but does not contain librocblas.so."
     exit 1
 fi
 
@@ -65,7 +65,7 @@ echo "==========================================================================
 echo "rocBLAS Integration Tests"
 echo "================================================================================"
 echo "Omniprobe:      $OMNIPROBE"
-echo "rocBLAS lib:    $ROCBLAS_LIB_DIR"
+echo "rocBLAS lib:    $INSTRUMENTED_ROCBLAS_LIB_DIR"
 echo "Test binary:    $TEST_BINARY"
 echo "Output dir:     $OUTPUT_DIR"
 echo "GPU:            ROCR_VISIBLE_DEVICES=$ROCR_VISIBLE_DEVICES"
@@ -84,7 +84,7 @@ OUTPUT_FILE="$OUTPUT_DIR/${TEST_NAME}.out"
 
 SECONDS=0
 if ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
-   LD_LIBRARY_PATH="$ROCBLAS_LIB_DIR:$LD_LIBRARY_PATH" \
+   LD_LIBRARY_PATH="$INSTRUMENTED_ROCBLAS_LIB_DIR:$LD_LIBRARY_PATH" \
    "$OMNIPROBE" -i -a MemoryAnalysis \
    -- "$TEST_BINARY" > "$OUTPUT_FILE" 2>&1; then
     ELAPSED_SECONDS=$SECONDS

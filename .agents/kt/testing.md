@@ -103,12 +103,12 @@ run_library_filter_test "test_name" "/path/to/kernel" '{"exclude":[...]}' "prese
 End-to-end test for Triton-compiled kernels, verifying the full pipeline works with JIT-compiled code.
 
 **Structure**:
-- `run_test.sh` — test runner (requires `TRITON_REPO` env var; skips if unset)
+- `run_test.sh` — test runner (requires `TRITON_DIR` env var; skips if unset)
 - `vector_add.py` — minimal Triton vector-add kernel (4096 elements, 3 dispatches)
 
 **Usage**:
 ```bash
-TRITON_REPO=/path/to/triton ./tests/triton/run_test.sh
+TRITON_DIR=/path/to/triton ./tests/triton/run_test.sh
 ```
 
 **Tests** (4 total):
@@ -118,7 +118,7 @@ TRITON_REPO=/path/to/triton ./tests/triton/run_test.sh
 4. Bank conflicts report generated
 
 **Prerequisites**:
-- `TRITON_REPO` environment variable pointing to a Triton repo with `.venv/`
+- `TRITON_DIR` environment variable pointing to a Triton repo with `.venv/`
 - omniprobe built with `TRITON_LLVM` (enables Triton plugin + co5 bitcode copy)
 
 ### rocBLAS Integration Tests: `tests/rocblas_filter/`
@@ -126,11 +126,11 @@ TRITON_REPO=/path/to/triton ./tests/triton/run_test.sh
 End-to-end test for rocBLAS kernel instrumentation (non-Tensile BLAS Level 1 kernels).
 
 **Structure**:
-- `run_test.sh` — test runner (requires `ROCBLAS_LIB_DIR` env var; skips if unset)
+- `run_test.sh` — test runner (requires `INSTRUMENTED_ROCBLAS_LIB_DIR` env var; skips if unset)
 
 **Usage**:
 ```bash
-ROCBLAS_LIB_DIR=/path/to/rocblas/lib ./tests/rocblas_filter/run_test.sh
+INSTRUMENTED_ROCBLAS_LIB_DIR=/path/to/rocblas/lib ./tests/rocblas_filter/run_test.sh
 ```
 
 **Tests** (5 total):
@@ -141,32 +141,8 @@ ROCBLAS_LIB_DIR=/path/to/rocblas/lib ./tests/rocblas_filter/run_test.sh
 5. Total elapsed time < 60 seconds
 
 **Prerequisites**:
-- `ROCBLAS_LIB_DIR` pointing to directory containing instrumented `librocblas.so`
+- `INSTRUMENTED_ROCBLAS_LIB_DIR` pointing to directory containing instrumented `librocblas.so`
 
-### rocBLAS Offload Compression Tests: `tests/rocblas_offload_compression/`
-
-Verifies CCOB (Compressed Clang Offload Bundle) decompression for rocBLAS builds
-with offload compression enabled.
-
-**Structure**:
-- `run_test.sh` — test runner (requires `ROCBLAS_COMPRESSED_LIB_DIR`; skips if unset)
-
-**Usage**:
-```bash
-ROCBLAS_COMPRESSED_LIB_DIR=/path/to/rocblas-with-compression/lib ./tests/rocblas_offload_compression/run_test.sh
-```
-
-**Tests** (5-6 total):
-1. rocblas_sscal computation correct with compressed librocblas.so
-2. Instrumented alternative found in decompressed `.hip_fatbin`
-3. MemoryAnalysis reports (L2 cache + bank conflicts) generated
-4. Total elapsed time < 120 seconds
-5. rocblas_sgemm computation correct
-6. Instrumented Tensile kernel matched via `--library-filter` (hip_full builds only; skips for asm_full)
-
-**Prerequisites**:
-- `ROCBLAS_COMPRESSED_LIB_DIR` pointing to instrumented rocBLAS built WITH offload compression
-- Pre-built test binaries in `tests/rocblas_filter/` (shared with Suite 3)
 
 ### Library Filter Chain Tests: `tests/library_filter_chain/`
 
@@ -293,8 +269,8 @@ ninja handler_integration_test
 
 **Primary method** (all suites via top-level runner):
 ```bash
-# From repository root (runs all 4 suites):
-ROCBLAS_LIB_DIR=/path/to/rocblas/lib TRITON_REPO=/path/to/triton ./tests/run_all_tests.sh
+# From repository root (runs all 6 suites):
+INSTRUMENTED_ROCBLAS_LIB_DIR=/path/to/rocblas/lib INSTRUMENTED_HIPBLASLT_LIB_DIR=/path/to/hipblaslt/lib TRITON_DIR=/path/to/triton ./tests/run_all_tests.sh
 
 # Without optional env vars (rocBLAS + Triton suites skip):
 ./tests/run_all_tests.sh
@@ -302,8 +278,8 @@ ROCBLAS_LIB_DIR=/path/to/rocblas/lib TRITON_REPO=/path/to/triton ./tests/run_all
 # Individual suites:
 ./tests/run_handler_tests.sh
 ./tests/library_filter_chain/run_test.sh
-ROCBLAS_LIB_DIR=/path/to/rocblas/lib ./tests/rocblas_filter/run_test.sh
-TRITON_REPO=/path/to/triton ./tests/triton/run_test.sh
+INSTRUMENTED_ROCBLAS_LIB_DIR=/path/to/rocblas/lib ./tests/rocblas_filter/run_test.sh
+TRITON_DIR=/path/to/triton ./tests/triton/run_test.sh
 ```
 
 **Expected output**:
@@ -368,14 +344,13 @@ ninja handler_integration_test
 End-to-end test for hipBLASLt matrix transform kernel instrumentation.
 
 **Structure**:
-- `run_test.sh` — test runner (requires `HIPBLASLT_INSTRUMENTED_HSACO` + `HIPBLASLT_LIB_DIR`; skips if unset)
+- `run_test.sh` — test runner (requires `INSTRUMENTED_HIPBLASLT_LIB_DIR`; skips if unset)
 - `test_hipblaslt_transform.cpp` — calls `hipblasLtMatrixTransform()` directly (not through rocBLAS)
 - `include_hipblaslt_transform.json` — library filter config pointing to unbundled instrumented `.hsaco`
 
 **Usage**:
 ```bash
-HIPBLASLT_INSTRUMENTED_HSACO=/path/to/hipblasltTransform-gfx90a.hsaco \
-HIPBLASLT_LIB_DIR=/path/to/custom-hipblaslt/lib \
+INSTRUMENTED_HIPBLASLT_LIB_DIR=/path/to/custom-hipblaslt/lib \
 ./tests/hipblaslt/run_test.sh
 ```
 
@@ -399,22 +374,20 @@ The compilation produces a Clang Offload Bundle which must be unbundled first.
 ## Recent Changes
 
 **2026-03-06**:
-- Added hipBLASLt instrumentation test suite (`tests/hipblaslt/`) — uses `HIPBLASLT_INSTRUMENTED_HSACO` + `HIPBLASLT_LIB_DIR` env vars
+- Added hipBLASLt instrumentation test suite (`tests/hipblaslt/`) — uses `INSTRUMENTED_HIPBLASLT_LIB_DIR` env var
 - Added hipBLASLt build instructions (currently untracked in `.untracked/hipblaslt-instrumentation.md`)
 
 **2026-03-05**:
-- Added rocBLAS integration test suite (`tests/rocblas_filter/`) — uses `ROCBLAS_LIB_DIR` env var
+- Added rocBLAS integration test suite (`tests/rocblas_filter/`) — uses `INSTRUMENTED_ROCBLAS_LIB_DIR` env var
 - Added Triton integration test suite (`tests/triton/`)
 - Split `copy_bitcode_files` into `copy_bitcode_to_rocm` (co6) and `copy_bitcode_to_triton` (co5)
-- Triton test uses `TRITON_REPO` env var; skips gracefully if unset
+- Triton test uses `TRITON_DIR` env var; skips gracefully if unset
 - Test output colors changed from yellow to orange (256-color ANSI) for readability on light backgrounds
 - Suite 2 (library filter chain) output cleaned up: build/run output suppressed, only test summaries shown
-- `run_all_tests.sh` now runs 4 suites: handler, library filter chain, rocBLAS, Triton
+- `run_all_tests.sh` now runs 6 suites: handler, library filter chain, hipBLASLt, rocBLAS, rocBLAS+hipBLASLt combined, Triton
 
 **2026-03-05** (CCOB support):
-- Added rocBLAS offload compression test suite (`tests/rocblas_offload_compression/`)
-- Uses `ROCBLAS_COMPRESSED_LIB_DIR` env var; skips gracefully if unset
-- `run_all_tests.sh` now runs 5 suites: handler, library filter chain, rocBLAS, offload compression, Triton
+- Added rocBLAS offload compression test suite (`tests/rocblas_offload_compression/`) — later removed as redundant (2026-03-08)
 
 **2026-03-04**:
 - Refactored test scripts into modular structure (test_common.sh + feature subscripts)
@@ -428,8 +401,8 @@ The compilation produces a Clang Offload Bundle which must be unbundled first.
 - Test runner updated to use project's own test kernels instead of external kernel
 
 **2026-03-08** (rf_rocblas_maximal_support):
-- Added `tests/rocblas_hipblaslt/` — combined rocBLAS + hipBLASLt instrumentation test (Suite 7)
-- New env vars: `ROCBLAS_MAXIMAL_LIB_DIR`, `HIPBLASLT_MAXIMAL_LIB_DIR` (added to session_init_primes.json)
+- Added `tests/rocblas_hipblaslt/` — combined rocBLAS + hipBLASLt instrumentation test (Suite 5)
+- Env vars: `INSTRUMENTED_ROCBLAS_LIB_DIR`, `INSTRUMENTED_HIPBLASLT_LIB_DIR` (in session_init_primes.json)
 - Builds from `rocm-libraries` monorepo (standalone repos deprecated)
 - Skipped `tests/hipblaslt_helpers/` — TensileLite helpers can't be instrumented (LLVM ICE on 564K-line Kernels.cpp)
 
@@ -437,7 +410,6 @@ The compilation produces a Clang Offload Bundle which must be unbundled first.
 Date: 2026-03-06
 - Handler tests: 12/12 passing (3 handler + 6 block filter + 3 library filter)
 - Library filter chain: 5/5 passing
-- rocBLAS integration: 5/5 passing (requires `ROCBLAS_LIB_DIR`; skips otherwise)
-- rocBLAS offload compression: 5/5 passing (requires `ROCBLAS_COMPRESSED_LIB_DIR`; skips otherwise)
-- Triton integration: 4/4 passing (requires `TRITON_REPO`; skips otherwise)
-- hipBLASLt instrumentation: 5/5 passing (requires `HIPBLASLT_INSTRUMENTED_HSACO` + `HIPBLASLT_LIB_DIR`; skips otherwise)
+- rocBLAS integration: 5/5 passing (requires `INSTRUMENTED_ROCBLAS_LIB_DIR`; skips otherwise)
+- Triton integration: 4/4 passing (requires `TRITON_DIR`; skips otherwise)
+- hipBLASLt instrumentation: 5/5 passing (requires `INSTRUMENTED_HIPBLASLT_LIB_DIR`; skips otherwise)
