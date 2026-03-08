@@ -384,7 +384,7 @@ The compilation produces a Clang Offload Bundle which must be unbundled first.
 - Triton test uses `TRITON_DIR` env var; skips gracefully if unset
 - Test output colors changed from yellow to orange (256-color ANSI) for readability on light backgrounds
 - Suite 2 (library filter chain) output cleaned up: build/run output suppressed, only test summaries shown
-- `run_all_tests.sh` now runs 6 suites: handler, library filter chain, hipBLASLt, rocBLAS, rocBLAS+hipBLASLt combined, Triton
+- `run_all_tests.sh` now runs 4 suites: handler, library filter chain, rocBLAS, Triton
 
 **2026-03-05** (CCOB support):
 - Added rocBLAS offload compression test suite (`tests/rocblas_offload_compression/`) — later removed as redundant (2026-03-08)
@@ -402,14 +402,17 @@ The compilation produces a Clang Offload Bundle which must be unbundled first.
 
 **2026-03-08** (rf_rocblas_maximal_support):
 - Added `tests/rocblas_hipblaslt/` — combined rocBLAS + hipBLASLt instrumentation test (Suite 5)
-- Env vars: `INSTRUMENTED_ROCBLAS_LIB_DIR`, `INSTRUMENTED_HIPBLASLT_LIB_DIR` (in session_init_primes.json)
 - Builds from `rocm-libraries` monorepo (standalone repos deprecated)
 - Skipped `tests/hipblaslt_helpers/` — TensileLite helpers can't be instrumented (LLVM ICE on 564K-line Kernels.cpp)
+- Consolidated 7 env vars → 3: `TRITON_DIR`, `INSTRUMENTED_ROCBLAS_LIB_DIR`, `INSTRUMENTED_HIPBLASLT_LIB_DIR`
+- Removed `tests/rocblas_offload_compression/` (redundant — same build as rocblas_filter)
+- Reordered suites: handler, library filter chain, hipBLASLt, rocBLAS, combined, Triton (6 suites)
 
 ## Last Verified
-Date: 2026-03-06
+Date: 2026-03-08
 - Handler tests: 12/12 passing (3 handler + 6 block filter + 3 library filter)
 - Library filter chain: 5/5 passing
-- rocBLAS integration: 5/5 passing (requires `INSTRUMENTED_ROCBLAS_LIB_DIR`; skips otherwise)
-- Triton integration: 4/4 passing (requires `TRITON_DIR`; skips otherwise)
 - hipBLASLt instrumentation: 5/5 passing (requires `INSTRUMENTED_HIPBLASLT_LIB_DIR`; skips otherwise)
+- rocBLAS integration: 5/5 passing (requires `INSTRUMENTED_ROCBLAS_LIB_DIR`; skips otherwise)
+- rocBLAS + hipBLASLt combined: 5/5 passing (requires both; skips otherwise)
+- Triton integration: 4/4 passing (requires `TRITON_DIR`; skips otherwise)
