@@ -320,10 +320,3 @@ row-major and column-major layouts, or between data types).
 | `Tensile_CXX_COMPILER_LAUNCHER` | Compiler launcher for Tensile builds |
 | `ROCR_VISIBLE_DEVICES` | GPU device selection for testing |
 
-## Supersedes
-
-This documentation replaces:
-- `.untracked/hipblaslt-instrumentation.md` (standalone hipBLASLt build)
-- `Instrumentation.md` in standalone rocBLAS repo (deprecated)
-
-Both used deprecated standalone repositories.
