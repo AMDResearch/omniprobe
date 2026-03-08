@@ -24,10 +24,10 @@ inconsistency when adding new test suites.
 1. Main CMake build dir (`build/tests/test_kernels/`) — test_kernels
 2. Local in-tree build (`tests/library_filter_chain/build/`) — library_filter_chain
 3. Pre-built binaries checked into the source tree — rocblas_filter, hipblaslt
-4. No build / JIT — triton, rocblas_offload_compression
+4. No build / JIT — triton, rocblas_hipblaslt
 
 **Output location** — two patterns:
-1. Centralized: `tests/test_output/` — handler tests, rocblas_filter, rocblas_offload_compression, hipblaslt
+1. Centralized: `tests/test_output/` — handler tests, rocblas_filter, rocblas_hipblaslt, hipblaslt
 2. Local: `tests/<suite>/test_output/` — library_filter_chain, triton
 
 **Runner structure** — three patterns:
@@ -66,7 +66,7 @@ tests/
 ├── test_kernels/                     (CMake-built HIP kernels)
 ├── library_filter_chain/             (standalone CMake + run_test.sh + local output)
 ├── rocblas_filter/                   (pre-built binaries + run_test.sh)
-├── rocblas_offload_compression/      (run_test.sh only — uses rocblas_filter binaries)
+├── rocblas_hipblaslt/                (run_test.sh only — uses rocblas_filter binaries)
 ├── triton/                           (Python + run_test.sh + local output)
 └── hipblaslt/                        (pre-built binary + run_test.sh)
 ```
@@ -109,6 +109,12 @@ tests/
 5. **Skill or template**: What should the "new test suite" skill/template include?
    Suggested: directory skeleton, run_test.sh template, integration into
    run_all_tests.sh, output conventions.
+
+6. **`.gitignore` placement**: Currently, pre-built test binaries are ignored via
+   individual entries in the root `.gitignore`. Consider using per-suite
+   `.gitignore` files instead (e.g., `tests/rocblas_filter/.gitignore`,
+   `tests/hipblaslt/.gitignore`), so each suite manages its own ignored
+   artifacts (binaries, build output, test output) locally.
 
 ### Expected Files
 - All files under `tests/` — confirmed
