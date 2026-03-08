@@ -23,7 +23,7 @@ instrumentation characteristics:
 |------------|--------|------------------|-----------------|
 | Matrix Transform (96 kernels) | Static HIP C++ | hipcc → .hsaco | **Yes** via -fpass-plugin |
 | TensileLite GEMM | Python → Assembly | .s → .o → .co | **No** (assembly-only) |
-| TensileLite Helpers (BetaOnly, Conversion, Reduction) | Python → HIP C++ | hipcc → .co | **No** (see Limitations) |
+| TensileLite Helpers (BetaOnly, Conversion, Reduction) | Python → HIP C++ | hipcc → .co | **No** (see [Limitations](#limitations)) |
 | Extension Ops (LayerNorm, Softmax, AMax) | Python → Assembly | .s → .o → .co | **No** (assembly) |
 
 The LLVM instrumentation pass (`-fpass-plugin`) operates on LLVM IR. Assembly
