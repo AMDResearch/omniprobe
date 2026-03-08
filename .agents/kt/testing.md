@@ -427,11 +427,11 @@ The compilation produces a Clang Offload Bundle which must be unbundled first.
 - Added bitcode copy targets to copy dh_comms bitcode to plugin directories
 - Test runner updated to use project's own test kernels instead of external kernel
 
-**Planned** (rf_rocblas_maximal_support):
-- New test suite: `tests/hipblaslt_helpers/` — TensileLite helper kernels (BetaOnly, Conversion, Reduction)
-- New test suite: `tests/rocblas_hipblaslt/` — combined rocBLAS + hipBLASLt instrumentation
-- New env vars: `ROCBLAS_MAXIMAL_LIB_DIR`, `HIPBLASLT_MAXIMAL_LIB_DIR`
+**2026-03-08** (rf_rocblas_maximal_support):
+- Added `tests/rocblas_hipblaslt/` — combined rocBLAS + hipBLASLt instrumentation test (Suite 7)
+- New env vars: `ROCBLAS_MAXIMAL_LIB_DIR`, `HIPBLASLT_MAXIMAL_LIB_DIR` (added to session_init_primes.json)
 - Builds from `rocm-libraries` monorepo (standalone repos deprecated)
+- Skipped `tests/hipblaslt_helpers/` — TensileLite helpers can't be instrumented (LLVM ICE on 564K-line Kernels.cpp)
 
 ## Last Verified
 Date: 2026-03-06

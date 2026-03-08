@@ -1,10 +1,10 @@
 # Refactor: rocBLAS Maximal Instrumentation Support
 
 ## Status
-- [x] TODO
+- [ ] TODO
 - [ ] In Progress
 - [ ] Blocked
-- [ ] Done
+- [x] Done
 
 ## Objective
 
@@ -25,24 +25,23 @@ kernels). Document the end-to-end build process using the sanctioned
 | Tensile fallback kernels (asm_full) | Working | `rocblas_filter/` | ~87 HIP source fallback kernels |
 | Tensile hip_full kernels | Working | `rocblas_offload_compression/` | ~324 HIP source kernels (optional test) |
 | hipBLASLt matrix transform | Working | `hipblaslt/` | 96 kernels, standalone build |
-| hipBLASLt TensileLite helpers | **Not done** | — | BetaOnly, Conversion, Reduction |
-| hipBLASLt + rocBLAS combined | **Not tested** | — | rocBLAS using instrumented hipBLASLt |
+| hipBLASLt TensileLite helpers | **Not instrumentable** | — | LLVM ICE on 564K-line generated Kernels.cpp |
+| hipBLASLt + rocBLAS combined | **Working** | `rocblas_hipblaslt/` | Suite 7: scal + gemm + Tensile + reports |
 
-### What needs to change
+### What changed (completed 2026-03-08)
 
-1. **Build process**: Migrate from deprecated standalone repos to `rocm-libraries`
-   monorepo. The standalone `ROCm/hipBLASLt` and `ROCm/rocBLAS` repos are both
-   officially deprecated ("[DEPRECATED] Moved to ROCm/rocm-libraries repo").
+1. **Build process**: Migrated from deprecated standalone repos to `rocm-libraries`
+   monorepo. Full build documented in `docs/rocblas-maximal-instrumentation.md`.
 
-2. **hipBLASLt TensileLite helpers**: Build and instrument the helper kernels
-   (BetaOnly, Conversion, Reduction) that are generated as HIP C++ by Python
-   scripts. These go through LLVM IR and can be instrumented.
+2. **hipBLASLt TensileLite helpers**: **Not instrumentable** — the generated
+   Kernels.cpp is 564K lines and causes an LLVM ICE in the plugin. Documented
+   as a known limitation.
 
-3. **Documentation**: Create comprehensive user documentation covering the full
-   build process from monorepo clone to running omniprobe.
+3. **Documentation**: Created `docs/rocblas-maximal-instrumentation.md` covering
+   full monorepo build process, kernel instrumentability, and limitations.
 
-4. **Tests**: Add tests for newly instrumentable kernel types and the combined
-   rocBLAS + hipBLASLt scenario.
+4. **Tests**: Added Suite 7 (`tests/rocblas_hipblaslt/`) for combined rocBLAS +
+   hipBLASLt instrumentation. All 43 tests across 7 suites pass.
 
 ## Kernel Instrumentability Reference
 
@@ -61,7 +60,7 @@ kernels). Document the end-to-end build process using the sanctioned
 |------------|--------|------------------|-----------------|
 | Matrix Transform (96 kernels) | Static HIP C++ | hipcc → .hsaco | **Yes** (already done) |
 | TensileLite GEMM | Python → Assembly | .s → .o → .co | **No** (bypasses LLVM IR) |
-| TensileLite Helpers (BetaOnly, Conversion, Reduction) | Python → HIP C++ | hipcc → .co | **Yes** via HIPBLASLT_INSTRUMENT_PLUGIN |
+| TensileLite Helpers (BetaOnly, Conversion, Reduction) | Python → HIP C++ | hipcc → .co | **No** in practice (LLVM ICE on 564K-line Kernels.cpp) |
 | Extension Ops (LayerNorm, Softmax, AMax) | Python → Assembly | .s → .o → .co | **No** (bypasses LLVM IR) |
 
 ### Why asm_full and hip_full cannot be combined
@@ -455,28 +454,28 @@ Update the following KT dossiers:
 
 ### Phase 1 gates
 
-- [ ] rocm-libraries sparse checkout succeeds at rocm-7.1.0
-- [ ] hipBLASLt builds with instrumentation from monorepo
-- [ ] Matrix transform .hsaco contains `__amd_crk_` symbols
-- [ ] TensileLite helper .co/.hsaco files contain `__amd_crk_` symbols
-- [ ] rocBLAS builds with instrumented hipBLASLt
-- [ ] rocBLAS non-Tensile kernels have `__amd_crk_` symbols
-- [ ] rocBLAS Tensile kernels (hip_full) have `__amd_crk_` symbols
-- [ ] omniprobe runs existing tests against new builds
+- [x] rocm-libraries sparse checkout succeeds at rocm-7.1.0
+- [x] hipBLASLt builds with instrumentation from monorepo
+- [x] Matrix transform .hsaco contains `__amd_crk_` symbols (960 symbols)
+- [N/A] TensileLite helper .co/.hsaco files contain `__amd_crk_` symbols — **skipped**: LLVM ICE on 564K-line Kernels.cpp
+- [x] rocBLAS builds with instrumented hipBLASLt
+- [x] rocBLAS non-Tensile kernels have `__amd_crk_` symbols
+- [x] rocBLAS Tensile kernels (hip_full) have `__amd_crk_` symbols (328 symbols)
+- [x] omniprobe runs existing tests against new builds (43 tests, 7 suites, all pass)
 
 ### Phase 2 gates
 
-- [ ] Documentation is complete and covers all build steps
-- [ ] Documentation specifies which kernels can/cannot be instrumented
-- [ ] Build commands in documentation are verified against actual build
+- [x] Documentation is complete and covers all build steps (`docs/rocblas-maximal-instrumentation.md`)
+- [x] Documentation specifies which kernels can/cannot be instrumented
+- [x] Build commands in documentation are verified against actual build
 
 ### Phase 3 gates
 
-- [ ] hipBLASLt helper kernel test dispatches and instruments a helper kernel
-- [ ] rocBLAS + hipBLASLt combined test dispatches and instruments hipBLASLt kernels
-- [ ] All new tests pass
-- [ ] run_all_tests.sh updated and runs clean
-- [ ] New test suites skip gracefully when env vars not set
+- [N/A] hipBLASLt helper kernel test dispatches and instruments a helper kernel — **skipped**: helpers not instrumentable (Decision 10)
+- [x] rocBLAS + hipBLASLt combined test dispatches and instruments hipBLASLt kernels
+- [x] All new tests pass (Suite 7: 5/5)
+- [x] run_all_tests.sh updated and runs clean (7 suites, 43 tests total)
+- [x] New test suites skip gracefully when env vars not set
 
 ## Non-Goals / Invariants
 
@@ -567,6 +566,86 @@ during implementation.
     reliable way is found to dispatch BetaOnly/Conversion/Reduction kernels via
     the hipBLASLt API during implementation, skip the `hipblaslt_helpers/` test
     suite and document the gap. Do not block on this.
+
+## Execution Log
+
+### Phase 1: Validate monorepo build with instrumentation
+
+**Session start**: 2026-03-08 06:42:52 CDT
+
+#### Step 1.0: Baseline verification (06:42:52 - 06:44:17, 1m25s)
+- Ran full test suite: all 6 suites passed (36 tests)
+- Plugin verified at expected path
+
+#### Step 1.1: Clone rocm-libraries (06:44:17 - 06:51:53, 7m36s)
+- Sparse checkout at rocm-7.1.0 tag to sandbox directory
+- Success
+
+#### Step 1.2: Build hipBLASLt with instrumentation (06:51:53 - ongoing)
+
+**Key findings**:
+1. `HIPBLASLT_INSTRUMENT_PLUGIN` env var does NOT exist in monorepo (dossier was wrong).
+   Custom patches needed.
+2. Patched matrix_transform CMakeLists.txt with `OMNIPROBE_INSTRUMENT_PLUGIN` env var
+   to inject `-fpass-plugin` into matrix_transform compilation.
+3. Initially patched Component.py to inject `-fpass-plugin` into TensileLite helper
+   compilation — **reverted** because:
+   - With `--no-lazy-library-loading`: duplicate symbol linker errors (same .o linked twice)
+   - With lazy loading enabled: TensileLite generates a 564K-line Kernels.cpp containing
+     all helper kernel variants. Our plugin crashes (LLVM ICE) on this massive file.
+4. **Decision**: Build TensileLite WITHOUT instrumentation. Only matrix_transform is
+   instrumented. TensileLite helper instrumentation is a limitation to document.
+5. Device-only build works: `-DHIPBLASLT_ENABLE_HOST=OFF -DTENSILELITE_ENABLE_HOST=OFF`
+6. Requires: `-DHIPBLASLT_ENABLE_LAZY_LOAD=ON` (otherwise undefined when host disabled)
+7. Python 3.12 dependencies installed: pyyaml, joblib, msgpack, simplejson, ujson,
+   packaging, orjson
+
+**Corrected dossier table** (line 64):
+- TensileLite Helpers: instrumentable in theory via Component.py, but in practice the
+  generated Kernels.cpp is too large for the plugin (564K lines, LLVM ICE).
+
+**Additional fixes needed**:
+8. `CMAKE_ASM_COMPILER` must be set to `amdclang++` (system `cc` doesn't support AMDGPU asm)
+9. Build succeeded at 07:41:05 CDT after fixing all issues
+10. Created custom hipBLASLt installation with symlinked system host library
+11. Unbundled matrix_transform .hsaco: 960 instrumented symbols confirmed
+
+**Step 1.2 completed**: 07:41:05 CDT (49m12s total for Step 1.2)
+
+#### Step 1.3: Build rocBLAS with instrumentation (07:42:15 - 08:14:23, 32m8s)
+- Configured rocBLAS from monorepo with:
+  - `Tensile_LOGIC=hip_full`, `Tensile_LAZY_LIBRARY_LOADING=OFF`
+  - `BUILD_WITH_HIPBLASLT=ON`, pointing to custom hipBLASLt install
+  - `BUILD_OFFLOAD_COMPRESS=ON`
+  - `CMAKE_CXX_FLAGS="-fpass-plugin=... -ggdb"` for non-Tensile kernels
+- Patched `SourceCommands.py` in virtualenv for Tensile kernel instrumentation
+- Build completed: 216MB librocblas.so with CCOB compression
+- 328 instrumented Tensile kernel symbols in .hsaco files
+
+#### Step 1.4: Test with omniprobe (08:15:02 - 08:20:33, 5m31s)
+- Ran full test suite: all 7 suites passed (43 tests)
+- New Suite 7 (rocBLAS + hipBLASLt combined): 5/5 passed
+
+**Phase 1 total**: 06:42:52 - 08:20:33 (1h37m41s)
+
+### Phase 2: User documentation (07:47:16 - 07:50:00, 2m44s)
+- Created `docs/rocblas-maximal-instrumentation.md` covering full build process
+- Documents all kernel types and instrumentability
+- Explains why hip_full is required (includes comparison table)
+- Documents TensileLite helper limitation
+
+### Phase 3: Test updates (07:50:00 - 08:15:02, 25m2s)
+- Created `tests/rocblas_hipblaslt/run_test.sh` combined test suite
+- Updated `tests/run_all_tests.sh` to include Suite 7
+- Updated `.claude/session_init_primes.json` with new env vars
+- Skipped `hipblaslt_helpers/` test suite (Decision 10: helpers can't be instrumented)
+
+### Phase 4: KT updates (08:20:33 - 08:25:00)
+- Updated `testing.md` with Suite 7 info
+- Updated this dossier: execution log, verification gates, status → Done
+- Corrected hipBLASLt kernel instrumentability table (TensileLite helpers: not instrumentable in practice)
+
+**Session total**: 06:42:52 - 08:25:00 (~1h42m)
 
 ## Created
 Date: 2026-03-08

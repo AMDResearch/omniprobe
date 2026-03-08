@@ -11,6 +11,7 @@
 #   4. rocBLAS offload compression (requires ROCBLAS_COMPRESSED_LIB_DIR env var)
 #   5. hipBLASLt instrumentation (requires HIPBLASLT_INSTRUMENTED_HSACO + HIPBLASLT_LIB_DIR)
 #   6. Triton integration (requires TRITON_REPO env var)
+#   7. rocBLAS + hipBLASLt combined (requires ROCBLAS_MAXIMAL_LIB_DIR + HIPBLASLT_MAXIMAL_LIB_DIR)
 ################################################################################
 
 set -e
@@ -77,6 +78,9 @@ run_suite "hipBLASLt instrumentation" "${SCRIPT_DIR}/hipblaslt/run_test.sh"
 
 # Suite 6: Triton integration
 run_suite "Triton integration" "${SCRIPT_DIR}/triton/run_test.sh"
+
+# Suite 7: rocBLAS + hipBLASLt combined (requires ROCBLAS_MAXIMAL_LIB_DIR + HIPBLASLT_MAXIMAL_LIB_DIR)
+run_suite "rocBLAS + hipBLASLt combined" "${SCRIPT_DIR}/rocblas_hipblaslt/run_test.sh"
 
 # Summary
 echo ""
