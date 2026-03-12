@@ -78,12 +78,16 @@ fi
 COMBINED_LIB_PATH="$INSTRUMENTED_ROCBLAS_LIB_DIR:$INSTRUMENTED_HIPBLASLT_LIB_DIR:$LD_LIBRARY_PATH"
 
 # Find instrumented Tensile .hsaco files for library-filter
+# Prefer xnack- variant (matching typical gfx90a configuration)
 TENSILE_LIB_DIR="$INSTRUMENTED_ROCBLAS_LIB_DIR/rocblas/library"
 TENSILE_HSACO=""
-for hsaco in $(find "$TENSILE_LIB_DIR" -name "Kernels.so-*.hsaco" 2>/dev/null); do
+for hsaco in $(find "$TENSILE_LIB_DIR" -name "Kernels.so-*.hsaco" 2>/dev/null | sort); do
     if readelf -sW "$hsaco" 2>/dev/null | grep -q "__amd_crk_Cijk"; then
         TENSILE_HSACO="$hsaco"
-        break
+        # Prefer xnack- over xnack+ (keep looking if we found xnack+)
+        if echo "$hsaco" | grep -q "xnack-"; then
+            break
+        fi
     fi
 done
 

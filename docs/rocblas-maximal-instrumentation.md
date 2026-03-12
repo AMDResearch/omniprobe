@@ -64,11 +64,36 @@ since they bypass LLVM IR entirely.
 
 ## Prerequisites
 
-- ROCm 7.1.0 installed (provides `amdclang++`, `clang-offload-bundler`)
+- ROCm installed (provides `amdclang++`, `clang-offload-bundler`)
 - omniprobe built with the `AMDGCNSubmitAddressMessages` plugin
 - Python 3.9+ with `pyyaml`, `joblib`, `msgpack` packages
+- [msgpack-cxx](https://github.com/msgpack/msgpack-c) header-only library
+  (required by TensileLite host library; install from the `cpp-7.0.0` tag)
 - ~20 GB disk space for builds
 - GPU access (e.g., gfx90a)
+
+Set `ROCM_PATH` to your ROCm installation before starting (all commands below
+use this variable):
+
+```bash
+ROCM_PATH=/opt/rocm-7.2.0   # adjust to your installed version
+```
+
+### Install msgpack-cxx (if not already available)
+
+TensileLite's host library requires the msgpack-cxx headers. If not available
+on your system:
+
+```bash
+git clone --depth 1 --branch cpp-7.0.0 https://github.com/msgpack/msgpack-c.git /tmp/msgpack-c
+cmake -B /tmp/msgpack-build -S /tmp/msgpack-c \
+    -DMSGPACK_CXX20=ON -DMSGPACK_BUILD_TESTS=OFF -DMSGPACK_BUILD_EXAMPLES=OFF \
+    -DCMAKE_INSTALL_PREFIX=$HOME/.local
+cmake --install /tmp/msgpack-build
+rm -rf /tmp/msgpack-c /tmp/msgpack-build
+```
+
+Then add `$HOME/.local` to `CMAKE_PREFIX_PATH` in the build commands below.
 
 ## Step 1: Clone rocm-libraries (sparse checkout)
 
@@ -86,7 +111,8 @@ git sparse-checkout set \
     projects/hipblaslt projects/rocblas projects/hipblas-common \
     shared/rocroller shared/mxdatagenerator shared/origami shared/tensile \
     cmake
-git checkout rocm-7.1.0
+git checkout rocm-$(rocminfo 2>/dev/null | grep -oP 'ROCm Runtime Version: \K[0-9]+\.[0-9]+\.[0-9]+' || echo "VERSION")
+# e.g., git checkout rocm-7.2.0
 ```
 
 ## Step 2: Build hipBLASLt with instrumentation
@@ -94,6 +120,12 @@ git checkout rocm-7.1.0
 hipBLASLt's matrix transform kernels are compiled from HIP C++ source. We
 inject the instrumentation plugin via the `OMNIPROBE_INSTRUMENT_PLUGIN`
 environment variable, which is checked by a patched `matrix-transform/CMakeLists.txt`.
+
+**Important:** Build hipBLASLt completely from source, including the host
+library (`libhipblaslt.so`). Do not symlink or copy the system hipBLASLt
+library — the host library uses `dladdr()` to find its own directory at
+runtime, and symlinks resolve to the system path, causing it to load system
+device code objects instead of instrumented ones.
 
 ### 2a: Patch the build
 
@@ -121,72 +153,68 @@ add_custom_command(
 
 ### 2b: Configure and build
 
+The `OMNIPROBE_INSTRUMENT_PLUGIN` environment variable must be **exported**
+(not just set as a command prefix) because CMake's `$ENV{}` reads from the
+process environment:
+
 ```bash
 PLUGIN=/path/to/omniprobe/build/external/instrument-amdgpu-kernels-rocm/build/lib/libAMDGCNSubmitAddressMessages-rocm.so
 
-OMNIPROBE_INSTRUMENT_PLUGIN=$PLUGIN \
+export OMNIPROBE_INSTRUMENT_PLUGIN=$PLUGIN
+
 cmake \
     -B $SANDBOX/hipblaslt-build \
     -S $SANDBOX/rocm-libraries/projects/hipblaslt \
     -DHIPBLASLT_ENABLE_DEVICE=ON \
-    -DHIPBLASLT_ENABLE_HOST=OFF \
+    -DHIPBLASLT_ENABLE_HOST=ON \
+    -DTENSILELITE_ENABLE_HOST=ON \
     -DHIPBLASLT_ENABLE_CLIENT=OFF \
-    -DHIPBLASLT_ENABLE_MSGPACK=OFF \
+    -DHIPBLASLT_ENABLE_MSGPACK=ON \
     -DHIPBLASLT_ENABLE_ROCROLLER=OFF \
-    -DTENSILELITE_ENABLE_HOST=OFF \
     -DHIPBLASLT_ENABLE_LAZY_LOAD=ON \
     -DGPU_TARGETS=gfx90a \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_CXX_COMPILER=/opt/rocm-7.1.0/bin/amdclang++ \
-    -DCMAKE_C_COMPILER=/opt/rocm-7.1.0/bin/amdclang \
-    -DCMAKE_ASM_COMPILER=/opt/rocm-7.1.0/bin/amdclang++ \
+    -DCMAKE_CXX_COMPILER=$ROCM_PATH/bin/amdclang++ \
+    -DCMAKE_C_COMPILER=$ROCM_PATH/bin/amdclang \
+    -DCMAKE_ASM_COMPILER=$ROCM_PATH/bin/amdclang++ \
+    -DCMAKE_PREFIX_PATH="$ROCM_PATH;$HOME/.local" \
+    -DCMAKE_INSTALL_PREFIX=$SANDBOX/hipblaslt-install \
     -DTENSILELITE_BUILD_PARALLEL_LEVEL=8
 
-OMNIPROBE_INSTRUMENT_PLUGIN=$PLUGIN \
 cmake --build $SANDBOX/hipblaslt-build -- -j8
+cmake --install $SANDBOX/hipblaslt-build
 ```
 
 Key configuration notes:
-- `HIPBLASLT_ENABLE_HOST=OFF` and `TENSILELITE_ENABLE_HOST=OFF`: Skip the
-  host library build (we symlink the system one instead).
-- `HIPBLASLT_ENABLE_LAZY_LOAD=ON`: Required when host is disabled, prevents
-  duplicate symbol linker errors in TensileLite.
+- `HIPBLASLT_ENABLE_HOST=ON` and `TENSILELITE_ENABLE_HOST=ON`: Build the
+  complete host library from source. Do not use the system `libhipblaslt.so`.
+- `HIPBLASLT_ENABLE_MSGPACK=ON`: Required for TensileLite host library
+  (`MessagePackLoadLibraryMapping`).
+- `HIPBLASLT_ENABLE_ROCROLLER=OFF`: RocRoller is only needed for ExtOps
+  regeneration, not for matrix transform instrumentation.
 - `CMAKE_ASM_COMPILER`: Must be set to `amdclang++` for ExtOps assembly.
+- `CMAKE_PREFIX_PATH`: Include `$HOME/.local` (or wherever msgpack-cxx was
+  installed) so CMake can find it.
+- The install goes to `lib64/` on most Linux systems (not `lib/`).
 
-### 2c: Create custom hipBLASLt installation
-
-The hipBLASLt host library (`libhipblaslt.so`) uses `dladdr()` to find its
-own directory, then looks for device code objects in `../hipblaslt/library/`
-relative to itself. By symlinking the system host library into a custom
-directory, it will find our instrumented device code objects.
-
-```bash
-CUSTOM_DIR=$SANDBOX/hipblaslt-install
-mkdir -p $CUSTOM_DIR/lib/hipblaslt/library
-
-# Symlink system host library
-ln -sf /opt/rocm-7.1.0/lib/libhipblaslt.so.* $CUSTOM_DIR/lib/
-cd $CUSTOM_DIR/lib
-ln -sf libhipblaslt.so.1 libhipblaslt.so
-
-# Copy device code objects from build
-cp $SANDBOX/hipblaslt-build/Tensile/library/* $CUSTOM_DIR/lib/hipblaslt/library/
-```
-
-### 2d: Unbundle and verify
+### 2c: Unbundle and verify
 
 The matrix transform hsaco is a Clang Offload Bundle. Unbundle it for the
-library filter:
+omniprobe library filter:
 
 ```bash
-clang-offload-bundler \
+HIPBLASLT_INSTALL=$SANDBOX/hipblaslt-install
+# Note: install uses lib64/ on most Linux systems
+HIPBLASLT_LIB_DIR=$HIPBLASLT_INSTALL/lib64
+
+$ROCM_PATH/llvm/bin/clang-offload-bundler \
     --unbundle --type=o \
     --targets=hipv4-amdgcn-amd-amdhsa--gfx90a \
-    --input=$CUSTOM_DIR/lib/hipblaslt/library/hipblasltTransform.hsaco \
-    --output=$CUSTOM_DIR/lib/hipblaslt/library/hipblasltTransform-gfx90a.hsaco
+    --input=$HIPBLASLT_LIB_DIR/hipblaslt/library/hipblasltTransform.hsaco \
+    --output=$HIPBLASLT_LIB_DIR/hipblaslt/library/hipblasltTransform-gfx90a.hsaco
 
 # Verify instrumented symbols
-nm $CUSTOM_DIR/lib/hipblaslt/library/hipblasltTransform-gfx90a.hsaco | grep __amd_crk_ | wc -l
+nm $HIPBLASLT_LIB_DIR/hipblaslt/library/hipblasltTransform-gfx90a.hsaco | grep __amd_crk_ | wc -l
 # Expected: ~960 instrumented symbols
 ```
 
@@ -199,9 +227,9 @@ cmake \
     -B $SANDBOX/rocblas-build \
     -S $SANDBOX/rocm-libraries/projects/rocblas \
     -DCMAKE_TOOLCHAIN_FILE=$SANDBOX/rocm-libraries/projects/rocblas/toolchain-linux.cmake \
-    -DROCM_PATH=/opt/rocm-7.1.0 \
+    -DROCM_PATH=$ROCM_PATH \
     -DCMAKE_INSTALL_PREFIX=$SANDBOX/rocblas-install \
-    -DCMAKE_PREFIX_PATH="/opt/rocm-7.1.0;$CUSTOM_DIR" \
+    -DCMAKE_PREFIX_PATH="$ROCM_PATH;$HIPBLASLT_INSTALL" \
     -DCMAKE_BUILD_TYPE=Release \
     -DGPU_TARGETS="gfx90a" \
     -DTensile_LOGIC=hip_full \
@@ -209,7 +237,7 @@ cmake \
     -DTensile_SEPARATE_ARCHITECTURES=ON \
     -DTensile_LIBRARY_FORMAT=yaml \
     -DBUILD_WITH_HIPBLASLT=ON \
-    -Dhipblaslt_path=$CUSTOM_DIR \
+    -Dhipblaslt_path=$HIPBLASLT_INSTALL \
     -DBUILD_OFFLOAD_COMPRESS=ON \
     -DBUILD_CLIENTS_TESTS=OFF \
     -DBUILD_CLIENTS_BENCHMARKS=OFF \
@@ -251,6 +279,21 @@ nm $SANDBOX/rocblas-install/lib/rocblas/library/Kernels.so-000-gfx90a*.hsaco | g
 
 ## Step 4: Run with omniprobe
 
+### Filesystem requirement
+
+ROCm 7.2+ uses `mmap()` to load code objects via `hipModuleLoad()`. This
+requires the install directory to be on a filesystem that supports `mmap` —
+such as ext4, XFS, or tmpfs. **Virtual filesystems like virtiofs do not support
+`mmap` and will cause `hipModuleLoad` to fail with `hipErrorInvalidValue`.**
+
+If your build directory is on virtiofs or another virtual filesystem, copy the
+install directories to a local filesystem before running:
+
+```bash
+cp -a $SANDBOX/hipblaslt-install /tmp/hipblaslt-install
+cp -a $SANDBOX/rocblas-install /tmp/rocblas-install
+```
+
 ### rocBLAS only
 
 ```bash
@@ -268,12 +311,12 @@ tell omniprobe where to find the instrumented code objects:
 cat > /tmp/hipblaslt_filter.json << 'EOF'
 {
     "include": [
-        "/path/to/hipblaslt-install/lib/hipblaslt/library/hipblasltTransform-gfx90a.hsaco"
+        "/path/to/hipblaslt-install/lib64/hipblaslt/library/hipblasltTransform-gfx90a.hsaco"
     ]
 }
 EOF
 
-LD_LIBRARY_PATH=$SANDBOX/rocblas-install/lib:$SANDBOX/hipblaslt-install/lib:$LD_LIBRARY_PATH \
+LD_LIBRARY_PATH=$SANDBOX/rocblas-install/lib:$SANDBOX/hipblaslt-install/lib64:$LD_LIBRARY_PATH \
 omniprobe -i -a MemoryAnalysis \
     --library-filter /tmp/hipblaslt_filter.json \
     -- /path/to/your-application
@@ -308,15 +351,19 @@ row-major and column-major layouts, or between data types).
    different performance than hand-tuned assembly. For profiling/analysis
    purposes, this is the correct choice.
 
+6. **Virtual filesystems (virtiofs) are not supported.** ROCm 7.2+ uses
+   `mmap()` to load code objects. If the install directory is on virtiofs,
+   `hipModuleLoad()` will fail with `hipErrorInvalidValue`. Copy the install
+   to a local filesystem (ext4, XFS, tmpfs) before running.
+
 ## Environment Variables Reference
 
 | Variable | Purpose |
 |---|---|
-| `OMNIPROBE_INSTRUMENT_PLUGIN` | Path to the instrumentation plugin .so file |
+| `OMNIPROBE_INSTRUMENT_PLUGIN` | Path to the instrumentation plugin .so file (must be `export`ed) |
 | `ROCBLAS_USE_HIPBLASLT` | `0` to disable hipBLASLt, `1` to force it |
 | `HIPBLASLT_TENSILE_LIBPATH` | Override path to TensileLite kernel library |
 | `HIPBLASLT_EXT_OP_LIBRARY_PATH` | Override path to extension operations library |
 | `HIPBLASLT_LOG_LEVEL` | Set to `info` for debug logging |
 | `Tensile_CXX_COMPILER_LAUNCHER` | Compiler launcher for Tensile builds |
 | `ROCR_VISIBLE_DEVICES` | GPU device selection for testing |
-

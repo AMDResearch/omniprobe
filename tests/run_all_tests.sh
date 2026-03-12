@@ -47,9 +47,8 @@ run_suite() {
         return 1
     fi
 
-    local output
-    output=$("$script" "$@" 2>&1)
-    local exit_code=$?
+    local output exit_code
+    output=$("$script" "$@" 2>&1) && exit_code=0 || exit_code=$?
 
     echo "$output"
 
