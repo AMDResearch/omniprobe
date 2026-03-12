@@ -98,6 +98,16 @@ if [ "$NO_INSTRUMENT" = false ]; then
     fi
 fi
 
+# Detect stale builds: if INST_PLUGIN changed since last configure, force clean
+if [ -f "${BUILD_DIR}/CMakeCache.txt" ]; then
+    CACHED_PLUGIN=$(grep "^INST_PLUGIN:" "${BUILD_DIR}/CMakeCache.txt" 2>/dev/null | cut -d= -f2)
+    DESIRED_PLUGIN="${INST_PLUGIN:-}"
+    if [ "$CACHED_PLUGIN" != "$DESIRED_PLUGIN" ]; then
+        log_info "Instrumentation plugin changed, forcing clean rebuild..."
+        rm -rf "${BUILD_DIR:?}"/*
+    fi
+fi
+
 log_info "Building test libraries..."
 cmake "${CMAKE_ARGS[@]}" .. > "${TEST_OUTPUT_DIR}/build.log" 2>&1
 cmake --build . --parallel >> "${TEST_OUTPUT_DIR}/build.log" 2>&1
