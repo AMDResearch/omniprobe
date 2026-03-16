@@ -222,6 +222,25 @@ install(PROGRAMS ${ROOT_DIR}/omniprobe/omniprobe DESTINATION bin/${DEST_NAME})
 install(DIRECTORY ${ROOT_DIR}/omniprobe/config DESTINATION bin/${DEST_NAME} FILES_MATCHING PATTERN "*")
 install(FILES "${CMAKE_BINARY_DIR}/runtime_config.txt" DESTINATION bin/${DEST_NAME})
 
+# kerneldb installs libdwarf system headers into its include directory as a workaround
+# for downstream builds. Remove them here: libdwarf is a system dependency that
+# consumers should install via their package manager (libdwarf-dev / libdwarf-devel).
+# The find_path(LIBDWARF_INCLUDE_DIR) in src/CMakeLists.txt already handles
+# locating libdwarf headers at build time without copying them into the install.
+if(LIBDWARF_INCLUDE_DIR)
+  install(CODE "
+    file(GLOB _libdwarf_headers \"${LIBDWARF_INCLUDE_DIR}/*.h\")
+    foreach(header IN LISTS _libdwarf_headers)
+      get_filename_component(header_name \"\${header}\" NAME)
+      set(installed_header \"\${CMAKE_INSTALL_PREFIX}/include/kerneldb/\${header_name}\")
+      if(EXISTS \"\${installed_header}\")
+        message(STATUS \"Removing bundled libdwarf header: \${installed_header}\")
+        file(REMOVE \"\${installed_header}\")
+      endif()
+    endforeach()
+  ")
+endif()
+
 # Packaging directives
 set(CPACK_GENERATOR "DEB" "RPM" "TGZ")
 set(CPACK_PACKAGE_NAME "${INTERCEPTOR_NAME}-dev")
