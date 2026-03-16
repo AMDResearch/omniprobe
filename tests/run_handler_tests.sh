@@ -37,5 +37,8 @@ source "${SCRIPT_DIR}/run_block_filter_tests.sh"
 # Library filter tests (--library-filter)
 source "${SCRIPT_DIR}/run_library_filter_tests.sh"
 
+# Scope filter tests (INSTRUMENTATION_SCOPE)
+source "${SCRIPT_DIR}/run_scope_filter_tests.sh"
+
 # Print summary
 print_summary

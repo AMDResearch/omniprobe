@@ -71,6 +71,7 @@ Orchestrates end-to-end tests by sourcing feature-specific subscripts.
 - `run_basic_tests.sh` — Heatmap/MemoryAnalysis handler tests (tests 1-3)
 - `run_block_filter_tests.sh` — `--filter-x/y/z` tests (tests 4-9)
 - `run_library_filter_tests.sh` — `--library-filter` tests (tests 10-12)
+- `run_scope_filter_tests.sh` — `INSTRUMENTATION_SCOPE` tests (tests 13-19)
 - `run_handler_tests.sh` — main orchestrator that sources all subscripts
 
 **What it does**:
@@ -93,10 +94,11 @@ run_filter_test "test_name" "/path/to/kernel" expected_count "x_filter" "y_filte
 run_library_filter_test "test_name" "/path/to/kernel" '{"exclude":[...]}' "present|absent" "pattern"
 ```
 
-**Current tests** (12 total):
+**Current tests** (19 total):
 1-3. Basic handler tests (Heatmap, MemoryAnalysis)
 4-9. Block filter tests (`--filter-x/y/z` CLI)
 10-12. Library filter tests (`--library-filter` exclude/include)
+13-19. Scope filter tests (`INSTRUMENTATION_SCOPE` compile-time filtering)
 
 ### Triton Integration Tests: `tests/triton/`
 
@@ -111,11 +113,12 @@ End-to-end test for Triton-compiled kernels, verifying the full pipeline works w
 TRITON_DIR=/path/to/triton ./tests/triton/run_test.sh
 ```
 
-**Tests** (4 total):
+**Tests** (5 total):
 1. Instrumentation plugin invoked during Triton JIT compilation
 2. Instrumented kernel alternative found for `add_kernel`
 3. L2 cache line use report generated
 4. Bank conflicts report generated
+5. Scope filtering with non-matching file produces 0 instrumented instructions
 
 **Prerequisites**:
 - `TRITON_DIR` environment variable pointing to a Triton repo with `.venv/`
@@ -187,6 +190,11 @@ Simple HIP kernels for testing specific scenarios. These are automatically instr
 - Two kernels: coalesced and strided memory access
 - Tests: uncoalesced access detection
 - Automatically instrumented and used by `memory_analysis_cache_lines` test
+
+**`scope_filter_test.cpp`**:
+- Kernel with 4 `// SCOPE_MARKER` lines (2 loads, 2 stores) on distinct lines
+- Compiled on-the-fly by `run_scope_filter_tests.sh` (NOT built by CMake)
+- Test script discovers marker line numbers dynamically via `grep -n`
 
 **`hip_test_utils.h`**:
 - `CHECK_HIP(call)` macro for clean HIP error checking
@@ -409,10 +417,10 @@ The compilation produces a Clang Offload Bundle which must be unbundled first.
 - Reordered suites: handler, library filter chain, hipBLASLt, rocBLAS, combined, Triton (6 suites)
 
 ## Last Verified
-Date: 2026-03-08
-- Handler tests: 12/12 passing (3 handler + 6 block filter + 3 library filter)
+Date: 2026-03-16
+- Handler tests: 19/19 passing (3 handler + 6 block filter + 3 library filter + 7 scope filter)
 - Library filter chain: 5/5 passing
 - hipBLASLt instrumentation: 5/5 passing (requires `INSTRUMENTED_HIPBLASLT_LIB_DIR`; skips otherwise)
 - rocBLAS integration: 5/5 passing (requires `INSTRUMENTED_ROCBLAS_LIB_DIR`; skips otherwise)
 - rocBLAS + hipBLASLt combined: 5/5 passing (requires both; skips otherwise)
-- Triton integration: 4/4 passing (requires `TRITON_DIR`; skips otherwise)
+- Triton integration: 5/5 passing (requires `TRITON_DIR`; skips otherwise)

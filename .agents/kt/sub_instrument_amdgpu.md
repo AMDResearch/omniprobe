@@ -41,6 +41,12 @@ All plugins use dh_comms bitcode for device-side message submission.
 - Instrumented kernel suffix: `_inst` (configurable?)
 - dh_comms descriptor passed as final kernel argument
 
+## Compile-Time Scope Filtering
+`InstrumentationScope` class in InstrumentationCommon reads `INSTRUMENTATION_SCOPE` and
+`INSTRUMENTATION_SCOPE_FILE` env vars at compile time to restrict which instructions are
+instrumented based on source file and line range. When active, instructions without debug
+info are skipped. Syntax: `file[:N[:M][,N[:M]...]][;...]` — see rf_instrumentation-scope.md.
+
 ## Instrumentation Types
 
 | Plugin | Instruments | dh_comms Calls | Used By Analyzers |
@@ -72,5 +78,5 @@ instrument-amdgpu-kernels/
 ```
 
 ## Last Verified
-Submodule commit: 5a5d7e0
-Date: 2026-03-03
+Submodule commit: ad7cff4
+Date: 2026-03-16

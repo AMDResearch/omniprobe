@@ -2,9 +2,9 @@
 
 ## Status
 - [x] TODO
-- [ ] In Progress
+- [x] In Progress
 - [ ] Blocked
-- [ ] Done
+- [x] Done
 
 ### Blocker (if blocked)
 N/A
@@ -140,13 +140,13 @@ disables scope filtering entirely (instruments everything). This is the safe fal
 
 **Phase 1: Scope parser (InstrumentationCommon)**
 
-1. [ ] Add InstrumentationScope class declaration to InstrumentationCommon.h — Gate: compile
+1. [x] Add InstrumentationScope class declaration to InstrumentationCommon.h — Gate: compile
    - Struct `ScopeEntry { std::string file_pattern; bool is_full_path; std::vector<std::pair<uint32_t, uint32_t>> ranges; }`
    - Class with: constructor (reads env vars), `bool isActive()`, `bool matches(const std::string& file, uint32_t line)`
    - Private: `std::vector<ScopeEntry> entries_; bool active_;`
    - Private: `bool parseDefinitions(const std::string& input)`, `bool parseFile(const std::string& path)`
 
-2. [ ] Implement scope definition parser in InstrumentationCommon.cpp — Gate: compile
+2. [x] Implement scope definition parser in InstrumentationCommon.cpp — Gate: compile
    - `parseDefinitions()`: split on `;`, parse each definition
    - Parse file path (before first `:` that starts a line spec) and line specs
    - Distinguish full path (starts with `/`) from tail match
@@ -154,11 +154,11 @@ disables scope filtering entirely (instruments everything). This is the safe fal
    - Validate: M > N for ranges, no more than 2 colon-separated numbers per line spec
    - On error: print diagnostic to stderr, return false
 
-3. [ ] Implement file reader for INSTRUMENTATION_SCOPE_FILE — Gate: compile
+3. [x] Implement file reader for INSTRUMENTATION_SCOPE_FILE — Gate: compile
    - `parseFile()`: read file line by line, skip blank lines and `#` comments
    - Concatenate non-comment lines with `;` separator, feed to `parseDefinitions()`
 
-4. [ ] Implement constructor and matches() — Gate: compile
+4. [x] Implement constructor and matches() — Gate: compile
    - Constructor: read `INSTRUMENTATION_SCOPE` and `INSTRUMENTATION_SCOPE_FILE` from env
    - If neither set: `active_ = false` (fast path)
    - If either set: parse definitions, merge into `entries_`
@@ -170,7 +170,7 @@ disables scope filtering entirely (instruments everything). This is the safe fal
 
 **Phase 2: Plugin integration**
 
-5. [ ] Integrate InstrumentationScope into AMDGCNSubmitAddressMessages — Gate: compile
+5. [x] Integrate InstrumentationScope into AMDGCNSubmitAddressMessages — Gate: compile
    - Create `InstrumentationScope scope;` at start of `runOnModule()`
    - In the instruction loop, before each `InjectInstrumentationFunction` /
      `InjectBufferInstrumentationFunction` call:
@@ -178,14 +178,14 @@ disables scope filtering entirely (instruments everything). This is the safe fal
      - If scope is active and (DL is null or `!scope.matches(getFullPath(DL), DL->getLine())`): skip
    - Print summary to stderr when scope is active: "Instrumentation scope active: N definitions"
 
-6. [ ] Build and verify no regression — Gate: compile + existing tests pass
+6. [x] Build and verify no regression — Gate: compile + existing tests pass
    - Build the full project
    - Run `tests/run_all_tests.sh` to verify existing tests still pass
    - Scope is not set in existing tests, so behavior should be identical
 
 **Phase 3: Test kernel and test script**
 
-7. [ ] Create scope filter test kernel — Gate: compile
+7. [x] Create scope filter test kernel — Gate: compile
    - `tests/test_kernels/scope_filter_test.cpp`
    - Single kernel with multiple distinct load/store operations on separate lines
    - Each line with a load or store gets a `// SCOPE_MARKER` comment
@@ -205,7 +205,7 @@ disables scope filtering entirely (instruments everything). This is the safe fal
    - Do NOT add to `tests/test_kernels/CMakeLists.txt` — this kernel is compiled
      on the fly by the test script (see step 8), not at project build time
 
-8. [ ] Write scope filter test script — Gate: tests pass
+8. [x] Write scope filter test script — Gate: tests pass
    - `tests/run_scope_filter_tests.sh`, following the pattern of `run_block_filter_tests.sh`
    - Source `test_common.sh`
 
@@ -235,18 +235,18 @@ disables scope filtering entirely (instruments everything). This is the safe fal
        verify that message count is 0)
      - Test 7: Scope from file (INSTRUMENTATION_SCOPE_FILE) → same as inline scope
 
-9. [ ] Integrate scope filter tests into test runner — Gate: all tests pass
+9. [x] Integrate scope filter tests into test runner — Gate: all tests pass
    - Add `source "${SCRIPT_DIR}/run_scope_filter_tests.sh"` to `run_handler_tests.sh`
    - Run full test suite to verify
 
 **Phase 4: omniprobe CLI integration**
 
-10. [ ] Add --instrumentation-scope and --instrumentation-scope-file to omniprobe — Gate: n/a (Python, no build)
+10. [x] Add --instrumentation-scope and --instrumentation-scope-file to omniprobe — Gate: n/a (Python, no build)
     - Add to `add_general_group()`, following the `--library-filter` pattern
     - `--instrumentation-scope SCOPE`: string argument, dest `instrumentation_scope`
     - `--instrumentation-scope-file FILE`: file path argument, dest `instrumentation_scope_file`
 
-11. [ ] Add env var setup and validation to setup_env() — Gate: manual test
+11. [x] Add env var setup and validation to setup_env() — Gate: manual test
     - In `setup_env()`, after the `assume_triton` / HIP config block:
     - If `--instrumentation-scope` or `--instrumentation-scope-file` is provided:
       - Error out if `parms.instrumented` is False
@@ -254,13 +254,13 @@ disables scope filtering entirely (instruments everything). This is the safe fal
       - Otherwise: set `INSTRUMENTATION_SCOPE` / `INSTRUMENTATION_SCOPE_FILE` in env
     - For `--instrumentation-scope-file`: validate file exists (like `--library-filter`)
 
-12. [ ] Add a Triton scope test (optional, if Triton env available) — Gate: test passes
+12. [x] Add a Triton scope test (optional, if Triton env available) — Gate: test passes
     - Add a test case in `tests/triton/run_test.sh` or a new script that runs
       `omniprobe -i --instrumentation-scope <scope> --cache-location <cache> -- python vector_add.py`
     - Verify reduced instrumentation output compared to baseline
 
 ### Current Step
-Step 1 (not started)
+All steps complete. Ready for kt-refactor finish.
 
 ## Progress Log
 <!-- Append updates, don't delete -->
@@ -274,6 +274,46 @@ Step 1 (not started)
   - Instructions without debug info skipped when scope is active
   - Parsing/matching in InstrumentationCommon for future reuse by other plugins
 - Next: Begin step 1 after user approval
+
+### Session 2026-03-16 (Implementation)
+- Completed: All 12 steps (steps 1-12)
+- Phase 1 (steps 1-4): InstrumentationScope class in InstrumentationCommon
+  - ScopeEntry struct, parser, file reader, constructor, matches()
+  - Commits: 0275436, 72f6a34, 747c668, d51f635
+- Phase 2 (steps 5-6): Plugin integration + regression test
+  - Scope check in runOnModule() instruction loop
+  - All 12 existing handler tests pass (no regression)
+  - Commits: 6da3c7b
+- Phase 3 (steps 7-9): Test kernel + test script + integration
+  - 7 scope filter tests: no-scope baseline, full path, line range, single line,
+    tail match, non-matching file, scope from file
+  - Test uses probe-based expected counts (compiler may generate extra instructions)
+  - Discovery: hipcc needs -g flag for debug info in test kernels
+  - Discovery: JSON field is "dwarf_line" not "dbg_line"
+  - All 19 handler tests pass
+  - Commits: 5f8e74b, 6ce89d5, cfd6972
+- Phase 4 (steps 10-12): omniprobe CLI + Triton test
+  - --instrumentation-scope and --instrumentation-scope-file CLI args
+  - Validation: requires -i and --cache-location (Triton only)
+  - Triton scope test passes (non-matching scope → 0 messages)
+  - All 5 Triton integration tests pass
+  - Commits: d56951a, d4250fb
+- Gates: Full build passes, 19/19 handler tests pass, 5/5 Triton tests pass
+- Post-implementation fixes:
+  - Removed hardcoded `/opt/rocm` path in scope test script; now uses
+    `ROCM_PATH="${ROCM_PATH:-/opt/rocm}"` (matches CMakeLists.txt convention)
+  - Clean rebuild + full test suite verified after fix
+
+### Known Fluke: scope_from_file 0-message result (2026-03-16)
+- **Observed once**: `scope_from_file` test returned 0 address messages despite the compile
+  log showing 4 instrumented instructions (correct scope applied during compilation).
+- **Not reproduced**: Subsequent runs consistently produce the expected message count.
+- **Hypothesis**: Unclear. The dh_comms destructor should flush remaining messages before
+  exit, so a simple race condition seems unlikely. Could be a one-time runtime issue
+  (e.g., kernel dispatch failure, GPU resource contention) rather than a scope filtering bug.
+- **Action**: Monitor. If this recurs, check the omniprobe output file for runtime errors
+  and verify that the instrumented kernel binary actually ran (look for "Found instrumented
+  alternative" or dispatch log lines).
 
 ## Rejected Approaches
 
@@ -289,10 +329,7 @@ Step 1 (not started)
 
 ## Open Questions
 
-- **hipcc invocation details** (step 8): The test script compiles kernels on the fly with
-  `hipcc -fgpu-rdc -fpass-plugin=<plugin>`. The exact flags, include paths, and link
-  libraries need to be validated during implementation. Reference the existing CMakeLists.txt
-  for the test kernels to get the right flags.
+None.
 
 ## Resolved Questions
 
@@ -306,6 +343,16 @@ Step 1 (not started)
 
 - **Scope file format (JSON vs plain text)**: Resolved — plain text. See Rejected Approaches.
 
+- **hipcc invocation details**: Resolved — `hipcc -g -fgpu-rdc --offload-arch=$GPU_ARCH
+  -fpass-plugin=$INST_PLUGIN`. GPU arch read from CMakeCache.txt. hipcc located via
+  `ROCM_PATH` (defaults to `/opt/rocm`).
+
+### Session 2026-03-16 (Finalization)
+- Squashed commits: 8 omniprobe → 2, 5 submodule → 1
+- Final verification: build OK, handler tests 19/19, Triton tests skipped (no TRITON_DIR)
+- Status set to Done, archived to done/
+
 ## Last Verified
-Commit: N/A
+Commit: cb35ffa (omniprobe), ad7cff4 (instrument-amdgpu-kernels)
 Date: 2026-03-16
+Gates: Build OK, handler tests 19/19

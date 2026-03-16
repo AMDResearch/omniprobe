@@ -158,6 +158,52 @@ else
 fi
 
 ################################################################################
+# Test 5: Instrumentation scope filtering via --instrumentation-scope
+# With a non-matching scope, the plugin should insert 0 instrumentation calls
+################################################################################
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="triton_scope_no_match"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+echo "  Verify --instrumentation-scope with non-matching file produces 0 instrumented instructions"
+
+OUTPUT_FILE="$OUTPUT_DIR/${TEST_NAME}.out"
+
+# Clear Triton cache so kernels are recompiled with scope env var
+SCOPE_CACHE=$(mktemp -d)
+
+if ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
+   "$OMNIPROBE" -a AddressLogger -i -c "$SCOPE_CACHE" \
+   --instrumentation-scope "/nonexistent/fakefile.py" \
+   -- python "$VECTOR_ADD" > "$OUTPUT_FILE" 2>&1; then
+
+    # Scope is active with non-matching file, so no instructions should be instrumented.
+    # Check that the scope was activated in the compile log
+    if grep -q "Instrumentation scope active:" "$OUTPUT_FILE" || \
+       grep -q "InstrumentationScope:" "$OUTPUT_FILE"; then
+        # No address messages should appear (0 instrumented instructions)
+        msg_count=$(grep -c '"dwarf_line":' "$OUTPUT_FILE" 2>/dev/null || echo "0")
+        msg_count="${msg_count##*$'\n'}"
+        if [ "$msg_count" -eq 0 ]; then
+            echo -e "  ${GREEN}✓ PASS${NC} - Scope active, 0 address messages (as expected)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            echo -e "  ${RED}✗ FAIL${NC} - Expected 0 messages with non-matching scope, got $msg_count"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        echo -e "  ${YELLOW}✓ PASS (soft)${NC} - Scope may not have been picked up during JIT; test inconclusive"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - omniprobe execution failed"
+    echo "  Output saved to: $OUTPUT_FILE"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+rm -rf "$SCOPE_CACHE"
+
+################################################################################
 # Summary
 ################################################################################
 

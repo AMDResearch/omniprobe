@@ -412,6 +412,25 @@ def setup_env(parms):
         else:
             print(f"WARNING: Library filter file '{parms.library_filter}' not found. Ignoring.")
 
+    # Instrumentation scope (compile-time, Triton only)
+    if parms.instrumentation_scope or parms.instrumentation_scope_file:
+        if not parms.instrumented:
+            print("ERROR: --instrumentation-scope[-file] requires -i/--instrumented.")
+            sys.exit(1)
+        if not assume_triton:
+            print("ERROR: --instrumentation-scope[-file] is only supported for Triton runs (requires --cache-location).")
+            sys.exit(1)
+        if parms.instrumentation_scope:
+            env['INSTRUMENTATION_SCOPE'] = parms.instrumentation_scope
+            env_dump['INSTRUMENTATION_SCOPE'] = parms.instrumentation_scope
+        if parms.instrumentation_scope_file:
+            if os.path.exists(parms.instrumentation_scope_file):
+                env['INSTRUMENTATION_SCOPE_FILE'] = os.path.abspath(parms.instrumentation_scope_file)
+                env_dump['INSTRUMENTATION_SCOPE_FILE'] = env['INSTRUMENTATION_SCOPE_FILE']
+            else:
+                print(f"ERROR: Instrumentation scope file '{parms.instrumentation_scope_file}' not found.")
+                sys.exit(1)
+
     if 'LD_LIBRARY_PATH' in env:
         env['LD_LIBRARY_PATH'] = ':'.join([f"{get_omniprobe_home()}/lib",env["LD_LIBRARY_PATH"]])
         env_dump['LD_LIBRARY_PATH'] = env['LD_LIBRARY_PATH']
@@ -692,6 +711,35 @@ def add_general_group(parser):
             "\tJSON config file to filter which libraries are scanned.\n"
             "\tFormat: {\"include\": [...], \"include_with_deps\": [...], \"exclude\": [...]}\n"
             "\tPatterns support * and ** globs. Exclude always wins."
+        ),
+    )
+
+    # Instrumentation scope arguments (compile-time scope filtering)
+    general_group.add_argument(
+        "--instrumentation-scope",
+        type=str,
+        metavar="SCOPE",
+        dest="instrumentation_scope",
+        required=False,
+        default="",
+        help=(
+            "\tLimit instrumentation to specific source locations (Triton only).\n"
+            "\tFormat: file[:line_spec,...][;file[:line_spec,...]...]\n"
+            "\tline_spec: N (single line) or N:M (half-open range [N,M)).\n"
+            "\tFile paths starting with / are exact matches; otherwise tail-matched."
+        ),
+    )
+    general_group.add_argument(
+        "--instrumentation-scope-file",
+        type=str,
+        metavar="FILE",
+        dest="instrumentation_scope_file",
+        required=False,
+        default="",
+        help=(
+            "\tFile containing instrumentation scope definitions (Triton only).\n"
+            "\tSame syntax as --instrumentation-scope, one definition per line.\n"
+            "\tBlank lines and lines starting with # are ignored."
         ),
     )
     return
