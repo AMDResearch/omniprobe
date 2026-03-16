@@ -83,3 +83,16 @@ target_compile_options(block_filter_test PRIVATE
 target_link_options(block_filter_test PRIVATE -fgpu-rdc)
 add_dependencies(block_filter_test copy_bitcode_to_rocm)
 
+# Sub-8B argument test kernel (regression test for issue:
+# "Error with sub-8B kernel arguments").  A kernel whose explicit argument list
+# ends at a non-8-byte-aligned offset (pointer args + int args) used to trigger
+# an assertion in fixupKernArgs due to incorrect explicit_args_length rounding.
+add_executable(sub8b_args_test sub8b_args_test.cpp)
+set_source_files_properties(sub8b_args_test.cpp PROPERTIES LANGUAGE HIP)
+target_compile_options(sub8b_args_test PRIVATE
+    ${TEST_KERNEL_COMPILE_FLAGS}
+    -fpass-plugin=${INST_PLUGIN}
+)
+target_link_options(sub8b_args_test PRIVATE -fgpu-rdc)
+add_dependencies(sub8b_args_test copy_bitcode_to_rocm)
+

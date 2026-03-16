@@ -24,9 +24,11 @@ echo "==========================================================================
 # Use project's instrumented test kernels
 HEATMAP_TEST="${BUILD_DIR}/tests/test_kernels/simple_heatmap_test"
 MEMORY_ANALYSIS_TEST="${BUILD_DIR}/tests/test_kernels/simple_memory_analysis_test"
+SUB8B_ARGS_TEST="${BUILD_DIR}/tests/test_kernels/sub8b_args_test"
 
 check_kernel "$HEATMAP_TEST"
 check_kernel "$MEMORY_ANALYSIS_TEST"
+check_kernel "$SUB8B_ARGS_TEST"
 
 # Test 1: Memory heatmap handler
 run_test "heatmap_basic" \
@@ -45,6 +47,16 @@ run_test "heatmap_page_accesses" \
     "$HEATMAP_TEST" \
     "Heatmap" \
     "accesses"
+
+# Test 4: Regression test for sub-8B kernel arguments.
+# A kernel with pointer args followed by 32-bit int args has its explicit
+# argument list end at a non-8-byte-aligned offset. The old roundArgsLength()
+# logic caused an assertion failure in fixupKernArgs. Verify omniprobe runs
+# to completion without asserting.
+run_test "sub8b_args_regression" \
+    "$SUB8B_ARGS_TEST" \
+    "Heatmap" \
+    "sub8b_args_test done"
 
 # Export updated counters for parent script
 export TESTS_RUN TESTS_PASSED TESTS_FAILED

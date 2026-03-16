@@ -852,6 +852,7 @@ void KernelArgHelper::computeKernargData(amd_comgr_metadata_node_t exec_map)
             if (kind == AMD_COMGR_METADATA_KIND_LIST)
             {
                 size_t arg_count;
+                bool has_hidden_args = false;
                 CHECK_COMGR(amd_comgr_get_metadata_list_size(args, &arg_count));
                 for (size_t j = 0; j < arg_count; j++)
                 {
@@ -871,7 +872,18 @@ void KernelArgHelper::computeKernargData(amd_comgr_metadata_node_t exec_map)
                         //std::cout << "Name, Offset, Size\n";
                         //std::cout << parm_name << "," << arg_offset << "," << arg_size << std::endl;
                         if (parm_name.rfind("hidden_",0) == 0)
+                        {
+                            // Use the offset of the first hidden argument as the exact
+                            // explicit/hidden boundary. This avoids incorrect rounding when
+                            // sub-8B explicit arguments (e.g. int) cause the last explicit
+                            // argument to end at a non-8-byte-aligned offset.
+                            if (!has_hidden_args)
+                            {
+                                has_hidden_args = true;
+                                desc.explicit_args_length = arg_offset;
+                            }
                             desc.hidden_args_length = arg_offset + arg_size;
+                        }
                         else
                         {
                             desc.explicit_args_count++;
@@ -879,8 +891,17 @@ void KernelArgHelper::computeKernargData(amd_comgr_metadata_node_t exec_map)
                         }
                     }
                 }
+                // Only apply rounding when there are no hidden arguments (e.g. some Triton
+                // kernels). When hidden arguments are present their offset already encodes the
+                // exact boundary, so rounding is both unnecessary and harmful.
+                if (!has_hidden_args)
+                    desc.explicit_args_length = std::min(roundArgsLength(desc.explicit_args_length), desc.kernarg_length);
             }
-            desc.explicit_args_length = std::min(roundArgsLength(desc.explicit_args_length), desc.kernarg_length);
+            // Recompute hidden_args_length as the number of bytes from the explicit/hidden
+            // boundary to the end of the kernarg segment. The loop set hidden_args_length to
+            // the absolute end offset of the last hidden arg, which is a different quantity.
+            // The recalculated value is used as a "has hidden args" flag (non-zero ↔ true)
+            // and as the basis for clone_hidden_args_length in getArgDescriptor().
             desc.hidden_args_length = desc.kernarg_length - desc.explicit_args_length;
             kernels_[strName] = desc;
         }
