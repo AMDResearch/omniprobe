@@ -308,6 +308,21 @@ def validate_hip_config():
     #        return False
     return True
 
+def is_triton_cache_dir(path):
+    """
+    Check if the given directory looks like a Triton cache directory.
+    Triton stores each compiled kernel in its own hash-named subdirectory.
+    Returns True if the directory contains at least one subdirectory (as Triton would create),
+    False if the directory is empty or contains only files.
+    """
+    if not os.path.isdir(path):
+        return False
+    try:
+        entries = os.listdir(path)
+        return any(os.path.isdir(os.path.join(path, entry)) for entry in entries)
+    except OSError:
+        return False
+
 def setup_env(parms):
     env_dump = {}
     global op_run_env
@@ -328,13 +343,23 @@ def setup_env(parms):
             
     if len(parms.log_location):
         if parms.log_location != "console":
-            if not os.path.isdir(parms.log_location):
-                env['LOGDUR_LOG_LOCATION'] = parms.log_location
-                env_dump['LOGDUR_LOG_LOCATION'] = parms.log_location
-
-            else:
-                print(f"WARNING: log location {parms.log_location} either doesn't exist or it is a directory. Will log to the console.")
+            if os.path.isdir(parms.log_location):
+                print(f"WARNING: log location {parms.log_location} is a directory. Will log to the console.")
                 parms.log_location = "console"
+            else:
+                parent_dir = os.path.dirname(os.path.abspath(parms.log_location))
+                if not os.path.exists(parent_dir):
+                    try:
+                        os.makedirs(parent_dir)
+                        print(f"WARNING: Created directory {parent_dir} for log output.")
+                        env['LOGDUR_LOG_LOCATION'] = parms.log_location
+                        env_dump['LOGDUR_LOG_LOCATION'] = parms.log_location
+                    except OSError as e:
+                        print(f"WARNING: Could not create directory {parent_dir} for log output: {e}. Will log to the console.")
+                        parms.log_location = "console"
+                else:
+                    env['LOGDUR_LOG_LOCATION'] = parms.log_location
+                    env_dump['LOGDUR_LOG_LOCATION'] = parms.log_location
     else:
         env['LOGDUR_LOG_LOCATION'] = "console"
         env_dump['LOGDUR_LOG_LOCATION'] = "console"
@@ -343,6 +368,8 @@ def setup_env(parms):
     if len(parms.cache_location):
         assume_triton = True
         if os.path.exists(parms.cache_location) and os.path.isdir(parms.cache_location):
+            if not is_triton_cache_dir(parms.cache_location):
+                print(f"WARNING: Cache location {parms.cache_location} exists but appears to be empty or not a Triton cache directory. Instrumented kernels may not be found there.")
             env['LOGDUR_KERNEL_CACHE'] = parms.cache_location
             env_dump['LOGDUR_KERNEL_CACHE'] = parms.cache_location
         elif not os.path.exists(parms.cache_location):
