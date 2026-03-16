@@ -4,7 +4,7 @@
 - [x] TODO
 - [x] In Progress
 - [ ] Blocked
-- [ ] Done
+- [x] Done
 
 ### Blocker (if blocked)
 N/A
@@ -329,10 +329,7 @@ All steps complete. Ready for kt-refactor finish.
 
 ## Open Questions
 
-- **hipcc invocation details** (step 8): The test script compiles kernels on the fly with
-  `hipcc -fgpu-rdc -fpass-plugin=<plugin>`. The exact flags, include paths, and link
-  libraries need to be validated during implementation. Reference the existing CMakeLists.txt
-  for the test kernels to get the right flags.
+None.
 
 ## Resolved Questions
 
@@ -346,7 +343,16 @@ All steps complete. Ready for kt-refactor finish.
 
 - **Scope file format (JSON vs plain text)**: Resolved — plain text. See Rejected Approaches.
 
+- **hipcc invocation details**: Resolved — `hipcc -g -fgpu-rdc --offload-arch=$GPU_ARCH
+  -fpass-plugin=$INST_PLUGIN`. GPU arch read from CMakeCache.txt. hipcc located via
+  `ROCM_PATH` (defaults to `/opt/rocm`).
+
+### Session 2026-03-16 (Finalization)
+- Squashed commits: 8 omniprobe → 2, 5 submodule → 1
+- Final verification: build OK, handler tests 19/19, Triton tests skipped (no TRITON_DIR)
+- Status set to Done, archived to done/
+
 ## Last Verified
-Commit: b57b3b7 (omniprobe), 6da3c7b (instrument-amdgpu-kernels)
+Commit: cb35ffa (omniprobe), ad7cff4 (instrument-amdgpu-kernels)
 Date: 2026-03-16
-Gates: Clean build 80/80, handler tests 19/19, Triton tests 5/5
+Gates: Build OK, handler tests 19/19
