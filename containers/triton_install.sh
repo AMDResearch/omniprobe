@@ -302,17 +302,37 @@ log_info "LLVM commit hash: $(cat cmake/llvm-hash.txt 2>/dev/null || echo 'unkno
 # default CMAKE_C_COMPILER=clang / CMAKE_CXX_COMPILER=clang++
 export PATH="${ROCM_PATH}/llvm/bin:${PATH}"
 
-# Set env vars for Triton's build helper script
-export LLVM_BUILD_SHARED_LIBS=ON
-export LLVM_PROJECTS="clang;mlir;llvm;lld"
+LLVM_BUILD_DIR="${TRITON_REPO}/llvm-project/build"
+LLVM_INSTALL_DIR="${TRITON_REPO}/llvm-project/install"
 
-scripts/build-llvm-project.sh
+# Pass all CMake args explicitly as positional arguments to the build script.
+# This overrides the script's defaults, which is necessary because:
+# - v3.6.0's build-llvm-project.sh doesn't support LLVM_BUILD_SHARED_LIBS env var
+# - We need -DBUILD_SHARED_LIBS=ON for Omniprobe plugin compatibility
+# - We need clang in LLVM_ENABLE_PROJECTS for Triton compilation
+scripts/build-llvm-project.sh \
+    -G Ninja \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DLLVM_CCACHE_BUILD=OFF \
+    -DLLVM_ENABLE_ASSERTIONS=ON \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
+    -DLLVM_ENABLE_LLD=ON \
+    -DBUILD_SHARED_LIBS=ON \
+    -DLLVM_OPTIMIZED_TABLEGEN=ON \
+    -DMLIR_ENABLE_BINDINGS_PYTHON=OFF \
+    -DLLVM_ENABLE_ZSTD=OFF \
+    -DLLVM_TARGETS_TO_BUILD="Native;NVPTX;AMDGPU" \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
+    -DLLVM_ENABLE_PROJECTS="clang;mlir;llvm;lld" \
+    -DCMAKE_INSTALL_PREFIX="${LLVM_INSTALL_DIR}" \
+    -B"${LLVM_BUILD_DIR}" \
+    "${TRITON_REPO}/llvm-project/llvm"
 if [ $? -ne 0 ]; then
     log_error "LLVM build failed"
     return 1
 fi
 
-LLVM_BUILD_DIR="${TRITON_REPO}/llvm-project/build"
 log_info "LLVM built at: ${LLVM_BUILD_DIR}"
 
 # Verify shared libraries were built
