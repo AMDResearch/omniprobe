@@ -2,9 +2,9 @@
 
 ## Status
 - [ ] TODO
-- [ ] In Progress
+- [x] In Progress
 - [ ] Blocked
-- [x] Done
+- [ ] Done
 
 ## Objective
 
@@ -211,7 +211,24 @@ Results:
   handler libraries. This is a pre-existing issue, not caused by our changes.
 - Note: Triton venv needs `pyfiglet` installed for omniprobe to run.
 
-### Step 5: Update CI references
+### Step 5: End-to-end script validation
+
+Clean-room test of the script from scratch:
+1. Remove `~/repos/triton` (or work in a fresh directory)
+2. Unset `HTTP_PROXY`/`HTTPS_PROXY` (the script doesn't need a proxy; Claude's
+   API auth does, but that's separate)
+3. Source the script: `source containers/triton_install.sh`
+4. Verify everything completes without manual intervention
+5. Build Omniprobe against the resulting LLVM
+6. Run Omniprobe handler tests + Triton integration tests
+
+If any step requires manual tweaking, fix the script and repeat. Iterate until
+the script runs cleanly from start to finish.
+
+The Omniprobe build and test steps (5-6) are validation only — they confirm the
+script's output is usable, but aren't part of the script itself.
+
+### Step 6: Update CI references
 
 Once validated, update `.untracked/ci_update.md` with results and any
 adjustments needed for the CI workflow integration.
@@ -252,7 +269,7 @@ Deferred — not part of this refactoring scope. Tracked separately.
 
 ### Current Step
 
-Done — Steps 1-4 complete. Step 5 (CI update) deferred to separate task.
+Step 5: End-to-end script validation (next session).
 
 ## Progress Log
 
@@ -282,7 +299,25 @@ Done — Steps 1-4 complete. Step 5 (CI update) deferred to separate task.
     isn't in Triton's default dependencies. Must `pip install pyfiglet` in the venv.
   - **LD_LIBRARY_PATH pre-existing issue**: Handler libraries in the build dir aren't
     found by `dlopen` unless `LD_LIBRARY_PATH` includes the build directory. Not
-    caused by our changes.
+    caused by our changes. Root cause analysis:
+    - When `-a Heatmap` (or any named analyzer) is used, `omniprobe` resolves
+      the name via `analytics_config[h]['lib_name']` (in `omniprobe/config/analytics.py`),
+      which yields a **bare filename** like `libdefaultMessageHandlers64.so`.
+    - This bare name is passed to `LOGDUR_HANDLERS` env var, and the C++ code does
+      `dlopen("libdefaultMessageHandlers64.so", ...)` — which needs `LD_LIBRARY_PATH`.
+    - The **default handler** path (when no `-a` is given, line 556) uses an absolute
+      path like `build/libdefaultMessageHandlers64.so`, which works without
+      `LD_LIBRARY_PATH`.
+    - The `omniprobe` script sets `LD_LIBRARY_PATH` to `get_omniprobe_home()/lib`
+      (lines 434-438), which is the omniprobe script's own directory + `/lib` — this
+      path doesn't exist in the build tree.
+    - Previous test sessions (2026-03-12) likely passed because `LD_LIBRARY_PATH` was
+      already set in the shell environment from prior setup steps.
+    - **Fix options** (not part of this refactor, tracked separately):
+      (a) `omniprobe` could prepend `build_dir` to `LD_LIBRARY_PATH` when in build mode,
+      (b) the analytics config could use absolute paths based on install_path, or
+      (c) line 779 could prepend build_dir to bare lib_names.
+- Script updated: commit 91c601c adds Python 3.10+ detection and pyfiglet.
 
 ### Session 2026-03-18a
 - Completed: Step 1 (script rewrite, 3 commits on branch `rf/triton-install-script`)
@@ -315,5 +350,5 @@ Done — Steps 1-4 complete. Step 5 (CI update) deferred to separate task.
   Both cmake 3.31.10 and 4.x produce the same error when finding ROCm's LLVM.
 
 ## Last Verified
-Commit: ab56562
+Commit: 91c601c
 Date: 2026-03-18
