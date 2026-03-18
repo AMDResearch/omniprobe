@@ -211,7 +211,7 @@ Results:
   handler libraries. This is a pre-existing issue, not caused by our changes.
 - Note: Triton venv needs `pyfiglet` installed for omniprobe to run.
 
-### Step 5: End-to-end script validation
+### Step 5: End-to-end script validation — IN PROGRESS (Session 2026-03-18c)
 
 Clean-room test of the script from scratch:
 1. Remove `~/repos/triton` (or work in a fresh directory)
@@ -229,6 +229,40 @@ confirm the script's output is usable, but aren't part of the script itself.
 Any issues found in those steps are NOT triton install script bugs and should
 not trigger script iteration. They should be tracked separately (e.g., the
 `LD_LIBRARY_PATH` issue is tracked in `rf_omniprobe-runtime-paths.md`).
+
+#### Clean-room attempt 1 (network mode, session 2026-03-18c)
+
+Ran via a bash wrapper that sources the script. Results:
+- Steps 1-3 (prereqs, version detect, clone, patch): **passed** without intervention
+- Step 4 (LLVM build): **passed** — full build completed successfully
+- Step 5 (Python deps): matplotlib, pandas, pyfiglet installed successfully.
+  PyTorch download **failed** — 5.4 GB wheel at ~657 KB/s caused a hash mismatch
+  at 0.6 GB. This is a network environment issue, not a script bug (script
+  correctly detected and reported the failure).
+
+#### Local sources approach (added in session 2026-03-18c)
+
+Added `--local-sources DIR` option to the script (commit a2e690e) to bypass
+network for Triton clone, LLVM clone, and PyTorch wheel install. When specified:
+- Triton is cloned from `DIR` (local git repo) instead of GitHub
+- LLVM is cloned from `DIR/llvm-project/` instead of fetched by build script
+- PyTorch is installed from `DIR/wheels/*.whl` instead of PyPI index
+- Triton version is read from the local repo's tags
+- PyTorch ROCm version is inferred from wheel filenames
+
+Pre-staged local sources at `~/repos/sandbox/triton/`:
+- `~/repos/sandbox/triton/` — Triton v3.6.0 (cloned from ~/repos/triton)
+- `~/repos/sandbox/triton/llvm-project/` — LLVM at f6ded0be... (matches cmake/llvm-hash.txt)
+- `~/repos/sandbox/triton/wheels/` — **awaiting PyTorch wheel** (user downloading
+  from home network, will scp to cluster)
+
+#### Next session: resume clean-room test
+
+1. Confirm wheels are in place at `~/repos/sandbox/triton/wheels/`
+2. Clean `~/repos/triton` if it exists (should already be clean)
+3. Run: `cd ~/repos && source .../containers/triton_install.sh --local-sources ~/repos/sandbox/triton`
+4. If script completes: build Omniprobe and run tests (validation steps 4-5 from above)
+5. If script fails: fix and iterate
 
 ### Step 6: Update CI references
 
@@ -271,9 +305,24 @@ Deferred — not part of this refactoring scope. Tracked separately.
 
 ### Current Step
 
-Step 5: End-to-end script validation (next session).
+Step 5: End-to-end script validation — in progress.
+Resume with `--local-sources ~/repos/sandbox/triton` once PyTorch wheel is staged.
 
 ## Progress Log
+
+### Session 2026-03-18c (clean-room validation, same 128-core wekafs machine)
+- Working on: Step 5 (end-to-end script validation)
+- Clean-room attempt 1 (network mode): Steps 1-4 passed, Step 5 failed on
+  PyTorch download (hash mismatch from slow network, ~657 KB/s for 5.4 GB).
+  Script correctly reported the error — not a script bug.
+- Added `--local-sources` option to the script (commit a2e690e) so that
+  repos and wheels can be pre-staged locally, bypassing slow network.
+- Pre-staged local sources at `~/repos/sandbox/triton/` (Triton v3.6.0 +
+  LLVM f6ded0be cloned from local repos). Wheels dir created but awaiting
+  user to scp PyTorch wheel from home network.
+- `~/repos/triton` cleaned up (deleted) — ready for next clean-room attempt.
+- **Next**: When PyTorch wheel is in `~/repos/sandbox/triton/wheels/`, run
+  `cd ~/repos && source .../triton_install.sh --local-sources ~/repos/sandbox/triton`
 
 ### Session 2026-03-18b (continued on 128-core wekafs machine)
 - Completed: Steps 2, 3, 4
@@ -352,5 +401,5 @@ Step 5: End-to-end script validation (next session).
   Both cmake 3.31.10 and 4.x produce the same error when finding ROCm's LLVM.
 
 ## Last Verified
-Commit: 91c601c
+Commit: a2e690e
 Date: 2026-03-18
