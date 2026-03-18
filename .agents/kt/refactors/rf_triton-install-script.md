@@ -2,9 +2,9 @@
 
 ## Status
 - [ ] TODO
-- [x] In Progress
+- [ ] In Progress
 - [ ] Blocked
-- [ ] Done
+- [x] Done
 
 ## Objective
 
@@ -168,7 +168,7 @@ Check during validation.
 
 ## Implementation Steps
 
-### Step 1: Rewrite `containers/triton_install.sh` ✅
+### Step 1: Rewrite `containers/triton_install.sh` ✅ (Session 2026-03-18a)
 
 Implement the design above. The script should:
 - Be sourceable (current script uses `source`; keep this for venv activation)
@@ -177,39 +177,45 @@ Implement the design above. The script should:
 - Report the versions used at the end (Triton tag, LLVM hash, PyTorch version,
   ROCm index)
 
-### Step 2: Test locally — build Triton
+### Step 2: Test locally — build Triton ✅ (Session 2026-03-18b)
 
 Test environment:
-- Triton repo: clone fresh under `~/repos/triton`
-  (may delete existing `~/repos/triton` directory and start with a new clone)
-- `~/.triton` has been moved out of the way (existing backup exists)
-- ROCm 7.2.0 installed at `/opt/rocm-7.2.0`
+- Machine: 128-core wekafs (not virtiofs), 503 GiB RAM
+- Triton repo: `~/repos/triton` with v3.6.0 checked out
+- ROCm 7.2.0 at `/opt/rocm-7.2.0`
 - GPU: gfx90a with `sramecc+:xnack-`
 
-Run the script and verify:
-- LLVM builds successfully with shared libraries
-- Triton builds successfully against the shared LLVM
-- Triton source is patched (assertion commented out)
-- PyTorch is installed with the correct ROCm index
-- `pytorch-triton-rocm` is uninstalled
-- `TRITON_HIP_LLD_PATH` is set correctly
+Results:
+- LLVM built successfully (7608/7608 targets, ~30 min on 128 cores)
+- All shared libraries verified present
+- Triton v3.6.0 built and installed successfully
+- PyTorch 2.10.0+rocm7.1 installed (Python 3.12 venv required; 3.9 lacks wheels)
+- Assertion patch applied at `third_party/amd/backend/compiler.py`
+- Critical fix: `CMAKE_PREFIX_PATH` and `PATH` needed in Triton build step
+  (commit ab56562 on `rf/triton-install-script`)
 
-### Step 3: Test locally — build Omniprobe against new Triton
+### Step 3: Test locally — build Omniprobe against new Triton ✅ (Session 2026-03-18b)
 
-- Build Omniprobe with `-DTRITON_LLVM=<path to new LLVM build>`
-- Verify build succeeds
+- Built with `-DTRITON_LLVM=/home1/rvanoo/repos/triton/llvm-project/build`
+- All targets built: liblogDuration64.so, handler plugins, test binaries
+- Both `-rocm` and `-triton` instrumentation plugins link correctly
+- Triton plugins verified linking against custom LLVM (not ROCm's):
+  `libLLVMCore.so.22.0git => .../triton/llvm-project/build/./lib/...`
 
-### Step 4: Test locally — run Omniprobe tests
+### Step 4: Test locally — run Omniprobe tests ✅ (Session 2026-03-18b)
 
-Run the full test suite, paying special attention to Triton tests:
-- `tests/run_handler_tests.sh` (handler tests)
-- Triton integration tests (instrumented Triton program under Omniprobe)
-- Verify instrumented Triton kernels run correctly with memory analysis
+- Handler tests: **19/19 pass** (3 basic, 6 block filter, 3 library filter, 7 scope)
+- Triton integration tests: **5/5 pass** (plugin invocation, dispatch, cache line
+  report, bank conflicts report, scope filtering)
+- Note: `LD_LIBRARY_PATH` must include the build directory for `dlopen` to find
+  handler libraries. This is a pre-existing issue, not caused by our changes.
+- Note: Triton venv needs `pyfiglet` installed for omniprobe to run.
 
 ### Step 5: Update CI references
 
 Once validated, update `.untracked/ci_update.md` with results and any
 adjustments needed for the CI workflow integration.
+Deferred — not part of this refactoring scope. Tracked separately.
 
 ## Files Modified
 
@@ -246,11 +252,39 @@ adjustments needed for the CI workflow integration.
 
 ### Current Step
 
-Step 2: Test locally — build Triton (LLVM build not yet started due to machine constraints)
+Done — Steps 1-4 complete. Step 5 (CI update) deferred to separate task.
 
 ## Progress Log
 
-### Session 2026-03-18
+### Session 2026-03-18b (continued on 128-core wekafs machine)
+- Completed: Steps 2, 3, 4
+- Commits: ab56562 (fix CMAKE_PREFIX_PATH + PATH in Triton build step)
+- Gates passed:
+  - LLVM built with shared libraries (7608 targets)
+  - Triton v3.6.0 built and installed against shared LLVM
+  - Omniprobe built with `-DTRITON_LLVM=~/repos/triton/llvm-project/build`
+  - Both ROCm and Triton instrumentation plugins link correctly
+  - Handler tests: 19/19 pass
+  - Triton integration tests: 5/5 pass
+- Discovered:
+  - **ROCm LLVM vs custom LLVM ambiguity**: Both ROCm 7.2.0's LLVM and our custom
+    LLVM report version 22.0.0git. Without `CMAKE_PREFIX_PATH`, cmake's
+    `find_package(LLVM)` finds ROCm's copy first, which lacks NVPTX targets needed
+    by Triton's MLIR. Fix: `CMAKE_PREFIX_PATH="${LLVM_BUILD_DIR}"`.
+  - **PATH needed for TRITON_BUILD_WITH_CLANG_LLD**: Triton's setup.py passes
+    `-DCMAKE_C_COMPILER=clang` (bare name) when `TRITON_BUILD_WITH_CLANG_LLD=1`.
+    The LLVM build dir's `bin/` must be in PATH so cmake can resolve it.
+  - **PyTorch rocm7.1 requires Python 3.10+**: No cp39 wheels available. Must use
+    Python 3.10+ for the venv.
+  - **HTTP proxy causes SSL errors and slow downloads**: Bypassed with
+    `env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY`.
+  - **Triton venv needs pyfiglet**: The omniprobe script imports pyfiglet, which
+    isn't in Triton's default dependencies. Must `pip install pyfiglet` in the venv.
+  - **LD_LIBRARY_PATH pre-existing issue**: Handler libraries in the build dir aren't
+    found by `dlopen` unless `LD_LIBRARY_PATH` includes the build directory. Not
+    caused by our changes.
+
+### Session 2026-03-18a
 - Completed: Step 1 (script rewrite, 3 commits on branch `rf/triton-install-script`)
 - Gates passed:
   - Script runs through Steps 1-3 correctly: prereq check, version auto-detection
@@ -269,15 +303,17 @@ Step 2: Test locally — build Triton (LLVM build not yet started due to machine
   - **Log message stdout capture bug**: `log_info` calls inside `detect_triton_version()`
     and `detect_pytorch_rocm_version()` were captured by `$(...)`, polluting the return
     values. Fixed by redirecting to stderr inside those functions.
-- Next: Run the script on a faster machine to complete LLVM build + Triton build (Step 2),
-  then Steps 3-5.
 
 ## Rejected Approaches
 
 - **Using LLVM_BUILD_SHARED_LIBS env var**: Triton v3.6.0's `build-llvm-project.sh` doesn't
   support this env var (added later in HEAD). Must pass `-DBUILD_SHARED_LIBS=ON` as a
   positional CMake argument instead.
+- **TRITON_CODEGEN_BACKENDS env var**: Setting this to `amd` to avoid NVPTX dependency
+  does NOT work — Triton's `setup.py` always passes `nvidia;amd` to cmake regardless.
+- **cmake 3.x vs 4.x**: The MLIR find_package error was not caused by cmake version.
+  Both cmake 3.31.10 and 4.x produce the same error when finding ROCm's LLVM.
 
 ## Last Verified
-Commit: 8cd914a
+Commit: ab56562
 Date: 2026-03-18
