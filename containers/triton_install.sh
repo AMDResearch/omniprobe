@@ -102,7 +102,9 @@ get_rocm_version() {
 }
 
 detect_triton_version() {
-    log_info "Querying GitHub API for latest Triton release..."
+    # Note: this function is called inside $(...), so only echo the result
+    # to stdout. Informational messages go to stderr via log_info >&2.
+    log_info "Querying GitHub API for latest Triton release..." >&2
     local tag
     tag=$(curl -sL "https://api.github.com/repos/triton-lang/triton/releases/latest" | \
         python3 -c "import sys, json; print(json.load(sys.stdin)['tag_name'])" 2>/dev/null)
@@ -114,8 +116,10 @@ detect_triton_version() {
 }
 
 detect_pytorch_rocm_version() {
+    # Note: this function is called inside $(...), so only echo the result
+    # to stdout. Informational messages go to stderr via log_info >&2.
     local rocm_version="$1"
-    log_info "Detecting best PyTorch ROCm index for ROCm ${rocm_version}..."
+    log_info "Detecting best PyTorch ROCm index for ROCm ${rocm_version}..." >&2
     local best
     best=$(curl -sL "https://download.pytorch.org/whl/" | \
         python3 -c "
