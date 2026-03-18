@@ -58,8 +58,9 @@ trap _triton_restore_env RETURN
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 
-TRITON_VERSION=""      # auto-detect if empty
+TRITON_VERSION=""       # auto-detect if empty
 PYTORCH_ROCM_VERSION="" # auto-detect if empty
+LOCAL_SOURCES=""        # path to local pre-staged sources (empty = fetch from network)
 
 # ── Usage ────────────────────────────────────────────────────────────────────
 
@@ -75,12 +76,16 @@ Options:
   -g TAG                 Alias for --triton-version
   --pytorch-rocm VER     PyTorch ROCm wheel index version (e.g., 7.1)
                          Default: highest stable index <= installed ROCm
+  --local-sources DIR    Use pre-staged local sources instead of network.
+                         DIR must contain: triton/ (git repo), llvm-project/
+                         (git repo), and optionally wheels/ (*.whl files).
   -h, --help             Show this help message
 
 Examples:
   source triton_install.sh                           # auto-detect everything
   source triton_install.sh --triton-version v3.6.0   # specific Triton tag
   source triton_install.sh -g v3.6.0 --pytorch-rocm 7.1
+  source triton_install.sh --local-sources ~/repos/sandbox/triton
 HELP
 }
 
@@ -219,6 +224,14 @@ while [ $# -gt 0 ]; do
             PYTORCH_ROCM_VERSION="${1#*=}"
             shift
             ;;
+        --local-sources)
+            LOCAL_SOURCES="$2"
+            shift 2
+            ;;
+        --local-sources=*)
+            LOCAL_SOURCES="${1#*=}"
+            shift
+            ;;
         *)
             log_error "Unknown option: $1"
             show_help
@@ -278,20 +291,56 @@ fi
 log_info "ROCm ${ROCM_VERSION} at ${ROCM_PATH}"
 log_info "Python: $($PYTHON --version) ($PYTHON)"
 
+# Validate --local-sources if specified
+if [ -n "$LOCAL_SOURCES" ]; then
+    LOCAL_SOURCES="$(cd "$LOCAL_SOURCES" 2>/dev/null && pwd)" || {
+        log_error "--local-sources directory does not exist: $LOCAL_SOURCES"
+        return 1
+    }
+    if [ ! -d "${LOCAL_SOURCES}/.git" ]; then
+        log_error "--local-sources dir is not a git repo (no .git): ${LOCAL_SOURCES}"
+        return 1
+    fi
+    if [ ! -d "${LOCAL_SOURCES}/llvm-project/.git" ]; then
+        log_error "--local-sources dir missing llvm-project/ git repo"
+        return 1
+    fi
+    log_info "Using local sources: ${LOCAL_SOURCES}"
+    if [ -d "${LOCAL_SOURCES}/wheels" ]; then
+        log_info "Local wheels dir:   ${LOCAL_SOURCES}/wheels/"
+    fi
+fi
+
 # ── Step 1: Detect versions ─────────────────────────────────────────────────
 
 log_step "Step 1: Determining versions"
 
 if [ -z "$TRITON_VERSION" ]; then
-    TRITON_VERSION=$(detect_triton_version) || return 1
-    log_info "Auto-detected Triton version: ${TRITON_VERSION}"
+    if [ -n "$LOCAL_SOURCES" ]; then
+        # Read version from the local repo's checked-out tag
+        TRITON_VERSION=$(git -C "$LOCAL_SOURCES" describe --tags --always 2>/dev/null)
+        log_info "Triton version from local sources: ${TRITON_VERSION}"
+    else
+        TRITON_VERSION=$(detect_triton_version) || return 1
+        log_info "Auto-detected Triton version: ${TRITON_VERSION}"
+    fi
 else
     log_info "Using specified Triton version: ${TRITON_VERSION}"
 fi
 
 if [ -z "$PYTORCH_ROCM_VERSION" ]; then
-    PYTORCH_ROCM_VERSION=$(detect_pytorch_rocm_version "$ROCM_VERSION") || return 1
-    log_info "Auto-detected PyTorch ROCm index: rocm${PYTORCH_ROCM_VERSION}"
+    if [ -n "$LOCAL_SOURCES" ] && [ -d "${LOCAL_SOURCES}/wheels" ]; then
+        # Infer from wheel filenames (e.g., torch-2.10.0+rocm7.1-...)
+        PYTORCH_ROCM_VERSION=$(ls "${LOCAL_SOURCES}/wheels/"torch-*.whl 2>/dev/null | \
+            head -1 | grep -oP 'rocm\K[0-9.]+')
+        if [ -n "$PYTORCH_ROCM_VERSION" ]; then
+            log_info "PyTorch ROCm version from local wheel: rocm${PYTORCH_ROCM_VERSION}"
+        fi
+    fi
+    if [ -z "$PYTORCH_ROCM_VERSION" ]; then
+        PYTORCH_ROCM_VERSION=$(detect_pytorch_rocm_version "$ROCM_VERSION") || return 1
+        log_info "Auto-detected PyTorch ROCm index: rocm${PYTORCH_ROCM_VERSION}"
+    fi
 else
     log_info "Using specified PyTorch ROCm index: rocm${PYTORCH_ROCM_VERSION}"
 fi
@@ -300,10 +349,18 @@ fi
 
 log_step "Step 2: Cloning Triton ${TRITON_VERSION}"
 
-git clone https://github.com/triton-lang/triton.git
-if [ $? -ne 0 ]; then
-    log_error "Failed to clone Triton repository"
-    return 1
+if [ -n "$LOCAL_SOURCES" ]; then
+    git clone "$LOCAL_SOURCES" triton
+    if [ $? -ne 0 ]; then
+        log_error "Failed to clone Triton from local sources: ${LOCAL_SOURCES}"
+        return 1
+    fi
+else
+    git clone https://github.com/triton-lang/triton.git
+    if [ $? -ne 0 ]; then
+        log_error "Failed to clone Triton repository"
+        return 1
+    fi
 fi
 
 cd triton || return 1
@@ -338,6 +395,16 @@ export PATH="${ROCM_PATH}/llvm/bin:${PATH}"
 LLVM_BUILD_DIR="${TRITON_REPO}/llvm-project/build"
 LLVM_INSTALL_DIR="${TRITON_REPO}/llvm-project/install"
 
+# When using local sources, pre-populate llvm-project/ from the local clone
+# and point the build script's fetch URL at it (for the reset --hard step).
+if [ -n "$LOCAL_SOURCES" ] && [ -d "${LOCAL_SOURCES}/llvm-project/.git" ]; then
+    if [ ! -e "${TRITON_REPO}/llvm-project" ]; then
+        log_info "Cloning LLVM from local sources..."
+        git clone "${LOCAL_SOURCES}/llvm-project" "${TRITON_REPO}/llvm-project"
+    fi
+    export LLVM_PROJECT_URL="${LOCAL_SOURCES}/llvm-project"
+fi
+
 # Pass all CMake args explicitly as positional arguments to the build script.
 # This overrides the script's defaults, which is necessary because:
 # - v3.6.0's build-llvm-project.sh doesn't support LLVM_BUILD_SHARED_LIBS env var
@@ -366,6 +433,7 @@ if [ $? -ne 0 ]; then
     return 1
 fi
 
+unset LLVM_PROJECT_URL 2>/dev/null
 log_info "LLVM built at: ${LLVM_BUILD_DIR}"
 
 # Verify shared libraries were built
@@ -389,9 +457,20 @@ python3 -m pip install ninja cmake wheel pybind11
 # Run-time dependencies (includes pyfiglet for omniprobe)
 python3 -m pip install matplotlib pandas pyfiglet
 # PyTorch
-log_info "Installing PyTorch from rocm${PYTORCH_ROCM_VERSION} index..."
-python3 -m pip install torch torchvision \
-    --index-url "https://download.pytorch.org/whl/rocm${PYTORCH_ROCM_VERSION}"
+if [ -n "$LOCAL_SOURCES" ] && ls "${LOCAL_SOURCES}/wheels/"torch-*.whl &>/dev/null; then
+    log_info "Installing PyTorch from local wheels..."
+    python3 -m pip install "${LOCAL_SOURCES}/wheels/"torch-*.whl
+    # Install torchvision from local wheel if available, otherwise skip
+    if ls "${LOCAL_SOURCES}/wheels/"torchvision-*.whl &>/dev/null; then
+        python3 -m pip install "${LOCAL_SOURCES}/wheels/"torchvision-*.whl
+    else
+        log_warn "No local torchvision wheel found — skipping torchvision"
+    fi
+else
+    log_info "Installing PyTorch from rocm${PYTORCH_ROCM_VERSION} index..."
+    python3 -m pip install torch torchvision \
+        --index-url "https://download.pytorch.org/whl/rocm${PYTORCH_ROCM_VERSION}"
+fi
 
 # Remove conflicting Triton package bundled with PyTorch
 python3 -m pip uninstall --yes pytorch-triton-rocm 2>/dev/null || true
