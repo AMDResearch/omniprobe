@@ -9,7 +9,7 @@
 #
 # Prerequisites:
 #   - ROCm installed with ROCM_PATH set (e.g., /opt/rocm or /opt/rocm-7.2.0)
-#   - Python 3 with pip and venv
+#   - Python >= 3.10 with pip and venv (PyTorch ROCm wheels require 3.10+)
 #   - Network access (GitHub API, PyPI, PyTorch wheel index)
 #   - ninja, cmake available or installable via pip
 #
@@ -237,13 +237,29 @@ if [ -z "$ROCM_VERSION" ]; then
     return 1
 fi
 
-if ! command -v python3 &>/dev/null; then
-    log_error "python3 not found in PATH"
+# Find a Python >= 3.10 (required for PyTorch ROCm wheels).
+# Try versioned names first (most specific), then fall back to python3.
+PYTHON=""
+for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
+    if command -v "$candidate" &>/dev/null; then
+        _py_ver=$("$candidate" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
+        _py_major=${_py_ver%%.*}
+        _py_minor=${_py_ver##*.}
+        if [ "$_py_major" -eq 3 ] && [ "$_py_minor" -ge 10 ] 2>/dev/null; then
+            PYTHON="$candidate"
+            break
+        fi
+    fi
+done
+unset _py_ver _py_major _py_minor
+if [ -z "$PYTHON" ]; then
+    log_error "Python >= 3.10 not found in PATH"
+    log_error "PyTorch ROCm wheels require Python 3.10+. Install it and retry."
     return 1
 fi
 
 log_info "ROCm ${ROCM_VERSION} at ${ROCM_PATH}"
-log_info "Python: $(python3 --version)"
+log_info "Python: $($PYTHON --version) ($PYTHON)"
 
 # ── Step 1: Detect versions ─────────────────────────────────────────────────
 
@@ -346,15 +362,15 @@ fi
 
 log_step "Step 5: Setting up Python environment"
 
-python3 -m venv .venv --prompt triton
+"$PYTHON" -m venv .venv --prompt triton
 source .venv/bin/activate
 
-log_info "venv activated: $(which python3)"
+log_info "venv activated: $(which python3) ($(python3 --version))"
 
 # Build-time dependencies
 python3 -m pip install ninja cmake wheel pybind11
-# Run-time dependencies
-python3 -m pip install matplotlib pandas
+# Run-time dependencies (includes pyfiglet for omniprobe)
+python3 -m pip install matplotlib pandas pyfiglet
 # PyTorch
 log_info "Installing PyTorch from rocm${PYTORCH_ROCM_VERSION} index..."
 python3 -m pip install torch torchvision \
