@@ -221,11 +221,14 @@ Clean-room test of the script from scratch:
 4. Build Omniprobe against the resulting LLVM
 5. Run Omniprobe handler tests + Triton integration tests
 
-If any step requires manual tweaking, fix the script and repeat. Iterate until
+If steps 1-3 require manual tweaking, fix the script and repeat. Iterate until
 the script runs cleanly from start to finish.
 
-The Omniprobe build and test steps (5-6) are validation only — they confirm the
-script's output is usable, but aren't part of the script itself.
+**Important**: Steps 4-5 (Omniprobe build + tests) are validation only — they
+confirm the script's output is usable, but aren't part of the script itself.
+Any issues found in those steps are NOT triton install script bugs and should
+not trigger script iteration. They should be tracked separately (e.g., the
+`LD_LIBRARY_PATH` issue is tracked in `rf_omniprobe-runtime-paths.md`).
 
 ### Step 6: Update CI references
 
