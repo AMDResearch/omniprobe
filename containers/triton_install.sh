@@ -33,9 +33,26 @@ fi
 _triton_original_params=("$@")
 _triton_original_OPTIND=$OPTIND
 OPTIND=1
+
+# ── Proxy bypass (temporary — remove this block for CI) ──────────────────────
+# Save and unset HTTP proxy variables. The script's network operations (git,
+# curl, pip) hit public endpoints that work better without a corporate proxy.
+_triton_saved_http_proxy="${http_proxy-}"
+_triton_saved_https_proxy="${https_proxy-}"
+_triton_saved_HTTP_PROXY="${HTTP_PROXY-}"
+_triton_saved_HTTPS_PROXY="${HTTPS_PROXY-}"
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+# ── End proxy bypass ─────────────────────────────────────────────────────────
+
 _triton_restore_env() {
     set -- "${_triton_original_params[@]}"
     OPTIND=$_triton_original_OPTIND
+    # ── Proxy restore (temporary — remove this block for CI) ──────────────
+    [ -n "$_triton_saved_http_proxy" ] && export http_proxy="$_triton_saved_http_proxy"
+    [ -n "$_triton_saved_https_proxy" ] && export https_proxy="$_triton_saved_https_proxy"
+    [ -n "$_triton_saved_HTTP_PROXY" ] && export HTTP_PROXY="$_triton_saved_HTTP_PROXY"
+    [ -n "$_triton_saved_HTTPS_PROXY" ] && export HTTPS_PROXY="$_triton_saved_HTTPS_PROXY"
+    # ── End proxy restore ─────────────────────────────────────────────────
 }
 trap _triton_restore_env RETURN
 

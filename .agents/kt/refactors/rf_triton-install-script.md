@@ -215,12 +215,11 @@ Results:
 
 Clean-room test of the script from scratch:
 1. Remove `~/repos/triton` (or work in a fresh directory)
-2. Unset `HTTP_PROXY`/`HTTPS_PROXY` (the script doesn't need a proxy; Claude's
-   API auth does, but that's separate)
-3. Source the script: `source containers/triton_install.sh`
-4. Verify everything completes without manual intervention
-5. Build Omniprobe against the resulting LLVM
-6. Run Omniprobe handler tests + Triton integration tests
+2. Source the script: `source containers/triton_install.sh`
+   (proxy vars are saved/unset/restored by the script automatically)
+3. Verify everything completes without manual intervention
+4. Build Omniprobe against the resulting LLVM
+5. Run Omniprobe handler tests + Triton integration tests
 
 If any step requires manual tweaking, fix the script and repeat. Iterate until
 the script runs cleanly from start to finish.
