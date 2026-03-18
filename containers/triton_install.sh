@@ -370,8 +370,14 @@ log_step "Step 6: Building Triton with shared LLVM"
 # Clean any stale build artifacts
 rm -rf python/triton/_C build compile_commands.json
 
+# CMAKE_PREFIX_PATH ensures find_package(LLVM) finds our custom LLVM build
+# instead of ROCm's LLVM (both report the same version number).
+# PATH must include the LLVM build's bin/ so TRITON_BUILD_WITH_CLANG_LLD
+# can resolve the bare 'clang' and 'clang++' compiler names.
+PATH="${LLVM_BUILD_DIR}/bin:${PATH}" \
 CC="${LLVM_BUILD_DIR}/bin/clang" \
 CXX="${LLVM_BUILD_DIR}/bin/clang++" \
+CMAKE_PREFIX_PATH="${LLVM_BUILD_DIR}" \
 LLVM_BUILD_PATH="${LLVM_BUILD_DIR}" \
 LLVM_BUILD_SHARED_LIBS=1 \
 TRITON_BUILD_WITH_CLANG_LLD=1 \
