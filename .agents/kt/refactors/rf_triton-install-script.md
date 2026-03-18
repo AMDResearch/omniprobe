@@ -1,8 +1,8 @@
 # Refactor: Update Triton Installation Script
 
 ## Status
-- [x] TODO
-- [ ] In Progress
+- [ ] TODO
+- [x] In Progress
 - [ ] Blocked
 - [ ] Done
 
@@ -168,7 +168,7 @@ Check during validation.
 
 ## Implementation Steps
 
-### Step 1: Rewrite `containers/triton_install.sh`
+### Step 1: Rewrite `containers/triton_install.sh` ✅
 
 Implement the design above. The script should:
 - Be sourceable (current script uses `source`; keep this for venv activation)
@@ -243,3 +243,41 @@ adjustments needed for the CI workflow integration.
 - **Triton source patch may move**: The `assert len(names) == 1` line in
   `python/triton/backends/amd/compiler.py` could move or change in newer Triton versions.
   The patch function should handle this gracefully (warn if not found, don't fail).
+
+### Current Step
+
+Step 2: Test locally — build Triton (LLVM build not yet started due to machine constraints)
+
+## Progress Log
+
+### Session 2026-03-18
+- Completed: Step 1 (script rewrite, 3 commits on branch `rf/triton-install-script`)
+- Gates passed:
+  - Script runs through Steps 1-3 correctly: prereq check, version auto-detection
+    (Triton v3.6.0, PyTorch rocm7.1), clone, checkout, patch
+  - Assertion patched at correct new path (`third_party/amd/backend/compiler.py`)
+- Discovered:
+  - **Assertion file moved**: In Triton v3.6.0, the assertion is in
+    `third_party/amd/backend/compiler.py`, not the old
+    `python/triton/backends/amd/compiler.py`. Patch function now searches both paths.
+  - **v3.6.0 build script lacks LLVM_BUILD_SHARED_LIBS env var**: The `LLVM_BUILD_SHARED_LIBS`
+    env var in `build-llvm-project.sh` was added after v3.6.0 (only in HEAD). Fixed by
+    passing all CMake args as positional arguments instead.
+  - **virtiofs is prohibitively slow**: Git operations on 172K LLVM files and the build
+    itself are extremely slow on virtiofs. User will switch to a non-virtiofs machine
+    with 4x cores for the next session.
+  - **Log message stdout capture bug**: `log_info` calls inside `detect_triton_version()`
+    and `detect_pytorch_rocm_version()` were captured by `$(...)`, polluting the return
+    values. Fixed by redirecting to stderr inside those functions.
+- Next: Run the script on a faster machine to complete LLVM build + Triton build (Step 2),
+  then Steps 3-5.
+
+## Rejected Approaches
+
+- **Using LLVM_BUILD_SHARED_LIBS env var**: Triton v3.6.0's `build-llvm-project.sh` doesn't
+  support this env var (added later in HEAD). Must pass `-DBUILD_SHARED_LIBS=ON` as a
+  positional CMake argument instead.
+
+## Last Verified
+Commit: 8cd914a
+Date: 2026-03-18
