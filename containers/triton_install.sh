@@ -2,15 +2,13 @@
 #
 # Build and install Triton with shared-library LLVM for Omniprobe instrumentation.
 #
-# This script must be sourced (not executed) so that the venv activation and
-# environment variables persist in the caller's shell:
-#
-#   source triton_install.sh [OPTIONS]
+# Usage:
+#   ./triton_install.sh [OPTIONS]
 #
 # Prerequisites:
 #   - ROCm installed with ROCM_PATH set (e.g., /opt/rocm or /opt/rocm-7.2.0)
 #   - Python >= 3.10 with pip and venv (PyTorch ROCm wheels require 3.10+)
-#   - Network access (GitHub API, PyPI, PyTorch wheel index)
+#   - Network access (GitHub API, PyPI, PyTorch wheel index), unless --local-sources
 #   - ninja, cmake available or installable via pip
 #
 # The script will:
@@ -20,41 +18,14 @@
 #   4. Patch Triton source for instrumentation compatibility
 #   5. Build and install Triton against the shared LLVM
 #
-# After completion, the venv is activated and TRITON_HIP_LLD_PATH is set.
-# The LLVM build is at ${TRITON_REPO}/llvm-project/build — use this path
-# for Omniprobe's CMake: -DTRITON_LLVM=${TRITON_REPO}/llvm-project/build
+# After completion, activate the environment with:
+#   source <triton-repo>/.venv/bin/activate
+#   export TRITON_HIP_LLD_PATH=${ROCM_PATH}/llvm/bin/ld.lld
+#
+# The LLVM build is at <triton-repo>/llvm-project/build — use this path
+# for Omniprobe's CMake: -DTRITON_LLVM=<triton-repo>/llvm-project/build
 
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    echo "Error: This script must be sourced. Run 'source $(basename "${BASH_SOURCE[0]}")'" >&2
-    exit 1
-fi
-
-# Save original positional parameters and OPTIND
-_triton_original_params=("$@")
-_triton_original_OPTIND=$OPTIND
-OPTIND=1
-
-# ── Proxy bypass (temporary — remove this block for CI) ──────────────────────
-# Save and unset HTTP proxy variables. The script's network operations (git,
-# curl, pip) hit public endpoints that work better without a corporate proxy.
-_triton_saved_http_proxy="${http_proxy-}"
-_triton_saved_https_proxy="${https_proxy-}"
-_triton_saved_HTTP_PROXY="${HTTP_PROXY-}"
-_triton_saved_HTTPS_PROXY="${HTTPS_PROXY-}"
-unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
-# ── End proxy bypass ─────────────────────────────────────────────────────────
-
-_triton_restore_env() {
-    set -- "${_triton_original_params[@]}"
-    OPTIND=$_triton_original_OPTIND
-    # ── Proxy restore (temporary — remove this block for CI) ──────────────
-    [ -n "$_triton_saved_http_proxy" ] && export http_proxy="$_triton_saved_http_proxy"
-    [ -n "$_triton_saved_https_proxy" ] && export https_proxy="$_triton_saved_https_proxy"
-    [ -n "$_triton_saved_HTTP_PROXY" ] && export HTTP_PROXY="$_triton_saved_HTTP_PROXY"
-    [ -n "$_triton_saved_HTTPS_PROXY" ] && export HTTPS_PROXY="$_triton_saved_HTTPS_PROXY"
-    # ── End proxy restore ─────────────────────────────────────────────────
-}
-trap _triton_restore_env RETURN
+set -e
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 
@@ -66,7 +37,7 @@ LOCAL_SOURCES=""        # path to local pre-staged sources (empty = fetch from n
 
 show_help() {
     cat <<'HELP'
-Usage: source triton_install.sh [OPTIONS]
+Usage: ./triton_install.sh [OPTIONS]
 
 Build Triton with shared-library LLVM for Omniprobe instrumentation.
 
@@ -77,15 +48,16 @@ Options:
   --pytorch-rocm VER     PyTorch ROCm wheel index version (e.g., 7.1)
                          Default: highest stable index <= installed ROCm
   --local-sources DIR    Use pre-staged local sources instead of network.
-                         DIR must contain: triton/ (git repo), llvm-project/
-                         (git repo), and optionally wheels/ (*.whl files).
+                         DIR must contain a Triton git repo with
+                         llvm-project/ (git repo) inside it, and optionally
+                         a wheels/ directory with PyTorch .whl files.
   -h, --help             Show this help message
 
 Examples:
-  source triton_install.sh                           # auto-detect everything
-  source triton_install.sh --triton-version v3.6.0   # specific Triton tag
-  source triton_install.sh -g v3.6.0 --pytorch-rocm 7.1
-  source triton_install.sh --local-sources ~/repos/sandbox/triton
+  ./triton_install.sh                           # auto-detect everything
+  ./triton_install.sh --triton-version v3.6.0   # specific Triton tag
+  ./triton_install.sh -g v3.6.0 --pytorch-rocm 7.1
+  ./triton_install.sh --local-sources ~/repos/sandbox/triton
 HELP
 }
 
@@ -202,7 +174,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help)
             show_help
-            return 0
+            exit 0
             ;;
         -g)
             TRITON_VERSION="$2"
@@ -235,7 +207,7 @@ while [ $# -gt 0 ]; do
         *)
             log_error "Unknown option: $1"
             show_help
-            return 1
+            exit 1
             ;;
     esac
 done
@@ -247,24 +219,24 @@ log_step "Checking prerequisites"
 if [ -z "$ROCM_PATH" ]; then
     log_error "ROCM_PATH is not set. Please set it to your ROCm installation."
     log_error "Example: export ROCM_PATH=/opt/rocm-7.2.0"
-    return 1
+    exit 1
 fi
 
 if [ ! -d "$ROCM_PATH" ]; then
     log_error "ROCM_PATH=${ROCM_PATH} does not exist"
-    return 1
+    exit 1
 fi
 
 if [ ! -x "${ROCM_PATH}/llvm/bin/clang" ]; then
     log_error "ROCm clang not found at ${ROCM_PATH}/llvm/bin/clang"
     log_error "Is ROCm properly installed?"
-    return 1
+    exit 1
 fi
 
 ROCM_VERSION=$(get_rocm_version)
 if [ -z "$ROCM_VERSION" ]; then
     log_error "Could not determine ROCm version from ROCM_PATH=${ROCM_PATH}"
-    return 1
+    exit 1
 fi
 
 # Find a Python >= 3.10 (required for PyTorch ROCm wheels).
@@ -285,7 +257,7 @@ unset _py_ver _py_major _py_minor
 if [ -z "$PYTHON" ]; then
     log_error "Python >= 3.10 not found in PATH"
     log_error "PyTorch ROCm wheels require Python 3.10+. Install it and retry."
-    return 1
+    exit 1
 fi
 
 log_info "ROCm ${ROCM_VERSION} at ${ROCM_PATH}"
@@ -295,15 +267,15 @@ log_info "Python: $($PYTHON --version) ($PYTHON)"
 if [ -n "$LOCAL_SOURCES" ]; then
     LOCAL_SOURCES="$(cd "$LOCAL_SOURCES" 2>/dev/null && pwd)" || {
         log_error "--local-sources directory does not exist: $LOCAL_SOURCES"
-        return 1
+        exit 1
     }
     if [ ! -d "${LOCAL_SOURCES}/.git" ]; then
         log_error "--local-sources dir is not a git repo (no .git): ${LOCAL_SOURCES}"
-        return 1
+        exit 1
     fi
     if [ ! -d "${LOCAL_SOURCES}/llvm-project/.git" ]; then
         log_error "--local-sources dir missing llvm-project/ git repo"
-        return 1
+        exit 1
     fi
     log_info "Using local sources: ${LOCAL_SOURCES}"
     if [ -d "${LOCAL_SOURCES}/wheels" ]; then
@@ -321,7 +293,7 @@ if [ -z "$TRITON_VERSION" ]; then
         TRITON_VERSION=$(git -C "$LOCAL_SOURCES" describe --tags --always 2>/dev/null)
         log_info "Triton version from local sources: ${TRITON_VERSION}"
     else
-        TRITON_VERSION=$(detect_triton_version) || return 1
+        TRITON_VERSION=$(detect_triton_version) || exit 1
         log_info "Auto-detected Triton version: ${TRITON_VERSION}"
     fi
 else
@@ -338,7 +310,7 @@ if [ -z "$PYTORCH_ROCM_VERSION" ]; then
         fi
     fi
     if [ -z "$PYTORCH_ROCM_VERSION" ]; then
-        PYTORCH_ROCM_VERSION=$(detect_pytorch_rocm_version "$ROCM_VERSION") || return 1
+        PYTORCH_ROCM_VERSION=$(detect_pytorch_rocm_version "$ROCM_VERSION") || exit 1
         log_info "Auto-detected PyTorch ROCm index: rocm${PYTORCH_ROCM_VERSION}"
     fi
 else
@@ -351,26 +323,14 @@ log_step "Step 2: Cloning Triton ${TRITON_VERSION}"
 
 if [ -n "$LOCAL_SOURCES" ]; then
     git clone "$LOCAL_SOURCES" triton
-    if [ $? -ne 0 ]; then
-        log_error "Failed to clone Triton from local sources: ${LOCAL_SOURCES}"
-        return 1
-    fi
 else
     git clone https://github.com/triton-lang/triton.git
-    if [ $? -ne 0 ]; then
-        log_error "Failed to clone Triton repository"
-        return 1
-    fi
 fi
 
-cd triton || return 1
+cd triton
 TRITON_REPO="$(pwd)"
 
 git checkout "${TRITON_VERSION}"
-if [ $? -ne 0 ]; then
-    log_error "Failed to checkout Triton version: ${TRITON_VERSION}"
-    return 1
-fi
 
 log_info "Triton cloned at ${TRITON_REPO}"
 log_info "Checked out: $(git describe --tags --always 2>/dev/null || echo "${TRITON_VERSION}")"
@@ -428,10 +388,6 @@ scripts/build-llvm-project.sh \
     -DCMAKE_INSTALL_PREFIX="${LLVM_INSTALL_DIR}" \
     -B"${LLVM_BUILD_DIR}" \
     "${TRITON_REPO}/llvm-project/llvm"
-if [ $? -ne 0 ]; then
-    log_error "LLVM build failed"
-    return 1
-fi
 
 unset LLVM_PROJECT_URL 2>/dev/null
 log_info "LLVM built at: ${LLVM_BUILD_DIR}"
@@ -503,16 +459,9 @@ LLVM_LIBRARY_DIR="${LLVM_BUILD_DIR}/lib" \
 LLVM_SYSPATH="${LLVM_BUILD_DIR}" \
 python3 -m pip install . --no-build-isolation
 
-if [ $? -ne 0 ]; then
-    log_error "Triton build/install failed"
-    return 1
-fi
-
-# ── Step 7: Set environment variables and report ────────────────────────────
+# ── Step 7: Report ──────────────────────────────────────────────────────────
 
 log_step "Installation complete"
-
-export TRITON_HIP_LLD_PATH="${ROCM_PATH}/llvm/bin/ld.lld"
 
 log_info "Triton version:     ${TRITON_VERSION}"
 log_info "LLVM hash:          $(cat cmake/llvm-hash.txt 2>/dev/null || echo 'unknown')"
@@ -520,10 +469,13 @@ log_info "PyTorch ROCm index: rocm${PYTORCH_ROCM_VERSION}"
 log_info "ROCm version:       ${ROCM_VERSION}"
 log_info ""
 log_info "Key paths:"
-log_info "  Triton repo:          ${TRITON_REPO}"
-log_info "  LLVM build:           ${LLVM_BUILD_DIR}"
-log_info "  TRITON_HIP_LLD_PATH: ${TRITON_HIP_LLD_PATH}"
-log_info "  Python venv:          ${TRITON_REPO}/.venv"
+log_info "  Triton repo:  ${TRITON_REPO}"
+log_info "  LLVM build:   ${LLVM_BUILD_DIR}"
+log_info "  Python venv:  ${TRITON_REPO}/.venv"
+log_info ""
+log_info "To use this Triton installation:"
+log_info "  source ${TRITON_REPO}/.venv/bin/activate"
+log_info "  export TRITON_HIP_LLD_PATH=${ROCM_PATH}/llvm/bin/ld.lld"
 log_info ""
 log_info "For Omniprobe CMake:"
 log_info "  -DTRITON_LLVM=${LLVM_BUILD_DIR}"
