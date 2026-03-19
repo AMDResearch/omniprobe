@@ -452,22 +452,24 @@ source .venv/bin/activate
 
 log_info "venv activated: $(which python3) ($(python3 --version))"
 
-# Build-time dependencies
-python3 -m pip install ninja cmake wheel pybind11
+# Build-time dependencies (setuptools needed for --no-build-isolation Triton build)
+python3 -m pip install ninja cmake wheel pybind11 setuptools
 # Run-time dependencies (includes pyfiglet for omniprobe)
 python3 -m pip install matplotlib pandas pyfiglet
 # PyTorch
 if [ -n "$LOCAL_SOURCES" ] && ls "${LOCAL_SOURCES}/wheels/"torch-*.whl &>/dev/null; then
     log_info "Installing PyTorch from local wheels..."
-    python3 -m pip install "${LOCAL_SOURCES}/wheels/"torch-*.whl
-    # Install torchvision with --no-deps to prevent pip from pulling a CPU-only
-    # torch from PyPI (the ROCm torch version string like "2.10.0+rocm7.1"
-    # doesn't satisfy torchvision's "torch==2.10.0" requirement).
+    # Use --no-deps for ROCm torch wheels: they declare dependencies on
+    # triton-rocm and other packages not available on PyPI. The actual
+    # dependencies (setuptools, sympy, etc.) are installed separately below.
+    python3 -m pip install --no-deps "${LOCAL_SOURCES}/wheels/"torch-*.whl
     if ls "${LOCAL_SOURCES}/wheels/"torchvision-*.whl &>/dev/null; then
         python3 -m pip install --no-deps "${LOCAL_SOURCES}/wheels/"torchvision-*.whl
     else
         log_warn "No local torchvision wheel found — skipping torchvision"
     fi
+    # Install torch's runtime dependencies that --no-deps skipped
+    python3 -m pip install setuptools sympy filelock networkx jinja2 fsspec typing-extensions
 else
     log_info "Installing PyTorch from rocm${PYTORCH_ROCM_VERSION} index..."
     python3 -m pip install torch torchvision \
