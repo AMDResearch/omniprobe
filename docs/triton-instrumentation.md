@@ -130,14 +130,27 @@ integration), then build with `-DTRITON_LLVM` pointing to the LLVM build:
 cd /path/to/omniprobe
 source ~/repos/triton/.venv/bin/activate
 
+TRITON_DIR=~/repos/triton
+
 cmake -B build \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     -DCMAKE_HIP_ARCHITECTURES=gfx90a \
-    -DTRITON_LLVM=~/repos/triton/llvm-project/build \
+    -DTRITON_LLVM=$(realpath $TRITON_DIR/llvm-project/build) \
     -DCMAKE_INSTALL_PREFIX=$(pwd)/install
 
 cmake --build build -j$(nproc)
 ```
+
+**Important:**
+
+- **`-DTRITON_LLVM` must be an absolute path.** Do not use `~` or shell
+  variables that haven't been expanded — CMake passes this value to an
+  `ExternalProject` sub-build which does not perform tilde expansion, causing
+  the sub-build to fail with "LLVM_INSTALL_DIR is invalid". Use `$(realpath ...)`
+  or write out the full path.
+- **`-DCMAKE_INSTALL_PREFIX` must be set.** The default (`/`) causes permission
+  errors during the install step of the `instrument-amdgpu-kernels` sub-builds.
+  Setting it to `$(pwd)/install` or any writable path avoids this.
 
 Setting `-DTRITON_LLVM` tells CMake to build the `-triton` instrumentation
 plugins in addition to the standard `-rocm` plugins. Both plugin variants are
@@ -150,6 +163,20 @@ against different LLVM installations:
 | `libAMDGCNSubmitAddressMessages-triton.so` | Triton's LLVM (`$TRITON_LLVM`) | Triton JIT-compiled kernels |
 
 ## Step 3: Run tests
+
+### LD_LIBRARY_PATH
+
+When running from a build tree (without `cmake --install`), the Omniprobe
+handler shared libraries (e.g., `libdefaultMessageHandlers64.so`) live in
+`build/` but the `omniprobe` script's library search path doesn't include
+it automatically. Set `LD_LIBRARY_PATH` to include the build directory:
+
+```bash
+export LD_LIBRARY_PATH=/path/to/omniprobe/build:$LD_LIBRARY_PATH
+```
+
+This is only needed when running from the build tree. After `cmake --install`,
+the libraries are copied to the install prefix and found automatically.
 
 ### Handler tests
 
