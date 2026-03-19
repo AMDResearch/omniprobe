@@ -3,14 +3,15 @@
 ## Overview
 Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runtime information such as memory access patterns, cache line usage, and LDS bank conflicts.
 
-**Recent Changes** (2026-03-18):
-- CI analysis: self-hosted `mi100` runner is offline; no successful CI builds in months.
-  Plan to migrate build jobs to GitHub-hosted `ubuntu-latest` runners (build-only, no GPU
-  needed for compilation). Details in `.untracked/ci_update.md`.
-- Refactor dossier `rf_triton-install-script.md` created for rewriting `containers/triton_install.sh`
-  to build Triton with shared-library LLVM for Omniprobe instrumentation support.
-- CI version updates planned: ROCm 7.0/7.1/7.2, latest stable Triton (v3.6.0),
-  PyTorch with matching ROCm index.
+**Recent Changes** (2026-03-19):
+- `containers/triton_install.sh` rewrite complete (refactor `rf_triton-install-script`, done).
+  Script is now a standalone executable with `--triton-version` / `--local-sources` options.
+  Builds LLVM with shared libraries into `${TRITON_REPO}/llvm-project/build/` (deterministic
+  path, replaces old `~/.triton/llvm/llvm-<hash>-ubuntu-x64` approach).
+- CI setup refactor dossier created (`rf_ci-setup.md`): update workflows, container files,
+  and ROCm versions (7.0/7.1/7.2) to match the rewritten install script.
+- CI analysis: self-hosted `mi100` runner is offline; plan to migrate build jobs to
+  GitHub-hosted `ubuntu-latest` runners (build-only, no GPU needed for compilation).
 
 **Changes** (2026-03-08):
 - Standalone `ROCm/hipBLASLt` and `ROCm/rocBLAS` repos are deprecated; source now

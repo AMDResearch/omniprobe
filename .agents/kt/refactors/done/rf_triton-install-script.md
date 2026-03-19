@@ -319,10 +319,15 @@ Deferred — not part of this refactoring scope. Tracked separately.
 
 ### Current Step
 
-Step 5 complete. Step 6 (CI references) is deferred/out of scope.
-Refactor is **done** — ready to mark finished.
+All steps complete. Refactor finalized 2026-03-19.
+Successor refactor for CI updates: `rf_ci-setup.md`.
 
 ## Progress Log
+
+### Session 2026-03-19 (finalized)
+- Refactor marked done and archived to `refactors/done/`
+- Updated `architecture.md` to reflect completed rewrite
+- Successor dossier `rf_ci-setup.md` created for CI infrastructure updates
 
 ### Session 2026-03-19 (executable conversion + final validation)
 - Converted script from source-only to standalone executable (commit cf97576):
