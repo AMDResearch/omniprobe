@@ -460,9 +460,11 @@ python3 -m pip install matplotlib pandas pyfiglet
 if [ -n "$LOCAL_SOURCES" ] && ls "${LOCAL_SOURCES}/wheels/"torch-*.whl &>/dev/null; then
     log_info "Installing PyTorch from local wheels..."
     python3 -m pip install "${LOCAL_SOURCES}/wheels/"torch-*.whl
-    # Install torchvision from local wheel if available, otherwise skip
+    # Install torchvision with --no-deps to prevent pip from pulling a CPU-only
+    # torch from PyPI (the ROCm torch version string like "2.10.0+rocm7.1"
+    # doesn't satisfy torchvision's "torch==2.10.0" requirement).
     if ls "${LOCAL_SOURCES}/wheels/"torchvision-*.whl &>/dev/null; then
-        python3 -m pip install "${LOCAL_SOURCES}/wheels/"torchvision-*.whl
+        python3 -m pip install --no-deps "${LOCAL_SOURCES}/wheels/"torchvision-*.whl
     else
         log_warn "No local torchvision wheel found — skipping torchvision"
     fi
