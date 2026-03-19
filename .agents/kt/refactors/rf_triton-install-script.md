@@ -2,9 +2,9 @@
 
 ## Status
 - [ ] TODO
-- [x] In Progress
+- [ ] In Progress
 - [ ] Blocked
-- [ ] Done
+- [x] Done
 
 ## Objective
 
@@ -211,7 +211,7 @@ Results:
   handler libraries. This is a pre-existing issue, not caused by our changes.
 - Note: Triton venv needs `pyfiglet` installed for omniprobe to run.
 
-### Step 5: End-to-end script validation — IN PROGRESS (Session 2026-03-18c)
+### Step 5: End-to-end script validation ✅ (Session 2026-03-18c/19)
 
 Clean-room test of the script from scratch:
 1. Remove `~/repos/triton` (or work in a fresh directory)
@@ -256,13 +256,27 @@ Pre-staged local sources at `~/repos/sandbox/triton/`:
 - `~/repos/sandbox/triton/wheels/` — **awaiting PyTorch wheel** (user downloading
   from home network, will scp to cluster)
 
-#### Next session: resume clean-room test
+#### Clean-room attempt 2 (local sources, torchvision --no-deps issue)
 
-1. Confirm wheels are in place at `~/repos/sandbox/triton/wheels/`
-2. Clean `~/repos/triton` if it exists (should already be clean)
-3. Run: `cd ~/repos && source .../containers/triton_install.sh --local-sources ~/repos/sandbox/triton`
-4. If script completes: build Omniprobe and run tests (validation steps 4-5 from above)
-5. If script fails: fix and iterate
+Script ran through LLVM build and torch install successfully, but torchvision
+install (without `--no-deps`) pulled CPU-only torch from PyPI, overriding the
+ROCm wheel. Also, torch itself needed `--no-deps` because its `triton-rocm==3.6.0`
+dependency isn't on PyPI. Fixed in commit e357364 (torchvision) and 08aca72
+(torch + setuptools).
+
+#### Clean-room attempt 3 (local sources, fully passing)
+
+With both fixes: script ran from scratch to completion in ~15 minutes.
+- Steps 1-3: instant (local clone, version from tags/wheel filenames)
+- Step 4: LLVM build ~12 min (7608 targets on 128 cores)
+- Step 5: PyTorch from local wheels (seconds), deps from PyPI (small packages, fast)
+- Step 6: Triton built and installed (`triton-3.6.0+git7c56a5e4`)
+- Step 7: Environment reported correctly
+
+Omniprobe validation:
+- Built with `-DTRITON_LLVM=~/repos/triton/llvm-project/build` — all targets OK
+- Handler tests: **19/19 pass**
+- Triton integration tests: **5/5 pass**
 
 ### Step 6: Update CI references
 
@@ -305,24 +319,32 @@ Deferred — not part of this refactoring scope. Tracked separately.
 
 ### Current Step
 
-Step 5: End-to-end script validation — in progress.
-Resume with `--local-sources ~/repos/sandbox/triton` once PyTorch wheel is staged.
+Step 5 complete. Step 6 (CI references) is deferred/out of scope.
+Refactor is **done** — ready to mark finished.
 
 ## Progress Log
 
-### Session 2026-03-18c (clean-room validation, same 128-core wekafs machine)
-- Working on: Step 5 (end-to-end script validation)
+### Session 2026-03-18c / 2026-03-19 (clean-room validation, same 128-core wekafs machine)
+- Completed: Step 5 (end-to-end script validation)
+- Commits: a2e690e (--local-sources), e357364 (torchvision --no-deps),
+  08aca72 (torch --no-deps + setuptools)
 - Clean-room attempt 1 (network mode): Steps 1-4 passed, Step 5 failed on
   PyTorch download (hash mismatch from slow network, ~657 KB/s for 5.4 GB).
   Script correctly reported the error — not a script bug.
-- Added `--local-sources` option to the script (commit a2e690e) so that
-  repos and wheels can be pre-staged locally, bypassing slow network.
-- Pre-staged local sources at `~/repos/sandbox/triton/` (Triton v3.6.0 +
-  LLVM f6ded0be cloned from local repos). Wheels dir created but awaiting
-  user to scp PyTorch wheel from home network.
-- `~/repos/triton` cleaned up (deleted) — ready for next clean-room attempt.
-- **Next**: When PyTorch wheel is in `~/repos/sandbox/triton/wheels/`, run
-  `cd ~/repos && source .../triton_install.sh --local-sources ~/repos/sandbox/triton`
+- Added `--local-sources` option (commit a2e690e) to bypass slow network.
+- Clean-room attempt 2 (local sources): torchvision install without `--no-deps`
+  pulled CPU-only torch from PyPI (version mismatch: "2.10.0+rocm7.1" vs "2.10.0").
+  Torch itself also needed `--no-deps` (triton-rocm not on PyPI). Fixed.
+- Clean-room attempt 3 (local sources, final): **full pass**. Script ran
+  start-to-finish in ~15 min. Omniprobe built and all tests passed.
+- Discovered:
+  - **ROCm torch wheels need --no-deps**: The ROCm torch wheel declares
+    `triton-rocm==3.6.0` as a dependency, which is not on PyPI. Must use
+    `--no-deps` when installing from local wheels. Same for torchvision
+    (its torch version requirement doesn't match the "+rocm7.1" suffix).
+  - **setuptools needed for --no-build-isolation**: Triton's pyproject.toml
+    build backend requires setuptools, which isn't in a fresh venv. Added
+    to build-time deps.
 
 ### Session 2026-03-18b (continued on 128-core wekafs machine)
 - Completed: Steps 2, 3, 4
@@ -401,5 +423,5 @@ Resume with `--local-sources ~/repos/sandbox/triton` once PyTorch wheel is stage
   Both cmake 3.31.10 and 4.x produce the same error when finding ROCm's LLVM.
 
 ## Last Verified
-Commit: a2e690e
-Date: 2026-03-18
+Commit: 08aca72
+Date: 2026-03-19
