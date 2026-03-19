@@ -171,7 +171,7 @@ Check during validation.
 ### Step 1: Rewrite `containers/triton_install.sh` ✅ (Session 2026-03-18a)
 
 Implement the design above. The script should:
-- Be sourceable (current script uses `source`; keep this for venv activation)
+- Be a standalone executable (converted from source-only in session 2026-03-19)
 - Print clear progress messages for each phase
 - Fail fast on errors (`set -e` or explicit error checks)
 - Report the versions used at the end (Triton tag, LLVM hash, PyTorch version,
@@ -324,6 +324,24 @@ Refactor is **done** — ready to mark finished.
 
 ## Progress Log
 
+### Session 2026-03-19 (executable conversion + final validation)
+- Converted script from source-only to standalone executable (commit cf97576):
+  - Removed source guard, proxy save/restore, OPTIND/params save, trap RETURN
+  - Changed all `return` → `exit`
+  - Added `set -e` for error handling
+  - Prints activation instructions at end instead of exporting vars
+  - Net: 39 insertions, 87 deletions
+- Clean-room test of executable version: **15m 22s**, exit code 0
+  - Steps 1-3: instant with local sources
+  - Step 4 (LLVM): ~14 min (7608 targets on 128 cores)
+  - Step 5 (Python env): ~30s from cached wheels
+  - Step 6 (Triton build): ~45s
+- Omniprobe build + validation:
+  - Handler tests: **19/19 pass**
+  - Triton integration tests: **5/5 pass**
+  - Note: `LD_LIBRARY_PATH` must include build dirs for tests to run
+    (pre-existing issue, not related to script changes)
+
 ### Session 2026-03-18c / 2026-03-19 (clean-room validation, same 128-core wekafs machine)
 - Completed: Step 5 (end-to-end script validation)
 - Commits: a2e690e (--local-sources), e357364 (torchvision --no-deps),
@@ -423,5 +441,5 @@ Refactor is **done** — ready to mark finished.
   Both cmake 3.31.10 and 4.x produce the same error when finding ROCm's LLVM.
 
 ## Last Verified
-Commit: 08aca72
+Commit: cf97576
 Date: 2026-03-19
