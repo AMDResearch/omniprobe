@@ -2,13 +2,14 @@ name: Ubuntu Linux (ROCm, LLVM)
 run-name: ubuntu
 
 on:
+  workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ main, rf/ci-setup ]
     paths-ignore:
       - '*.md'
       - 'docs/**'
   pull_request:
-    branches: [ main ]
+    branches: [ ci-validated ]
     paths-ignore:
       - '*.md'
       - 'docs/**'
