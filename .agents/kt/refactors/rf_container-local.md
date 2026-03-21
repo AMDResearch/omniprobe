@@ -87,8 +87,8 @@ After renames, update any references to the old filenames:
 
 ## Dependencies
 
-- Wait for `rf_ci-setup` Step 7 to complete before starting, so the base image
-  (22.04 vs 24.04) is finalized and the Dockerfile split is done. The `.def`
+- ~~Wait for `rf_ci-setup` Step 7 to complete~~ **Done** (2026-03-21). Base image
+  is `rocm/dev-ubuntu-24.04:7.2`, Dockerfile split is finalized. The `.def`
   file should mirror the final Dockerfile structure.
 
 ## Notes
