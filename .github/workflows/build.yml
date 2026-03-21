@@ -1,0 +1,73 @@
+name: Build
+run-name: build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        rocm-version: ['7.2']
+        build-type: ['Release']
+
+    name: rocm${{ matrix.rocm-version }}-${{ matrix.build-type }}
+    steps:
+      - name: Clone repo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.CLONE_TOKEN }}
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and install in container
+        timeout-minutes: 25
+        shell: bash
+        env:
+          IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/omniprobe-toolchain:latest-rocm${{ matrix.rocm-version }}
+          BUILD_TYPE: ${{ matrix.build-type }}
+        run: |
+          docker pull "$IMAGE"
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace \
+            "$IMAGE" \
+            bash -c "
+              set -e
+              git config --global --add safe.directory /workspace
+              mkdir -p /opt/logduration
+              cmake --version
+              rm -rf build
+              mkdir -p build
+              cmake \
+                -DCMAKE_INSTALL_PREFIX=/opt/logduration \
+                -DCMAKE_PREFIX_PATH=\${ROCM_PATH} \
+                -DTRITON_LLVM=\${TRITON_LLVM} \
+                -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+                -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+                -DCMAKE_VERBOSE_MAKEFILE=ON \
+                -S . -B build
+              cmake --build build --target install
+            "

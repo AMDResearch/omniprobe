@@ -8,10 +8,15 @@ Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runti
   Script is now a standalone executable with `--triton-version` / `--local-sources` options.
   Builds LLVM with shared libraries into `${TRITON_REPO}/llvm-project/build/` (deterministic
   path, replaces old `~/.triton/llvm/llvm-<hash>-ubuntu-x64` approach).
-- CI setup refactor dossier created (`rf_ci-setup.md`): update workflows, container files,
-  and ROCm versions (7.0/7.1/7.2) to match the rewritten install script.
-- CI analysis: self-hosted `mi100` runner is offline; plan to migrate build jobs to
-  GitHub-hosted `ubuntu-latest` runners (build-only, no GPU needed for compilation).
+- CI setup refactor in progress (`rf_ci-setup.md`, branch `rf/ci-setup`):
+  - Two-tier container architecture: `toolchain.Dockerfile` (LLVM/Triton, ~4.5h)
+    + `omniprobe.Dockerfile` (code build, ~5min)
+  - Base image: `rocm/dev-ubuntu-24.04` (switched from 22.04)
+  - Workflows renamed: `toolchain-image.yml` + `build.yml`
+  - `toolchain-image.yml`: narrow triggers, pushes to `omniprobe-toolchain` DockerHub
+  - `build.yml`: pulls toolchain image, builds omniprobe on top
+  - Staleness check reads Triton version from `toolchain.Dockerfile`
+  - Awaiting CI validation (toolchain build ~4.5h on GHA)
 
 **Changes** (2026-03-08):
 - Standalone `ROCm/hipBLASLt` and `ROCm/rocBLAS` repos are deprecated; source now

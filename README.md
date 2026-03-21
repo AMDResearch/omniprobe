@@ -1,7 +1,8 @@
 # Omniprobe
 
-[![Ubuntu Linux (ROCm, LLVM)](https://github.com/AMDResearch/omniprobe/actions/workflows/ubuntu.yml/badge.svg)](https://github.com/AMDResearch/omniprobe/actions/workflows/ubuntu.yml)
-[![RedHat Linux (ROCm, LLVM)](https://github.com/AMDResearch/omniprobe/actions/workflows/redhat.yml/badge.svg)](https://github.com/AMDResearch/omniprobe/actions/workflows/redhat.yml)
+[![Triton Version Staleness Check](https://github.com/AMDResearch/omniprobe/actions/workflows/triton-staleness-check.yml/badge.svg)](https://github.com/AMDResearch/omniprobe/actions/workflows/triton-staleness-check.yml)
+[![Build Toolchain Image](https://github.com/AMDResearch/omniprobe/actions/workflows/toolchain-image.yml/badge.svg)](https://github.com/AMDResearch/omniprobe/actions/workflows/toolchain-image.yml)
+[![Build](https://github.com/AMDResearch/omniprobe/actions/workflows/build.yml/badge.svg)](https://github.com/AMDResearch/omniprobe/actions/workflows/build.yml)
 
 > [!IMPORTANT]  
 > This project is in an alpha state. We are making it available early because of significant interest in having access to it now. There is still some productization and packaging to do. And many more tests need to be added. It works, but if you use it enough, you will undoubtedly find corner cases where things go wrong. The good news is that you _can_ mostly have far more performance visibility inside kernels running on AMD Instinct GPUs than has ever been possible before.

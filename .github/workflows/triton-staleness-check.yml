@@ -1,0 +1,44 @@
+name: Triton Version Staleness Check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'containers/toolchain.Dockerfile'
+  schedule:
+    # Run weekly on Monday at 08:00 UTC
+    - cron: '0 8 * * 1'
+
+jobs:
+  check-triton-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check pinned vs latest Triton version
+        shell: bash
+        run: |
+          # Extract pinned version from toolchain Dockerfile (ARG TRITON_VERSION=...)
+          PINNED=$(grep -oP 'ARG TRITON_VERSION=\K\S+' containers/toolchain.Dockerfile || true)
+          if [ -z "$PINNED" ]; then
+            echo "::error::Could not extract pinned Triton version from toolchain.Dockerfile"
+            exit 1
+          fi
+          echo "Pinned Triton version: ${PINNED}"
+
+          # Query latest release from GitHub API
+          LATEST=$(curl -s https://api.github.com/repos/triton-lang/triton/releases/latest | jq -r '.tag_name')
+          if [ -z "$LATEST" ] || [ "$LATEST" = "null" ]; then
+            echo "::warning::Could not determine latest Triton release from GitHub API"
+            exit 0
+          fi
+          echo "Latest Triton release: ${LATEST}"
+
+          # Compare
+          if [ "$PINNED" != "$LATEST" ]; then
+            echo "::warning::Pinned Triton version (${PINNED}) differs from latest release (${LATEST}). Consider updating."
+          else
+            echo "Triton version is up to date."
+          fi

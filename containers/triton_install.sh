@@ -32,6 +32,7 @@ set -e
 TRITON_VERSION=""       # auto-detect if empty
 PYTORCH_ROCM_VERSION="" # auto-detect if empty
 LOCAL_SOURCES=""        # path to local pre-staged sources (empty = fetch from network)
+SKIP_LLVM=false         # if true, skip Steps 1-4 (assume triton cloned + LLVM built)
 
 # ── Usage ────────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,9 @@ Options:
                          DIR must contain a Triton git repo with
                          llvm-project/ (git repo) inside it, and optionally
                          a wheels/ directory with PyTorch .whl files.
+  --skip-llvm            Skip Steps 1-4 (assume Triton already cloned and
+                         LLVM already built). Resume from Step 5.
+                         Used by Dockerfile to separate LLVM build layer.
   -h, --help             Show this help message
 
 Examples:
@@ -204,6 +208,10 @@ while [ $# -gt 0 ]; do
             LOCAL_SOURCES="${1#*=}"
             shift
             ;;
+        --skip-llvm)
+            SKIP_LLVM=true
+            shift
+            ;;
         *)
             log_error "Unknown option: $1"
             show_help
@@ -282,6 +290,33 @@ if [ -n "$LOCAL_SOURCES" ]; then
         log_info "Local wheels dir:   ${LOCAL_SOURCES}/wheels/"
     fi
 fi
+
+
+# -- Skip-LLVM fast path -------------------------------------------------------
+
+if $SKIP_LLVM; then
+    log_step "Resuming after LLVM (--skip-llvm)"
+    if [ ! -d "triton" ]; then
+        log_error "triton/ directory not found -- run without --skip-llvm first"
+        exit 1
+    fi
+    cd triton
+    TRITON_REPO="$(pwd)"
+    LLVM_BUILD_DIR="${TRITON_REPO}/llvm-project/build"
+    LLVM_INSTALL_DIR="${TRITON_REPO}/llvm-project/install"
+    if [ ! -d "$LLVM_BUILD_DIR" ]; then
+        log_error "LLVM build not found at ${LLVM_BUILD_DIR}"
+        exit 1
+    fi
+    export PATH="${ROCM_PATH}/llvm/bin:${PATH}"
+    log_info "Triton repo: ${TRITON_REPO}"
+    log_info "LLVM build:  ${LLVM_BUILD_DIR}"
+    # Detect PyTorch ROCm version (needed for Step 5)
+    if [ -z "$PYTORCH_ROCM_VERSION" ]; then
+        PYTORCH_ROCM_VERSION=$(detect_pytorch_rocm_version "$ROCM_VERSION") || exit 1
+        log_info "Auto-detected PyTorch ROCm index: rocm${PYTORCH_ROCM_VERSION}"
+    fi
+else
 
 # ── Step 1: Detect versions ─────────────────────────────────────────────────
 
@@ -399,6 +434,8 @@ else
     log_warn "LLVM shared libraries not found — build may have used static linking"
 fi
 
+fi  # end of "if ! $SKIP_LLVM"
+
 # ── Step 5: Create venv and install Python dependencies ─────────────────────
 
 log_step "Step 5: Setting up Python environment"
@@ -428,7 +465,10 @@ if [ -n "$LOCAL_SOURCES" ] && ls "${LOCAL_SOURCES}/wheels/"torch-*.whl &>/dev/nu
     python3 -m pip install setuptools sympy filelock networkx jinja2 fsspec typing-extensions
 else
     log_info "Installing PyTorch from rocm${PYTORCH_ROCM_VERSION} index..."
-    python3 -m pip install torch torchvision \
+    # --no-cache-dir: PyTorch ROCm wheels are ~2.8 GB; pip's internal cache
+    # serializer (msgpack) raises "Memoryview is too large" when trying to
+    # cache responses of that size.
+    python3 -m pip install --no-cache-dir torch torchvision \
         --index-url "https://download.pytorch.org/whl/rocm${PYTORCH_ROCM_VERSION}"
 fi
 

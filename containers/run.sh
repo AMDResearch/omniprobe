@@ -13,10 +13,10 @@ parent_dir="$(dirname "$script_dir")"
 # Parse arguments
 use_docker=false
 use_apptainer=false
-rocm_version="6.3"  # Default ROCm version
+rocm_version="7.2"  # Default ROCm version
 
 # Supported ROCm versions
-supported_rocm_versions=("6.3" "6.4")
+supported_rocm_versions=("7.0" "7.1" "7.2")
 
 while [[ $# -gt 0 ]]; do
   case $1 in

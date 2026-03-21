@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Container name
 name="omniprobe"
@@ -11,10 +12,10 @@ cur_dir=$(pwd)
 # Parse arguments
 build_docker=false
 build_apptainer=false
-rocm_version="6.3"  # Default ROCm version
+rocm_version="7.2"  # Default ROCm version
 
 # Supported ROCm versions
-supported_rocm_versions=("6.3" "6.4")
+supported_rocm_versions=("7.0" "7.1" "7.2")
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -63,6 +64,7 @@ if [ "$build_docker" = true ]; then
     # Enable BuildKit and build the Docker image
     export DOCKER_BUILDKIT=1
     docker build \
+        --load \
         --build-arg ROCM_VERSION="$rocm_version" \
         -t "$name:$(cat "$parent_dir/VERSION")-rocm$rocm_version" \
         -f "$script_dir/omniprobe.Dockerfile" \
