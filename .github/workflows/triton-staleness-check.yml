@@ -38,7 +38,8 @@ jobs:
 
           # Compare
           if [ "$PINNED" != "$LATEST" ]; then
-            echo "::warning::Pinned Triton version (${PINNED}) differs from latest release (${LATEST}). Consider updating."
+            echo "::error::Pinned Triton version (${PINNED}) differs from latest release (${LATEST}). Consider updating."
+            exit 1
           else
             echo "Triton version is up to date."
           fi
