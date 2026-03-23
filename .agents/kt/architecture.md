@@ -4,14 +4,11 @@
 Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runtime information such as memory access patterns, cache line usage, and LDS bank conflicts.
 
 **Recent Changes** (2026-03-23):
-- Fixed omniprobe runtime path resolution (refactor `rf_omniprobe-runtime-paths`, done).
-  Named analyzers (`-a Heatmap`, `-a MemoryAnalysis`) now work without manual
-  `LD_LIBRARY_PATH`. Introduced `handler_lib_dir` for correct path derivation in
-  both build and install modes.
-- Planned install tree restructure (`rf_install-tree-restructure`, TODO).
-  Will replace scattered `logDuration` layout with clean `<prefix>/omniprobe/{bin,lib,config}`
-  tree, with `lib/plugins/` and `lib/bitcode/` subdirectories. Build tree will mirror
-  install tree relative paths.
+- Install tree restructure complete (`rf_install-tree-restructure`, done).
+  Both build and install trees now use `<root>/omniprobe/{bin,lib,lib/plugins,lib/bitcode,config}`.
+  `omniprobe` script derives all paths from its own location (`dirname(dirname(abspath(__file__)))`),
+  eliminating `runtime_config.txt` dependency. Test scripts support `OMNIPROBE_ROOT` env var
+  for install-tree testing.
 - Unified kernel discovery for runtime-loaded code objects (refactor `rf_unify-kernel-discovery`, done).
   Instrumented kernels in `.hsaco` files loaded via `hipModuleLoad()` are now auto-discovered
   without `--library-filter` when both original and `__amd_crk_*` variants are in the same code object.
@@ -146,21 +143,40 @@ cd external/dh_comms && git status
 
 ## Path Guidelines
 
-**IMPORTANT**: Always use repo-relative paths in scripts and tests. Never hardcode installation paths.
+**IMPORTANT**: All paths are derived from the omniprobe script's own location. Never hardcode paths.
 
-- **Test scripts**: Use `REPO_ROOT` derived from `SCRIPT_DIR` to find omniprobe and build artifacts
-- **omniprobe location**: `${REPO_ROOT}/omniprobe/omniprobe` (source), not `~/.local/bin/...` (installation)
-- **Build artifacts**: `${REPO_ROOT}/build/...` (relative to repo root)
-- **Why**: Hardcoded paths break portability. Other developers cloning the repo must be able to run tests without modification.
+### Build tree layout
+```
+build/
+  bin/omniprobe          → ../../omniprobe/omniprobe (symlink)
+  config/                → ../omniprobe/config (symlink)
+  lib/*.so               (interceptor + handlers + runtime deps)
+  lib/plugins/*.so       (LLVM instrumentation plugins, symlinks)
+  lib/bitcode/*.bc       (dh_comms device bitcode, copies)
+```
 
+### Install tree layout
+```
+<prefix>/omniprobe/
+  bin/omniprobe          (Python script)
+  config/                (analytics.py, triton_config.py)
+  lib/*.so               (interceptor + handlers + runtime deps)
+  lib/plugins/*.so       (LLVM instrumentation plugins)
+  lib/bitcode/*.bc       (dh_comms device bitcode)
+```
+
+### Path resolution
+The `omniprobe` script uses `dirname(dirname(abspath(__file__)))` to find its root.
+This works identically from both trees because the relative layout is the same.
+
+### Test scripts
+Test scripts accept `OMNIPROBE_ROOT` env var to override which tree to use:
 ```bash
-# CORRECT: Derive paths from script location
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-OMNIPROBE="${REPO_ROOT}/omniprobe/omniprobe"
+# Build tree (default):
+tests/run_handler_tests.sh
 
-# WRONG: Hardcoded installation path
-OMNIPROBE="~/.local/bin/logDuration/omniprobe"
+# Install tree:
+OMNIPROBE_ROOT=/path/to/install/omniprobe tests/run_handler_tests.sh
 ```
 
 ## Build
@@ -179,7 +195,6 @@ Current build config stored in `build/CMakeCache.txt`. Key variables:
 
 Useful build artifacts:
 - `build/compile_commands.json` — for IDE/LSP code navigation
-- `build/runtime_config.txt` — generated config for omniprobe script
 
 ## Environment Variables
 

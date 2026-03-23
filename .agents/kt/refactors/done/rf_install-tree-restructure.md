@@ -361,5 +361,5 @@ submodules' defaults. Determine best approach during implementation.
   Install tree will only contain `bin/`, `lib/`, `lib/plugins/`, `lib/bitcode/`, and `config/`.
 
 ## Last Verified
-Commit: c36cfed
+Commit: 8542b0f (merge to main)
 Date: 2026-03-23

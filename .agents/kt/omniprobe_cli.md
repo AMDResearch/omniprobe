@@ -74,8 +74,8 @@ Configured in `omniprobe/config/analytics.py`:
 - Instrumentation plugins (loaded via LLVM_PASS_PLUGIN_PATH)
 
 ## Configuration
-- `omniprobe/config/` — configuration files
-- `runtime_config.txt` — generated at build time
+- `config/` — configuration files (relative to omniprobe root)
+- Triton support auto-detected by checking for `*-triton.so` in `lib/plugins/`
 
 ## HIP vs Triton Instrumentation
 
