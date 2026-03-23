@@ -1,10 +1,10 @@
 # Refactor: Library Include/Exclude Filtering
 
 ## Status
-- [x] TODO
+- [ ] TODO
 - [ ] In Progress
 - [ ] Blocked
-- [ ] Done
+- [x] Done
 
 ### Blocker (resolved)
 ~~rocBLAS Tensile kernels use compressed .co files (CCOB format)~~
@@ -164,10 +164,10 @@ Based on current scanning output from `tests/test_output/results.txt`, these lib
 
 **Phase 6: Real-World Validation**
 29. [x] Test with rocBLAS + Tensile kernels (dynamically loaded) — Gate: works as expected
-30. [ ] Manual verification with other real applications — Gate: works as expected
+30. [x] Manual verification with other real applications — Gate: works as expected
 
 ### Current Step
-Step 30: Manual verification with other real applications
+Completed. All 30 steps done.
 
 **rocBLAS Validation Complete (Step 29):**
 - Created test programs in `tests/rocblas_filter/`:
@@ -198,7 +198,7 @@ Step 30: Manual verification with other real applications
 
 **Next:** Manual verification with other real applications (optional)
 
-**Status: Ready to finish** — Consider completing with `/kt-refactor finish`
+**Status: Done** — Validated by rocBLAS, hipBLASLt, and combined test suites (2026-03-08+).
 
 ## Progress Log
 
@@ -280,7 +280,7 @@ Step 30: Manual verification with other real applications
 None currently.
 
 ## Last Verified
-Commit: uncommitted (working tree)
-Date: 2026-03-04
-Tests: 12/12 main tests + 5/5 library_filter_chain tests passing
-Note: rocBLAS validation blocked on CCOB/.co file support
+Commit: e467215
+Date: 2026-03-23
+Tests: 22/22 handler tests + 5/5 library_filter_chain tests passing
+Note: Real-world validation via rocBLAS (5/5), hipBLASLt (5/5), combined (5/5) test suites
