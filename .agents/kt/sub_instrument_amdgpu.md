@@ -23,6 +23,8 @@ LLVM IR instrumentation plugins. At compile time, clones kernels and inserts ins
 - `libAMDGCNSubmitBBInterval-{rocm,triton}.so` — basic block timing
 
 All plugins use dh_comms bitcode for device-side message submission.
+Bitcode located via `getBitcodePath()`: looks in `../bitcode/` relative to plugin dir
+(i.e., `lib/bitcode/` when plugin is in `lib/plugins/`), with fallback to same directory.
 
 ### Key Concepts
 - **Kernel Cloning**: Original kernel `foo` → instrumented `foo_inst`
@@ -78,5 +80,5 @@ instrument-amdgpu-kernels/
 ```
 
 ## Last Verified
-Submodule commit: ad7cff4
-Date: 2026-03-16
+Submodule commit: 643a30c
+Date: 2026-03-23

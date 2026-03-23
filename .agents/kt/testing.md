@@ -212,10 +212,9 @@ Simple HIP kernels for testing specific scenarios. These are automatically instr
 
 **Automatic Instrumentation** (via `tests/test_kernels/CMakeLists.txt`):
 - Test kernels compiled with `-fpass-plugin=${INST_PLUGIN}`
-- Plugin path: `build/external/instrument-amdgpu-kernels-rocm/build/lib/libAMDGCNSubmitAddressMessages-rocm.so`
-- Bitcode files copied from dh_comms to plugin directories:
-  - `copy_bitcode_to_rocm` — copies co6 files to ROCm plugin dir
-  - `copy_bitcode_to_triton` — copies co5 files to Triton plugin dir (if `TRITON_LLVM` defined)
+- Plugin path: `build/lib/plugins/libAMDGCNSubmitAddressMessages-rocm.so`
+- Bitcode files copied to `build/lib/bitcode/` (via `copy_bitcode` target)
+- Plugin symlinks created in `build/lib/plugins/` (via `symlink_plugins` target)
 - Instrumentation happens at compile time, producing ready-to-run instrumented executables
 
 **Building test kernels**:
@@ -405,7 +404,7 @@ The compilation produces a Clang Offload Bundle which must be unbundled first.
 **2026-03-05**:
 - Added rocBLAS integration test suite (`tests/rocblas_filter/`) — uses `INSTRUMENTED_ROCBLAS_LIB_DIR` env var
 - Added Triton integration test suite (`tests/triton/`)
-- Split `copy_bitcode_files` into `copy_bitcode_to_rocm` (co6) and `copy_bitcode_to_triton` (co5)
+- Split `copy_bitcode_files` into `copy_bitcode_to_rocm` (co6) and `copy_bitcode_to_triton` (co5) [later unified into `copy_bitcode`]
 - Triton test uses `TRITON_DIR` env var; skips gracefully if unset
 - Test output colors changed from yellow to orange (256-color ANSI) for readability on light backgrounds
 - Suite 2 (library filter chain) output cleaned up: build/run output suppressed, only test summaries shown
