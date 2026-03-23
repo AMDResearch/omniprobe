@@ -1,8 +1,8 @@
 # Refactor: Install Tree Restructure
 
 ## Status
-- [ ] TODO
-- [x] In Progress
+- [x] TODO
+- [ ] In Progress
 - [ ] Blocked
 - [ ] Done
 
@@ -285,21 +285,31 @@ exists, rather than reading it from a config file.
 
 Currently, `ext_proj_add` passes `CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}` to
 ExternalProject, causing it to install to the final prefix during build. For the new
-layout, the ExternalProject needs to install to `${CMAKE_INSTALL_PREFIX}/omniprobe/`
-(or we change the install rules in the submodule to include the `omniprobe/` prefix).
+layout, the ExternalProject needs to install to `${CMAKE_INSTALL_PREFIX}/omniprobe/`.
 
-Preferred approach: change the submodule install() destinations to use `omniprobe/`
-prefix. This keeps `ext_proj_add` unchanged and the submodules self-contained.
+**Decision**: Change `ext_proj_add` to pass
+`-DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}/omniprobe`. Submodules keep their
+generic install rules (`lib/`, `lib/plugins/`, etc.) and remain usable outside
+omniprobe. The top-level project controls the `omniprobe/` namespace via the
+install prefix it passes down.
 
-Alternative: change `ext_proj_add` to pass `-DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}/omniprobe`.
-Simpler per-submodule, but couples the prefix to the top-level project name.
+For `add_subdirectory` submodules (dh_comms, kerneldb): set
+`CMAKE_INSTALL_PREFIX` in the parent scope before `add_subdirectory()`, or use
+`install(... DESTINATION omniprobe/...)` in the top-level install rules that
+reference these targets. The latter is cleaner since `add_subdirectory` targets
+are visible to the parent.
 
-Decision deferred to implementation — discuss with user when reaching step 8.
+### dh_comms / kerneldb install destinations
 
-### dh_comms libdh_comms.so install destination
-
-Currently installs to `lib/`. Needs to become `omniprobe/lib/` (or the cmake install
-prefix needs to include `omniprobe/`). Same question as ExternalProject prefix above.
+These are `add_subdirectory` projects, so their install() rules run as part of
+the parent's install step. Since we don't want to modify their install rules
+(they may be used standalone), the top-level CMakeLists.txt should override
+their install destinations. CMake doesn't directly support this for
+add_subdirectory targets, so the cleanest approach is: set
+`CMAKE_INSTALL_PREFIX` to `${original_prefix}/omniprobe` before calling
+`add_subdirectory()` for these projects (and restore it after if needed),
+or use the `COMPONENT` mechanism to separate omniprobe's install from the
+submodules' defaults. Determine best approach during implementation.
 
 ## Progress Log
 
@@ -323,8 +333,6 @@ prefix needs to include `omniprobe/`). Same question as ExternalProject prefix a
 
 ## Open Questions
 
-- Should the `omniprobe/` prefix be hardcoded in submodule install rules, or
-  should it be passed via CMAKE_INSTALL_PREFIX? (See Design Decisions above)
 - Should the install tree include `include/` and `share/` directories? These
   serve development use cases but add clutter for end users.
 
