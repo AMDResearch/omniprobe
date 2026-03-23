@@ -4,6 +4,14 @@
 Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runtime information such as memory access patterns, cache line usage, and LDS bank conflicts.
 
 **Recent Changes** (2026-03-23):
+- Fixed omniprobe runtime path resolution (refactor `rf_omniprobe-runtime-paths`, done).
+  Named analyzers (`-a Heatmap`, `-a MemoryAnalysis`) now work without manual
+  `LD_LIBRARY_PATH`. Introduced `handler_lib_dir` for correct path derivation in
+  both build and install modes.
+- Planned install tree restructure (`rf_install-tree-restructure`, TODO).
+  Will replace scattered `logDuration` layout with clean `<prefix>/omniprobe/{bin,lib,config}`
+  tree, with `lib/plugins/` and `lib/bitcode/` subdirectories. Build tree will mirror
+  install tree relative paths.
 - Unified kernel discovery for runtime-loaded code objects (refactor `rf_unify-kernel-discovery`, done).
   Instrumented kernels in `.hsaco` files loaded via `hipModuleLoad()` are now auto-discovered
   without `--library-filter` when both original and `__amd_crk_*` variants are in the same code object.
