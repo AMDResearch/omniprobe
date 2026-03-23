@@ -83,7 +83,7 @@ echo "  Run under omniprobe -i (no --library-filter) — expect instrumented alt
 OUTPUT_FILE="$OUTPUT_DIR/${TEST_NAME}.out"
 
 ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
-    LD_LIBRARY_PATH="${BUILD_DIR}:${LD_LIBRARY_PATH}" \
+    LD_LIBRARY_PATH="${OMNIPROBE_ROOT}/lib:${LD_LIBRARY_PATH}" \
     "$OMNIPROBE" -i -a Heatmap \
     -- "$MODULE_LOAD_TEST" "$MODULE_LOAD_HSACO" > "$OUTPUT_FILE" 2>&1 \
     && run_ok=true || run_ok=true  # Don't fail on non-zero exit
@@ -119,7 +119,7 @@ cat > "$FILTER_FILE" <<EOF
 EOF
 
 ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
-    LD_LIBRARY_PATH="${BUILD_DIR}:${LD_LIBRARY_PATH}" \
+    LD_LIBRARY_PATH="${OMNIPROBE_ROOT}/lib:${LD_LIBRARY_PATH}" \
     "$OMNIPROBE" -i -a Heatmap \
     --library-filter "$FILTER_FILE" \
     -- "$MODULE_LOAD_TEST" "$MODULE_LOAD_HSACO" > "$OUTPUT_FILE" 2>&1 \

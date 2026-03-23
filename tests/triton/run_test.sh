@@ -15,7 +15,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-OMNIPROBE="${REPO_ROOT}/omniprobe/omniprobe"
+OMNIPROBE="${OMNIPROBE:-${REPO_ROOT}/build/bin/omniprobe}"
 TRITON_CACHE="${HOME}/.triton/cache"
 VECTOR_ADD="${SCRIPT_DIR}/vector_add.py"
 OUTPUT_DIR="${SCRIPT_DIR}/test_output"

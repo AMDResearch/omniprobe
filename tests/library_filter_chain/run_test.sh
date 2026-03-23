@@ -88,7 +88,7 @@ if [ "$NO_INSTRUMENT" = false ]; then
     # Find instrumentation plugin from main omniprobe build
     # Look for it in common locations
     OMNIPROBE_BUILD="${SCRIPT_DIR}/../../build"
-    INST_PLUGIN="${OMNIPROBE_BUILD}/external/instrument-amdgpu-kernels-rocm/build/lib/libAMDGCNSubmitAddressMessages-rocm.so"
+    INST_PLUGIN="${OMNIPROBE_BUILD}/lib/plugins/libAMDGCNSubmitAddressMessages-rocm.so"
 
     if [ -f "$INST_PLUGIN" ]; then
         CMAKE_ARGS+=("-DINST_PLUGIN=${INST_PLUGIN}")

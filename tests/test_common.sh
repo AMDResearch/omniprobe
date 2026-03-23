@@ -4,13 +4,18 @@
 # Source this file from feature-specific test scripts
 ################################################################################
 
-# Derive paths from repo structure
+# Derive paths from repo structure (allow env overrides for install-tree testing)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-BUILD_DIR="${REPO_ROOT}/build"
+BUILD_DIR="${BUILD_DIR:-${REPO_ROOT}/build}"
 
-# Use repo's omniprobe - always use relative paths, never hardcoded installation paths
-OMNIPROBE="${REPO_ROOT}/omniprobe/omniprobe"
+# OMNIPROBE_ROOT is the tree that contains bin/omniprobe and lib/.
+# Defaults to BUILD_DIR but can be overridden for install-tree testing.
+OMNIPROBE_ROOT="${OMNIPROBE_ROOT:-${BUILD_DIR}}"
+
+# Use build tree's omniprobe by default (symlink to source script) — this ensures path
+# resolution works via the build tree layout (build/bin/omniprobe → build/lib/, etc.)
+OMNIPROBE="${OMNIPROBE:-${OMNIPROBE_ROOT}/bin/omniprobe}"
 
 TEST_KERNELS_DIR="${SCRIPT_DIR}/test_kernels"
 OUTPUT_DIR="${SCRIPT_DIR}/test_output"
