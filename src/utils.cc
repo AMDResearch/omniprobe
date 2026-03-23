@@ -165,7 +165,7 @@ coCache::coCache(HsaApiTable *apiTable)
 {
     apiTable_ = apiTable;
     auto status = apiTable_->core_->hsa_system_get_major_extension_table_fn(HSA_EXTENSION_AMD_LOADER, 1, sizeof(loader_api_), &loader_api_);
-    CHECK_STATUS("Unable to find HSA extension table", status);
+    CHECK_STATUS("Unable to find HSA loader extension table", status);
 }
 
 coCache::~coCache()
@@ -202,44 +202,214 @@ bool coCache::hasKernels(hsa_agent_t agent)
 
 }
 
-bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descriptor_t& desc, bool instrumented)
+void coCache::registerRuntimeKernel(const std::string& name, hsa_executable_symbol_t symbol,
+                                    uint64_t kernel_object, hsa_agent_t agent, uint32_t kernarg_size)
 {
-    // std::cout << "coCache::getArgDescriptor for agent " << agent.handle << " and kernel " << name << " (instrumented=" << instrumented << ")" << std::endl;
-    // std::cout << "clone_hidden_args_length before lookup: " << desc.clone_hidden_args_length << std::endl;
-    bool bReturn = false;
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = arg_map_.find(agent);
-    size_t clone_hidden_args_length = 0;
-    if (it != arg_map_.end())
-    {
-        std::string strName;
-        if (instrumented)
-        {
-            auto itclone = it->second.find(name);
-            if (itclone != it->second.end())
-            {
-                // std::cout << "itclone->second.kernarg_length: " << itclone->second.kernarg_length << std::endl;
-                // std::cout << "itclone->second.explicit_args_length: " << itclone->second.explicit_args_length << std::endl;
-                // If there are hidden arguments in the clone, compute how many bytes of kernarg data comprises the hidden kernargs.
-                if (itclone->second.hidden_args_length)
-                    clone_hidden_args_length = itclone->second.kernarg_length - itclone->second.explicit_args_length;
-                    //clone_hidden_args_length = itclone->second.kernarg_length - (itclone->second.explicit_args_count * sizeof(void *));
-            }
+    lock_guard<std::mutex> lock(mutex_);
+    // Add to lookup_map_ so findAlternative() can find this kernel by name
+    auto it = lookup_map_.find(agent);
+    if (it != lookup_map_.end()) {
+        if (it->second.find(name) != it->second.end())
+            return;  // Already registered
+        it->second[name] = symbol;
+    } else {
+        lookup_map_[agent] = {{name, symbol}};
+    }
+    kernarg_sizes_[kernel_object] = kernarg_size;
+    runtime_kernel_objects_[agent][name] = kernel_object;
+}
 
-            strName = getInstrumentedName(name);
-        }
-        else
-            strName = name;
-        auto dit = it->second.find(strName);
-        if (dit != it->second.end())
-        {
-            desc = dit->second;
-            desc.clone_hidden_args_length = clone_hidden_args_length;
-            bReturn = true;
+bool coCache::resolveRuntimeArgDescriptors(hsa_agent_t agent)
+{
+    // For kernels registered via registerRuntimeKernel() that don't have arg
+    // descriptors yet, use the AMD loader API to get the code object bytes and
+    // extract COMGR metadata.
+
+    // Collect kernel_objects for kernels missing arg descriptors.
+    // Use runtime_kernel_objects_ to avoid calling through the HSA hook
+    // (which would re-enter the interceptor and deadlock on its mutex).
+    std::vector<uint64_t> missing_kernel_objects;
+    {
+        lock_guard<std::mutex> lock(mutex_);
+        auto rk_it = runtime_kernel_objects_.find(agent);
+        if (rk_it == runtime_kernel_objects_.end())
+            return false;
+        auto am_it = arg_map_.find(agent);
+        for (auto& [name, ko] : rk_it->second) {
+            if (am_it == arg_map_.end() || am_it->second.find(name) == am_it->second.end())
+                missing_kernel_objects.push_back(ko);
         }
     }
-    //std::cout << "clone_hidden_args_length after lookup: " << desc.clone_hidden_args_length << std::endl;
-    return bReturn;
+    if (missing_kernel_objects.empty())
+        return true;
+
+    // For each missing kernel, find its executable via the loader API, then
+    // iterate the executable's loaded code objects to get the ELF bytes.
+    // We collect unique executables to avoid redundant iteration.
+    std::set<uint64_t> processed_executables;
+
+    for (uint64_t kernel_object : missing_kernel_objects) {
+        hsa_executable_t executable;
+        auto status = loader_api_.hsa_ven_amd_loader_query_executable(
+            reinterpret_cast<const void*>(kernel_object), &executable);
+        if (status != HSA_STATUS_SUCCESS)
+            continue;
+
+        if (!processed_executables.insert(executable.handle).second)
+            continue;  // Already processed this executable
+
+        // Iterate loaded code objects in this executable
+        struct IterData {
+            coCache* self;
+            hsa_agent_t agent;
+        } iter_data = {this, agent};
+
+        loader_api_.hsa_ven_amd_loader_executable_iterate_loaded_code_objects(
+            executable,
+            [](hsa_executable_t, hsa_loaded_code_object_t lco, void* data) -> hsa_status_t {
+                auto* d = static_cast<IterData*>(data);
+                auto& api = d->self->loader_api_;
+
+                // Check storage type — we need MEMORY type
+                uint32_t storage_type;
+                auto s = api.hsa_ven_amd_loader_loaded_code_object_get_info(
+                    lco, HSA_VEN_AMD_LOADER_LOADED_CODE_OBJECT_INFO_CODE_OBJECT_STORAGE_TYPE,
+                    &storage_type);
+                if (s != HSA_STATUS_SUCCESS)
+                    return HSA_STATUS_SUCCESS;  // Skip, continue iteration
+
+                const char* co_data = nullptr;
+                size_t co_size = 0;
+                std::vector<char> file_buf;  // For FILE storage: owns the read data
+
+                if (storage_type == HSA_VEN_AMD_LOADER_CODE_OBJECT_STORAGE_TYPE_MEMORY) {
+                    uint64_t base = 0, size = 0;
+                    api.hsa_ven_amd_loader_loaded_code_object_get_info(
+                        lco, HSA_VEN_AMD_LOADER_LOADED_CODE_OBJECT_INFO_CODE_OBJECT_STORAGE_MEMORY_BASE,
+                        &base);
+                    api.hsa_ven_amd_loader_loaded_code_object_get_info(
+                        lco, HSA_VEN_AMD_LOADER_LOADED_CODE_OBJECT_INFO_CODE_OBJECT_STORAGE_MEMORY_SIZE,
+                        &size);
+                    co_data = reinterpret_cast<const char*>(base);
+                    co_size = static_cast<size_t>(size);
+                } else if (storage_type == HSA_VEN_AMD_LOADER_CODE_OBJECT_STORAGE_TYPE_FILE) {
+                    // For file-based code objects: read the file via its fd
+                    int fd = -1;
+                    api.hsa_ven_amd_loader_loaded_code_object_get_info(
+                        lco, HSA_VEN_AMD_LOADER_LOADED_CODE_OBJECT_INFO_CODE_OBJECT_STORAGE_FILE,
+                        &fd);
+                    if (fd >= 0) {
+                        // Duplicate fd since the original may be managed by the loader
+                        int dup_fd = dup(fd);
+                        if (dup_fd >= 0) {
+                            struct stat st;
+                            if (fstat(dup_fd, &st) == 0 && st.st_size > 0) {
+                                file_buf.resize(st.st_size);
+                                lseek(dup_fd, 0, SEEK_SET);
+                                ssize_t nread = read(dup_fd, file_buf.data(), st.st_size);
+                                if (nread == st.st_size) {
+                                    co_data = file_buf.data();
+                                    co_size = static_cast<size_t>(nread);
+                                }
+                            }
+                            close(dup_fd);
+                        }
+                    }
+                } else {
+                    return HSA_STATUS_SUCCESS;  // NONE — skip
+                }
+
+                if (co_data && co_size) {
+                    KernelArgHelper kah("");
+                    kah.addCodeObject(co_data, co_size);
+
+                    lock_guard<std::mutex> lock(d->self->mutex_);
+                    auto lm_it = d->self->lookup_map_.find(d->agent);
+                    if (lm_it != d->self->lookup_map_.end()) {
+                        for (auto& [kname, ksym] : lm_it->second) {
+                            auto am_it = d->self->arg_map_.find(d->agent);
+                            if (am_it != d->self->arg_map_.end() &&
+                                am_it->second.find(kname) != am_it->second.end())
+                                continue;
+                            arg_descriptor_t desc;
+                            if (kah.getArgDescriptor(kname, desc)) {
+                                d->self->arg_map_[d->agent][kname] = desc;
+                            }
+                        }
+                    }
+                }
+                return HSA_STATUS_SUCCESS;
+            },
+            &iter_data);
+    }
+    return true;
+}
+
+bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descriptor_t& desc, bool instrumented)
+{
+    // First attempt: look up in arg_map_ (populated by addFile or resolveRuntimeArgDescriptors)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = arg_map_.find(agent);
+        size_t clone_hidden_args_length = 0;
+        if (it != arg_map_.end())
+        {
+            std::string strName;
+            if (instrumented)
+            {
+                auto itclone = it->second.find(name);
+                if (itclone != it->second.end())
+                {
+                    if (itclone->second.hidden_args_length)
+                        clone_hidden_args_length = itclone->second.kernarg_length - itclone->second.explicit_args_length;
+                }
+
+                strName = getInstrumentedName(name);
+            }
+            else
+                strName = name;
+            auto dit = it->second.find(strName);
+            if (dit != it->second.end())
+            {
+                desc = dit->second;
+                desc.clone_hidden_args_length = clone_hidden_args_length;
+                return true;
+            }
+        }
+    }
+
+    // Second attempt: resolve arg descriptors from runtime-loaded code objects via
+    // the AMD loader API, then retry the lookup
+    if (resolveRuntimeArgDescriptors(agent))
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = arg_map_.find(agent);
+        size_t clone_hidden_args_length = 0;
+        if (it != arg_map_.end())
+        {
+            std::string strName;
+            if (instrumented)
+            {
+                auto itclone = it->second.find(name);
+                if (itclone != it->second.end())
+                {
+                    if (itclone->second.hidden_args_length)
+                        clone_hidden_args_length = itclone->second.kernarg_length - itclone->second.explicit_args_length;
+                }
+                strName = getInstrumentedName(name);
+            }
+            else
+                strName = name;
+            auto dit = it->second.find(strName);
+            if (dit != it->second.end())
+            {
+                desc = dit->second;
+                desc.clone_hidden_args_length = clone_hidden_args_length;
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 bool coCache::getCodeObjectRef(hsa_agent_t agent, const std::string& name, CodeObjectRef& ref)
@@ -702,6 +872,10 @@ KernArgAllocator::~KernArgAllocator()
 
 KernelArgHelper::KernelArgHelper(const std::string file_name)
 {
+    // Empty filename: skip file loading. Use addCodeObject() to provide data later.
+    if (file_name.empty())
+        return;
+
     /*
      * Load and pull kernel argument data out of an .hsaco file
      * This code makes no assumptions about what ISA is supported
