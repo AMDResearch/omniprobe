@@ -3,7 +3,16 @@
 ## Overview
 Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runtime information such as memory access patterns, cache line usage, and LDS bank conflicts.
 
-**Recent Changes** (2026-03-19):
+**Recent Changes** (2026-03-23):
+- Unified kernel discovery for runtime-loaded code objects (refactor `rf_unify-kernel-discovery`, done).
+  Instrumented kernels in `.hsaco` files loaded via `hipModuleLoad()` are now auto-discovered
+  without `--library-filter` when both original and `__amd_crk_*` variants are in the same code object.
+  Uses HSA symbol hook → `coCache::registerRuntimeKernel()` + AMD loader API v1.01 for lazy
+  arg descriptor extraction. `--library-filter` still needed for external-file case.
+- Added module-load kernel discovery test suite (3 tests, `run_module_load_tests.sh`).
+  Handler tests now 22/22 passing.
+
+**Changes** (2026-03-19):
 - `containers/triton_install.sh` rewrite complete (refactor `rf_triton-install-script`, done).
   Script is now a standalone executable with `--triton-version` / `--local-sources` options.
   Builds LLVM with shared libraries into `${TRITON_REPO}/llvm-project/build/` (deterministic
@@ -177,4 +186,4 @@ Useful build artifacts:
 | `DH_COMMS_GROUP_FILTER_X/Y/Z` | Block index filters (N or N:M range) |
 
 ## Last Verified
-Date: 2026-03-21
+Date: 2026-03-23

@@ -72,6 +72,7 @@ Orchestrates end-to-end tests by sourcing feature-specific subscripts.
 - `run_block_filter_tests.sh` — `--filter-x/y/z` tests (tests 4-9)
 - `run_library_filter_tests.sh` — `--library-filter` tests (tests 10-12)
 - `run_scope_filter_tests.sh` — `INSTRUMENTATION_SCOPE` tests (tests 13-19)
+- `run_module_load_tests.sh` — hipModuleLoad kernel discovery tests (tests 20-22)
 - `run_handler_tests.sh` — main orchestrator that sources all subscripts
 
 **What it does**:
@@ -94,11 +95,12 @@ run_filter_test "test_name" "/path/to/kernel" expected_count "x_filter" "y_filte
 run_library_filter_test "test_name" "/path/to/kernel" '{"exclude":[...]}' "present|absent" "pattern"
 ```
 
-**Current tests** (19 total):
+**Current tests** (22 total):
 1-3. Basic handler tests (Heatmap, MemoryAnalysis)
 4-9. Block filter tests (`--filter-x/y/z` CLI)
 10-12. Library filter tests (`--library-filter` exclude/include)
 13-19. Scope filter tests (`INSTRUMENTATION_SCOPE` compile-time filtering)
+20-22. Module-load kernel discovery tests (hipModuleLoad .hsaco)
 
 ### Triton Integration Tests: `tests/triton/`
 
@@ -195,6 +197,13 @@ Simple HIP kernels for testing specific scenarios. These are automatically instr
 - Kernel with 4 `// SCOPE_MARKER` lines (2 loads, 2 stores) on distinct lines
 - Compiled on-the-fly by `run_scope_filter_tests.sh` (NOT built by CMake)
 - Test script discovers marker line numbers dynamically via `grep -n`
+
+**`module_load_kernel.hip`** + **`module_load_test.cpp`**:
+- Standalone kernel compiled to `.hsaco` (separate translation unit), loaded at runtime via `hipModuleLoad()`
+- Tests runtime kernel discovery: auto-discovery of instrumented alternatives in same code object
+- `.hsaco` compiled with `--offload-device-only --no-gpu-bundle-output -fpass-plugin` for raw ELF
+- Host program uses `hipModuleLoad`/`hipModuleLaunchKernel` (no `-fgpu-rdc`, no plugin)
+- Test script `run_module_load_tests.sh`: symbol check, auto-discovery, filter-assisted discovery
 
 **`hip_test_utils.h`**:
 - `CHECK_HIP(call)` macro for clean HIP error checking
@@ -381,6 +390,14 @@ The compilation produces a Clang Offload Bundle which must be unbundled first.
 
 ## Recent Changes
 
+**2026-03-23** (rf_unify-kernel-discovery):
+- Added module-load kernel discovery test suite (`run_module_load_tests.sh`, tests 20-22)
+- New test kernel: `module_load_kernel.hip` compiled to standalone `.hsaco` with instrumentation
+- New host program: `module_load_test.cpp` using `hipModuleLoad`/`hipModuleLaunchKernel`
+- CMake: custom command for `.hip` → `.hsaco` compilation with `--no-gpu-bundle-output`
+- Tests: symbol verification (nm), auto-discovery without `--library-filter`, filter-assisted discovery
+- Handler tests now 22/22 passing
+
 **2026-03-06**:
 - Added hipBLASLt instrumentation test suite (`tests/hipblaslt/`) — uses `INSTRUMENTED_HIPBLASLT_LIB_DIR` env var
 - Added hipBLASLt build instructions (currently untracked in `.untracked/hipblaslt-instrumentation.md`)
@@ -417,8 +434,8 @@ The compilation produces a Clang Offload Bundle which must be unbundled first.
 - Reordered suites: handler, library filter chain, hipBLASLt, rocBLAS, combined, Triton (6 suites)
 
 ## Last Verified
-Date: 2026-03-16
-- Handler tests: 19/19 passing (3 handler + 6 block filter + 3 library filter + 7 scope filter)
+Date: 2026-03-23
+- Handler tests: 22/22 passing (3 handler + 6 block filter + 3 library filter + 7 scope filter + 3 module-load)
 - Library filter chain: 5/5 passing
 - hipBLASLt instrumentation: 5/5 passing (requires `INSTRUMENTED_HIPBLASLT_LIB_DIR`; skips otherwise)
 - rocBLAS integration: 5/5 passing (requires `INSTRUMENTED_ROCBLAS_LIB_DIR`; skips otherwise)
