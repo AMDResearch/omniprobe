@@ -163,5 +163,5 @@ install(TARGETS
     ${BB_PLUGIN_NAME}
     ${MEM_ANALYSIS_PLUGIN_NAME}
   LIBRARY DESTINATION
-    lib/${DEST_NAME}
+    omniprobe/lib
 )

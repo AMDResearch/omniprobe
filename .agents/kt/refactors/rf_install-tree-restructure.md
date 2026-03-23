@@ -2,9 +2,9 @@
 
 ## Status
 - [ ] TODO
-- [x] In Progress
+- [ ] In Progress
 - [ ] Blocked
-- [ ] Done
+- [x] Done
 
 ## Objective
 
@@ -176,37 +176,37 @@ build/
 
 #### Phase A: Build tree restructure
 
-1. [ ] **Move top-level .so to build/lib/** — Gate: build
+1. [x] **Move top-level .so to build/lib/** — Gate: build
    - Set `LIBRARY_OUTPUT_DIRECTORY` on interceptor target (src/CMakeLists.txt)
    - Set `LIBRARY_OUTPUT_DIRECTORY` on handler plugin targets (plugins/CMakeLists.txt)
    - Set `LIBRARY_OUTPUT_DIRECTORY` on dh_comms and kernelDB targets (after
      add_subdirectory, from parent CMakeLists.txt)
    - Verify all .so files appear in `build/lib/`
 
-2. [ ] **Move bitcode to build/lib/bitcode/** — Gate: build
+2. [x] **Move bitcode to build/lib/bitcode/** — Gate: build
    - Replace `copy_bitcode_to_rocm` target to copy to `${CMAKE_BINARY_DIR}/lib/bitcode/`
    - Replace `copy_bitcode_to_triton` target similarly
    - Update `INST_PLUGIN` path in tests/test_kernels/CMakeLists.txt (will be
      needed after step 3)
 
-3. [ ] **Create build/lib/plugins/ with LLVM plugin .so files** — Gate: build
+3. [x] **Create build/lib/plugins/ with LLVM plugin .so files** — Gate: build
    - Add custom target to symlink (or copy) ExternalProject plugin .so files
      from `external/instrument-amdgpu-kernels-*/build/lib/` to `build/lib/plugins/`
    - Depends on `instrument-amdgpu-kernels-rocm` and `-triton` targets
 
-4. [ ] **Update getBitcodePath()** — Gate: build + compile test kernel
+4. [x] **Update getBitcodePath()** — Gate: build + compile test kernel
    - In `external/instrument-amdgpu-kernels/src/InstrumentationCommon.cpp`:
    - Replace `/lib/` stripping logic with: find plugin dir via `dladdr()`,
      replace trailing path component (`plugins`) with `bitcode`
    - Construct: `PluginDir/../bitcode/dh_comms_dev_{arch}_{cov}.bc`
    - Commit in instrument-amdgpu-kernels submodule
 
-5. [ ] **Create build/bin/ and build/config/ symlinks** — Gate: build
+5. [x] **Create build/bin/ and build/config/ symlinks** — Gate: build
    - `build/bin/omniprobe` → `../../omniprobe/omniprobe`
    - `build/config/` → `../omniprobe/config/` (or copy)
    - Add cmake custom commands for these
 
-6. [ ] **Update omniprobe script path resolution** — Gate: handler tests pass
+6. [x] **Update omniprobe script path resolution** — Gate: handler tests pass
    - Derive `root_dir` from script's own location: `dirname(dirname(__file__))`
      (works because script is at `<root>/bin/omniprobe` in both trees via symlink)
    - `lib_dir = root_dir + "/lib"`
@@ -217,14 +217,14 @@ build/
    - Update `handler_lib_dir`, `base_llvm_pass_plugin`, `base_hsa_tools_lib`
    - Update `config_path`
 
-7. [ ] **Update test scripts** — Gate: 22/22 handler tests + 5/5 Triton
+7. [x] **Update test scripts** — Gate: 22/22 handler tests + 5/5 Triton
    - `tests/run_handler_tests.sh` and subscripts: update omniprobe path, build dir refs
    - `tests/triton/run_test.sh`: update plugin path
    - Any other test scripts referencing build dir artifacts
 
 #### Phase B: Install tree restructure
 
-8. [ ] **Update cmake install rules** — Gate: cmake --install produces correct tree
+8. [x] **Update cmake install rules** — Gate: cmake --install produces correct tree
    - Root CMakeLists.txt:
      - Interceptor: `lib/${DEST_NAME}` → `omniprobe/lib`
      - Script: `bin/${DEST_NAME}` → `omniprobe/bin`
@@ -239,23 +239,23 @@ build/
    - Adjust `ext_proj_add` CMAKE_INSTALL_PREFIX if needed to get the
      `omniprobe/` prefix for ExternalProject installs
 
-9. [ ] **Verify install tree** — Gate: correct directory tree
+9. [x] **Verify install tree** — Gate: correct directory tree
    - `cmake --install build --prefix /tmp/test-install`
    - Verify all files at expected locations
    - Verify omniprobe -e shows correct paths from install tree
 
-10. [ ] **Drop soversion symlinks** — Gate: build + install
+10. [x] **Drop soversion symlinks** — Gate: build + install
     - Remove VERSION/SOVERSION properties from interceptor and submodule targets
     - Verify only bare .so files (no .so.1, .so.1.0.0)
 
 #### Phase C: Cleanup
 
-11. [ ] **Remove DEST_NAME / logDuration references** — Gate: build + install
+11. [x] **Remove DEST_NAME / logDuration references** — Gate: build + install
     - Remove `DEST_NAME` variable from CMakeLists.txt
     - Grep for any remaining `logDuration` references and clean up
     - Update CPACK settings if needed
 
-12. [ ] **Final test pass** — Gate: all tests pass from both trees
+12. [x] **Final test pass** — Gate: all tests pass from both trees
     - Handler tests from build tree (22/22)
     - Triton tests from build tree (5/5)
     - omniprobe -e from install tree
@@ -263,7 +263,7 @@ build/
 
 ### Current Step
 
-Phase A, Step 1 (not started)
+All phases complete.
 
 ## Design Decisions
 
@@ -308,6 +308,35 @@ submodules' defaults. Determine best approach during implementation.
 
 ## Progress Log
 
+### Session 2026-03-23c: Phases B-C complete — REFACTOR DONE
+- Completed steps 10-12 (continuation of previous session)
+- Step 10: Removed VERSION/SOVERSION from interceptor and kerneldb targets
+  - Build and install trees produce only bare .so files (no .so.1, .so.1.0.0)
+- Step 11: Removed DEST_NAME variable and dead install rules from kerneldb
+  - Remaining `logDuration` references are the library target name itself (out of scope for rename)
+- Step 12: Final test pass
+  - Handler tests: 22/22 pass
+  - Triton tests: 5/5 pass
+  - Install tree matches dossier contract exactly
+  - omniprobe -e works from both build and install trees
+- Commits: 052a3c2..c36cfed (2 commits)
+- Total commits on rf/install-tree-restructure: 12
+
+### Session 2026-03-23b: Phase A complete
+- Completed all 7 steps of Phase A (build tree restructure)
+- All .so files now in build/lib/ (via LIBRARY_OUTPUT_DIRECTORY)
+- Bitcode files in build/lib/bitcode/ (via copy_bitcode target)
+- Plugin symlinks in build/lib/plugins/ (via symlink_plugins target)
+- getBitcodePath() updated to look in ../bitcode/ relative to plugin
+- build/bin/omniprobe and build/config symlinks created
+- omniprobe script rewritten to derive paths from script location
+- All test scripts updated for new paths
+- 22/22 handler tests pass
+- Fixed strip command (was using *.so glob in build root)
+- Parallel build race condition in clean builds is pre-existing (not related to refactor)
+- Decision: install tree omits include/ and share/ (user preference)
+- Commits: 1464d56..3a094a2 (7 commits on rf/install-tree-restructure)
+
 ### Session 2026-03-23: Dossier created
 - Completed research: ext_proj_add macro, getBitcodePath() logic, install rules,
   omniprobe script path resolution, copy_bitcode targets
@@ -332,5 +361,5 @@ submodules' defaults. Determine best approach during implementation.
   Install tree will only contain `bin/`, `lib/`, `lib/plugins/`, `lib/bitcode/`, and `config/`.
 
 ## Last Verified
-Commit: N/A
+Commit: c36cfed
 Date: 2026-03-23

@@ -218,9 +218,6 @@ include(${LIB_DIR}/CMakeLists.txt)
 include(${PLUGIN_DIR}/CMakeLists.txt)
 #include(${TEST_DIR}/CMakeLists.txt)
 
-# Set the VERSION and SOVERSION values
-set_property(TARGET ${TARGET_NAME} PROPERTY VERSION "${LIB_VERSION_STRING}")
-set_property(TARGET ${TARGET_NAME} PROPERTY SOVERSION "${LIB_VERSION_MAJOR}")
 # If the library is a release, strip the target library
 if("${CMAKE_BUILD_TYPE}" STREQUAL release)
   add_custom_command(TARGET ${INTERCEPTOR_TARGET} POST_BUILD
@@ -257,25 +254,30 @@ if(INTERCEPTOR_BUILD_TESTING)
 endif()
 
 # Installation and packaging
-set(DEST_NAME ${INTERCEPTOR_NAME})
-if(DEFINED CPACK_PACKAGING_INSTALL_PREFIX)
-  get_filename_component(pkg_name ${CPACK_PACKAGING_INSTALL_PREFIX} NAME)
-  get_filename_component(pkg_dir ${CPACK_PACKAGING_INSTALL_PREFIX} DIRECTORY)
-  if(pkg_name STREQUAL ${DEST_NAME})
-    set(CPACK_PACKAGING_INSTALL_PREFIX ${pkg_dir})
-  endif()
-else()
+if(NOT DEFINED CPACK_PACKAGING_INSTALL_PREFIX)
   set(CPACK_PACKAGING_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX})
 endif()
 message("CMake-install-prefix: ${CMAKE_INSTALL_PREFIX}")
 message("CPack-install-prefix: ${CPACK_PACKAGING_INSTALL_PREFIX}")
-message("-----------Dest-name: ${DEST_NAME}")
 
-# Install header and library
-install(TARGETS ${INTERCEPTOR_TARGET} LIBRARY DESTINATION lib/${DEST_NAME})
-install(PROGRAMS ${ROOT_DIR}/omniprobe/omniprobe DESTINATION bin/${DEST_NAME})
-install(DIRECTORY ${ROOT_DIR}/omniprobe/config DESTINATION bin/${DEST_NAME} FILES_MATCHING PATTERN "*")
-install(FILES "${CMAKE_BINARY_DIR}/runtime_config.txt" DESTINATION bin/${DEST_NAME})
+# Install omniprobe into <prefix>/omniprobe/
+install(TARGETS ${INTERCEPTOR_TARGET} LIBRARY DESTINATION omniprobe/lib)
+install(PROGRAMS ${ROOT_DIR}/omniprobe/omniprobe DESTINATION omniprobe/bin)
+install(DIRECTORY ${ROOT_DIR}/omniprobe/config DESTINATION omniprobe FILES_MATCHING PATTERN "*")
+
+# Install LLVM instrumentation plugins from ExternalProject build dirs
+install(DIRECTORY ${CMAKE_BINARY_DIR}/external/instrument-amdgpu-kernels-rocm/build/lib/
+    DESTINATION omniprobe/lib/plugins
+    USE_SOURCE_PERMISSIONS
+    FILES_MATCHING PATTERN "*.so"
+    PATTERN "CMakeFiles" EXCLUDE)
+if(DEFINED TRITON_LLVM)
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/external/instrument-amdgpu-kernels-triton/build/lib/
+        DESTINATION omniprobe/lib/plugins
+        USE_SOURCE_PERMISSIONS
+        FILES_MATCHING PATTERN "*.so"
+        PATTERN "CMakeFiles" EXCLUDE)
+endif()
 
 # Packaging directives
 set(CPACK_GENERATOR "DEB" "RPM" "TGZ")
