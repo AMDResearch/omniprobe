@@ -258,7 +258,7 @@ install_path = get_install_path()
 if install_path[0] == "install":
     base_llvm_pass_plugin = os.path.join(install_path[1])
     base_hsa_tools_lib = os.path.join(install_path[1], "lib", "logDuration")
-    handler_lib_dir = os.path.join(install_path[1], "lib", "logDuration")
+    handler_lib_dir = os.path.join(install_path[1], "lib")
 else:
     base_llvm_pass_plugin = os.path.join(install_path[1], "external", "instrument-amdgpu-kernels-triton", "build")
     base_hsa_tools_lib = os.path.join(install_path[1])
