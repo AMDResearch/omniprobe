@@ -1,8 +1,8 @@
 # Refactor: Omniprobe Runtime Path Resolution
 
 ## Status
-- [ ] TODO
-- [x] In Progress
+- [x] TODO
+- [ ] In Progress
 - [ ] Blocked
 - [ ] Done
 
