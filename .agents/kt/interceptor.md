@@ -19,7 +19,7 @@ HSA tools library that intercepts kernel dispatches at runtime. When a dispatch 
 ## Data Flow
 1. `OnLoad()` called by HSA runtime → creates singleton, hooks API
 2. `hsa_queue_create()` intercepted → registers queue + agent
-3. `hsa_executable_symbol_get_info()` intercepted → captures kernel objects
+3. `hsa_executable_symbol_get_info()` intercepted → captures kernel objects into `kernel_objects_` AND registers them in `kernel_cache_` (coCache) via `registerRuntimeKernel()` for instrumented alternative lookup
 4. Startup: code objects registered in `kernel_cache_` (coCache) but kernelDB scanning is **deferred**
 5. `OnSubmitPackets()` intercepted → `doPackets()` decides instrumented vs original
 6. `fixupPacket()`: on-demand scanning — if kernel not in kernelDB, `scanCodeObject()` is called for that kernel's code object
@@ -80,7 +80,7 @@ Filters which libraries are scanned for kernels, configured via `--library-filte
 ## Known Limitations
 - Assumes single interceptor (singleton)
 - Thread model: one signal runner, one comms runner
-- **No runtime code object interception**: The interceptor only scans `.hip_fatbin` sections in shared libraries loaded at startup (via `/proc/self/maps`). Libraries that load device code objects at runtime via `hipModuleLoad()` (e.g., hipBLASLt `.hsaco` files) are NOT auto-discovered. These must be explicitly included via `--library-filter` with a raw ELF (unbundled) `.hsaco` path.
+- **Runtime code objects auto-discovered for same-file case**: When both original and `__amd_crk_*` instrumented kernels are in the same `.hsaco` loaded via `hipModuleLoad()`, the interceptor auto-discovers them via the HSA symbol hook + `coCache::registerRuntimeKernel()`. Arg descriptors are lazily extracted via AMD loader API v1.01. `--library-filter` is still needed for the external-file case (instrumented code object in a separate file the application doesn't load).
 - **Library filter requires raw ELF**: `isValidElf()` checks for `0x7f ELF` magic bytes. Clang Offload Bundles (magic: `__CLANG_OFFLOAD_BUNDLE__`) produced by `amdclang++ --offload-device-only` are rejected. Must unbundle with `clang-offload-bundler --unbundle` first.
 
 ## Rejected Approaches
@@ -92,4 +92,4 @@ Filters which libraries are scanned for kernels, configured via `--library-filte
 - None currently documented
 
 ## Last Verified
-Date: 2026-03-06
+Date: 2026-03-23

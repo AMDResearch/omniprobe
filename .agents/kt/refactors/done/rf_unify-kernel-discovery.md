@@ -245,5 +245,6 @@ across projects; adding HSA runtime coupling would reduce its reusability.
   this is acceptable — kernelDB analysis is optional for handler reports
 
 ## Last Verified
-Commit: 0770fdd
+Commit: e71c10d
 Date: 2026-03-23
+Gates: build clean, 22/22 tests pass
