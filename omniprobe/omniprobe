@@ -258,9 +258,11 @@ install_path = get_install_path()
 if install_path[0] == "install":
     base_llvm_pass_plugin = os.path.join(install_path[1])
     base_hsa_tools_lib = os.path.join(install_path[1], "lib", "logDuration")
+    handler_lib_dir = os.path.join(install_path[1], "lib")
 else:
     base_llvm_pass_plugin = os.path.join(install_path[1], "external", "instrument-amdgpu-kernels-triton", "build")
     base_hsa_tools_lib = os.path.join(install_path[1])
+    handler_lib_dir = install_path[1]
 
 #TODO: We need some way of communicating whether the target application is HIP or Triton source
 # Hardcoding this for now
@@ -460,10 +462,10 @@ def setup_env(parms):
                 sys.exit(1)
 
     if 'LD_LIBRARY_PATH' in env:
-        env['LD_LIBRARY_PATH'] = ':'.join([f"{get_omniprobe_home()}/lib",env["LD_LIBRARY_PATH"]])
+        env['LD_LIBRARY_PATH'] = ':'.join([handler_lib_dir, env["LD_LIBRARY_PATH"]])
         env_dump['LD_LIBRARY_PATH'] = env['LD_LIBRARY_PATH']
     else:
-        env['LD_LIBRARY_PATH'] = f"{get_omniprobe_home()}/lib"
+        env['LD_LIBRARY_PATH'] = handler_lib_dir
         env_dump['LD_LIBRARY_PATH'] = env['LD_LIBRARY_PATH']
 
     if parms.dump_env == True:
@@ -804,7 +806,7 @@ def main():
             if h in analytics_config:
                 if 'llvm_plugin' in analytics_config[h]:
                     triton_config["LLVM_PASS_PLUGIN_PATH"] =  os.path.join(base_llvm_pass_plugin, "lib", analytics_config[h]['llvm_plugin'])
-                handlers.append(analytics_config[h]['lib_name'])
+                handlers.append(os.path.join(handler_lib_dir, analytics_config[h]['lib_name']))
             else:
                 print(f"{h} is not a valid analyzer. Ignoring.")
         else:
