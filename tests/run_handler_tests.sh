@@ -40,5 +40,8 @@ source "${SCRIPT_DIR}/run_library_filter_tests.sh"
 # Scope filter tests (INSTRUMENTATION_SCOPE)
 source "${SCRIPT_DIR}/run_scope_filter_tests.sh"
 
+# Module-load kernel discovery tests (hipModuleLoad .hsaco)
+source "${SCRIPT_DIR}/run_module_load_tests.sh"
+
 # Print summary
 print_summary

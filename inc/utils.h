@@ -172,9 +172,12 @@ public:
     bool getCodeObjectRef(hsa_agent_t agent, const std::string& name, CodeObjectRef& ref);
     uint8_t getArgumentAlignment(uint64_t kernel_object);
     const amd_kernel_code_t* getKernelCode(uint64_t kernel_object);
+    void registerRuntimeKernel(const std::string& name, hsa_executable_symbol_t symbol,
+                               uint64_t kernel_object, hsa_agent_t agent, uint32_t kernarg_size);
 private:
+    bool resolveRuntimeArgDescriptors(hsa_agent_t agent);
     HsaApiTable *apiTable_;
-    hsa_ven_amd_loader_1_00_pfn_t loader_api_;
+    hsa_ven_amd_loader_1_01_pfn_t loader_api_;
     std::map<hsa_agent_t, std::vector<hsa_executable_symbol_t>, hsa_cmp<hsa_agent_t>> kernels_;
     std::vector<std::string> filelist_;
     std::map<hsa_agent_t, std::map<std::string, hsa_executable_symbol_t>, hsa_cmp<hsa_agent_t>> lookup_map_;
@@ -185,6 +188,8 @@ private:
     std::map<hsa_agent_t, std::map<hsa_executable_symbol_t, uint64_t, hsa_cmp<hsa_executable_symbol_t>>, hsa_cmp<hsa_agent_t>> alternatives_;
     std::map<uint64_t, uint32_t> kernarg_sizes_;
     std::map<hsa_agent_t, std::map<std::string, CodeObjectRef>, hsa_cmp<hsa_agent_t>> kernel_co_map_;
+    // Runtime kernel objects: agent -> (name -> kernel_object address) for resolveRuntimeArgDescriptors
+    std::map<hsa_agent_t, std::map<std::string, uint64_t>, hsa_cmp<hsa_agent_t>> runtime_kernel_objects_;
 };
 
 class KernelArgHelper {

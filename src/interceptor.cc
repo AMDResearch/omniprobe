@@ -938,13 +938,24 @@ hsa_status_t hsaInterceptor::hsa_queue_destroy(hsa_queue_t *queue)
 
 void hsaInterceptor::addKernel(uint64_t kernelObject, std::string& name, hsa_executable_symbol_t symbol, hsa_agent_t agent, uint32_t kernarg_size)
 {
-   lock_guard<std::mutex> lock(mutex_);
-   auto it = kernel_objects_.find(kernelObject);
-   if (it == kernel_objects_.end())
+   std::string thisName;
    {
-        std::string thisName = kernelDB::demangleName(name.c_str());
-        kernel_objects_[kernelObject] = {thisName.length() ? thisName : name, symbol, agent, kernarg_size};
+       lock_guard<std::mutex> lock(mutex_);
+       auto it = kernel_objects_.find(kernelObject);
+       if (it == kernel_objects_.end())
+       {
+            thisName = kernelDB::demangleName(name.c_str());
+            if (!thisName.length())
+                thisName = name;
+            kernel_objects_[kernelObject] = {thisName, symbol, agent, kernarg_size};
+       }
+       else
+           return;  // Already registered
    }
+   // Register runtime-discovered kernels in the cache so that
+   // findInstrumentedAlternative() can find them without --library-filter
+   if (run_instrumented_)
+       kernel_cache_.registerRuntimeKernel(thisName, symbol, kernelObject, agent, kernarg_size);
 }
 
 hsa_status_t hsaInterceptor::hsa_executable_symbol_get_info(hsa_executable_symbol_t symbol, hsa_executable_symbol_info_t attribute, void *data)
