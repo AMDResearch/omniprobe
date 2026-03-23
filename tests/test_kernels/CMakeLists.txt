@@ -12,13 +12,27 @@ set(TEST_KERNEL_COMPILE_FLAGS
 # Path to instrumentation plugin in build directory
 set(INST_PLUGIN "${CMAKE_BINARY_DIR}/external/instrument-amdgpu-kernels-rocm/build/lib/libAMDGCNSubmitAddressMessages-rocm.so")
 
-# Copy bitcode files from dh_comms to plugin directories for build-tree testing.
-# The plugin expects bitcode files to be in the same directory as the .so file.
-# ROCm uses co6 (code object version 6), Triton uses co5.
-set(ROCM_PLUGIN_LIB_DIR "${CMAKE_BINARY_DIR}/external/instrument-amdgpu-kernels-rocm/build/lib")
+# Copy bitcode files from dh_comms to build/lib/bitcode/ and to plugin dirs.
+# build/lib/bitcode/ is the canonical location; plugin dirs are for backward
+# compatibility with getBitcodePath() until it is updated to look in ../bitcode/.
 set(DH_COMMS_LIB_DIR "${CMAKE_BINARY_DIR}/external/dh_comms/lib")
+set(BITCODE_DIR "${CMAKE_BINARY_DIR}/lib/bitcode")
+set(ROCM_PLUGIN_LIB_DIR "${CMAKE_BINARY_DIR}/external/instrument-amdgpu-kernels-rocm/build/lib")
 
-# Copy co6 bitcode files to rocm plugin directory
+# Copy all bitcode files to build/lib/bitcode/
+add_custom_target(copy_bitcode ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${BITCODE_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna2_co5.bc
+        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna3_co5.bc
+        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna2_co6.bc
+        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna3_co6.bc
+        ${BITCODE_DIR}/
+    DEPENDS dh_comms_bc
+    COMMENT "Copying bitcode files to build/lib/bitcode/"
+)
+
+# Also copy co6 bitcode to ROCm plugin dir (needed until getBitcodePath() is updated)
 add_custom_target(copy_bitcode_to_rocm ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${ROCM_PLUGIN_LIB_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -26,10 +40,9 @@ add_custom_target(copy_bitcode_to_rocm ALL
         ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna3_co6.bc
         ${ROCM_PLUGIN_LIB_DIR}/
     DEPENDS dh_comms_bc instrument-amdgpu-kernels-rocm
-    COMMENT "Copying co6 bitcode files to ROCm plugin directory"
+    COMMENT "Copying co6 bitcode files to ROCm plugin directory (compat)"
 )
 
-# Copy co5 bitcode files to triton plugin directory (if triton build is enabled)
 if(DEFINED TRITON_LLVM)
     set(TRITON_PLUGIN_LIB_DIR "${CMAKE_BINARY_DIR}/external/instrument-amdgpu-kernels-triton/build/lib")
     add_custom_target(copy_bitcode_to_triton ALL
@@ -39,7 +52,7 @@ if(DEFINED TRITON_LLVM)
             ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna3_co5.bc
             ${TRITON_PLUGIN_LIB_DIR}/
         DEPENDS dh_comms_bc instrument-amdgpu-kernels-triton
-        COMMENT "Copying co5 bitcode files to Triton plugin directory"
+        COMMENT "Copying co5 bitcode files to Triton plugin directory (compat)"
     )
 endif()
 

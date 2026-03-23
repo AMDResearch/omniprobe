@@ -1,8 +1,8 @@
 # Refactor: Install Tree Restructure
 
 ## Status
-- [x] TODO
-- [ ] In Progress
+- [ ] TODO
+- [x] In Progress
 - [ ] Blocked
 - [ ] Done
 
@@ -47,11 +47,6 @@ After this refactor:
   config/
     analytics.py
     triton_config.py
-  include/                                 (dev headers)
-    dh_comms/...
-    kerneldb/...
-  share/                                   (test assets)
-    test_kernels/*.hsaco
 ```
 
 **Build tree** (mirrors relative paths for installed artifacts):
@@ -333,8 +328,8 @@ submodules' defaults. Determine best approach during implementation.
 
 ## Open Questions
 
-- Should the install tree include `include/` and `share/` directories? These
-  serve development use cases but add clutter for end users.
+- ~~Should the install tree include `include/` and `share/` directories?~~ **Resolved**: No, omit both.
+  Install tree will only contain `bin/`, `lib/`, `lib/plugins/`, `lib/bitcode/`, and `config/`.
 
 ## Last Verified
 Commit: N/A
