@@ -18,7 +18,7 @@ source "${SCRIPT_DIR}/test_common.sh"
 check_omniprobe
 
 # Paths
-INST_PLUGIN="${BUILD_DIR}/external/instrument-amdgpu-kernels-rocm/build/lib/libAMDGCNSubmitAddressMessages-rocm.so"
+INST_PLUGIN="${OMNIPROBE_ROOT}/lib/plugins/libAMDGCNSubmitAddressMessages-rocm.so"
 KERNEL_SRC="${TEST_KERNELS_DIR}/scope_filter_test.cpp"
 
 # Use ROCM_PATH to find hipcc (same logic as CMakeLists.txt)

@@ -84,12 +84,6 @@ foreach(target_id ${GPU_LIST})
     message("${CMAKE_CURRENT_SOURCE_DIR}")
     generate_hsaco(${target_id} ${CMAKE_CURRENT_SOURCE_DIR}/src/test_kernels/copy.cl
                    ${target_id}_copy.hsaco)
-    install(
-        FILES
-            "${PROJECT_BINARY_DIR}/test_kernels/${target_id}_copy.hsaco"
-        DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/test_kernels"
-        COMPONENT tests)
-
 endforeach(target_id)
 message("${HSACO_TARGET_LIST}")
 add_custom_target(hsaco_targets DEPENDS ${HSACO_TARGET_LIST})
@@ -97,6 +91,7 @@ add_custom_target(hsaco_targets DEPENDS ${HSACO_TARGET_LIST})
 
 link_directories(${ROCM_ROOT_DIR}/lib $ENV{HOME}/.local/lib64 ${CMAKE_INSTALL_PREFIX}/lib .)
 add_library ( ${TARGET_LIB} SHARED ${LIB_SRC})
+set_target_properties(${TARGET_LIB} PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 add_dependencies(${TARGET_LIB} hsaco_targets dh_comms)
 
 target_include_directories (

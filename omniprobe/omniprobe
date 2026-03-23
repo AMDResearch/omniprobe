@@ -183,44 +183,15 @@ def capture_subprocess_output(subprocess_args, handler=None, new_env=None):
         print("Subprocess terminated, exiting...")
         sys.exit(1)
 
-triton_llvm = None
-def get_install_path() -> tuple:
+def get_root_dir() -> str:
     """
-    Load the install path from the config file. If the config file is not found, will return empty string
-    Note runtime type and update global
-    Returns:
-        tuple: (str, str) - The install type and the path to the project directory
+    Derive the root directory from the script's own location.
+    The script lives at <root>/bin/omniprobe in both build and install trees.
+    Uses abspath (not realpath) so symlinks are not resolved — this is critical
+    for the build tree where bin/omniprobe is a symlink.
     """
-    config_search_paths = [
-        os.path.join(os.path.dirname(__file__), "../build/runtime_config.txt"),
-        os.path.join(os.path.dirname(__file__), "runtime_config.txt"),
-    ]
-    install_dir = ""
-    build_dir = ""
-    global triton_llvm
-    # Iterate over search paths for the config file, and load the paths into the program.
-    # The runtime type (triton or hip) is also loaded globally to trigger the Triton configuration
-    for path in config_search_paths:
-        path = os.path.abspath(path)
-        if os.path.exists(path):
-            print(f"Found config file at {path}")
-            with open(path, "r") as f:
-                for line in f:
-                    if line.startswith("build_dir="):
-                        build_dir = line.strip().split("=")[1]
-                    elif line.startswith("install_dir="):
-                        install_dir = line.strip().split("=")[1]
-                    elif line.startswith("triton_llvm="):
-                        triton_llvm = line.strip().split("=")[1]
-                    else:
-                        print(f"Invalid line in {path}: {line}")
-                        sys.exit(1)
-            break
-
-    if os.path.realpath(os.path.join(install_dir, "bin", "logDuration"))  == os.path.realpath(os.path.dirname(__file__)):
-        return ("install", install_dir)
-    else:
-        return ("build", build_dir)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.dirname(script_dir)
 
 def get_default_cache_location():
     return str(Path.home()) + "/.triton/cache"
@@ -254,40 +225,37 @@ def get_local_isa():
                 return arch
     return None
 
-install_path = get_install_path()
-if install_path[0] == "install":
-    base_llvm_pass_plugin = os.path.join(install_path[1])
-    base_hsa_tools_lib = os.path.join(install_path[1], "lib", "logDuration")
-    handler_lib_dir = os.path.join(install_path[1], "lib")
-else:
-    base_llvm_pass_plugin = os.path.join(install_path[1], "external", "instrument-amdgpu-kernels-triton", "build")
-    base_hsa_tools_lib = os.path.join(install_path[1])
-    handler_lib_dir = install_path[1]
+# Derive all paths from script location — works for both build and install trees
+root_dir = get_root_dir()
+lib_dir = os.path.join(root_dir, "lib")
+plugin_dir = os.path.join(root_dir, "lib", "plugins")
+handler_lib_dir = lib_dir
+config_path = os.path.join(root_dir, "config")
 
-#TODO: We need some way of communicating whether the target application is HIP or Triton source
-# Hardcoding this for now
+# Detect Triton support by checking for Triton plugin .so
+triton_llvm = any(glob.glob(os.path.join(plugin_dir, "*-triton.so")))
+
 triton_config = {"TRITON_LOGGER_LEVEL": "3",
                  "TRITON_ALWAYS_COMPILE": "1",
                  "TRITON_DISABLE_LINE_INFO": "0",
                  "TRITON_HIP_LLD_PATH": f"{get_rocm_path()}/llvm/bin/ld.lld",
-                 "LLVM_PASS_PLUGIN_PATH": os.path.join(base_llvm_pass_plugin, "lib", "libAMDGCNSubmitAddressMessages-triton.so")
+                 "LLVM_PASS_PLUGIN_PATH": os.path.join(plugin_dir, "libAMDGCNSubmitAddressMessages-triton.so")
                 }
 
-hip_config = {"LLVM_PASS_PLUGIN_PATH": os.path.join(base_llvm_pass_plugin, "lib", "libAMDGCNSubmitAddressMessages-rocm.so")}
+hip_config = {"LLVM_PASS_PLUGIN_PATH": os.path.join(plugin_dir, "libAMDGCNSubmitAddressMessages-rocm.so")}
 
-config_path = os.path.dirname(__file__) + "/config"
 rocm_path = get_rocm_path()
 
 analytics_config = {}
 
-op_run_env = {"LOGDUR_INSTRUMENTED": "false", "HSA_TOOLS_LIB": os.path.join(base_hsa_tools_lib, "liblogDuration64.so")}
+op_run_env = {"LOGDUR_INSTRUMENTED": "false", "HSA_TOOLS_LIB": os.path.join(lib_dir, "liblogDuration64.so")}
 
 def validate_triton_config():
     global triton_config
     if 'TRITON_HIP_LLD_PATH' not in triton_config or 'LLVM_PASS_PLUGIN_PATH' not in triton_config:
         print("You are missing some required configuration parameters in your triton environment. You need to specify all of the following environment variables:")
         print(f"\tTRITON_HIP_LLD_PATH (usually located whereever rocm is installed (e.g. {get_rocm_path()}/llvm/bin/ld.lld)")
-        print(f"\tLLVM_PASS_PLUGIN_PATH (should be located {base_llvm_pass_plugin}")
+        print(f"\tLLVM_PASS_PLUGIN_PATH (should be located in {plugin_dir})")
         return False
     else:
         if not os.path.exists(triton_config['TRITON_HIP_LLD_PATH']):
@@ -577,13 +545,12 @@ def add_general_group(parser):
     general_group = parser.add_argument_group("General omniprobe arguments")
 
     global analytics_config
-    global install_path
 
     names = []
     for rec in analytics_config.keys():
         names.append(analytics_config[rec]['name'])
 
-    default_handlers = [os.path.join(install_path[1], "lib", "libdefaultMessageHandlers64.so")] if install_path[0] == "install" else [os.path.join(install_path[1], "libdefaultMessageHandlers64.so")]
+    default_handlers = [os.path.join(handler_lib_dir, "libdefaultMessageHandlers64.so")]
     general_group.add_argument (
         "-a",
         "--analyzers",
@@ -805,7 +772,7 @@ def main():
         if not h.endswith(".so"):
             if h in analytics_config:
                 if 'llvm_plugin' in analytics_config[h]:
-                    triton_config["LLVM_PASS_PLUGIN_PATH"] =  os.path.join(base_llvm_pass_plugin, "lib", analytics_config[h]['llvm_plugin'])
+                    triton_config["LLVM_PASS_PLUGIN_PATH"] = os.path.join(plugin_dir, analytics_config[h]['llvm_plugin'])
                 handlers.append(os.path.join(handler_lib_dir, analytics_config[h]['lib_name']))
             else:
                 print(f"{h} is not a valid analyzer. Ignoring.")

@@ -141,6 +141,13 @@ ext_proj_add(
     NAME dh_comms
     INCLUDE_DIRS
 )
+
+# Override submodule output directories so all .so files land in build/lib/
+set_target_properties(dh_comms PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set_target_properties(kernelDB64 PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+# Update library path variables to match new output location
+set(DH_COMMS_LIBRARIES ${CMAKE_BINARY_DIR}/lib)
+set(KERNELDB_LIBRARIES ${CMAKE_BINARY_DIR}/lib)
 ext_proj_add(
     NAME instrument-amdgpu-kernels
     C_COMPILER ${ROCM_PATH}/llvm/bin/clang
@@ -156,6 +163,40 @@ if(DEFINED TRITON_LLVM)
         CXX_COMPILER ${ROCM_PATH}/llvm/bin/clang++
         BINARY_SUFFIX "-triton"
     )
+endif()
+
+# Symlink LLVM instrumentation plugins into build/lib/plugins/
+set(PLUGINS_DIR "${CMAKE_BINARY_DIR}/lib/plugins")
+set(ROCM_PLUGIN_SRC_DIR "${CMAKE_BINARY_DIR}/external/instrument-amdgpu-kernels-rocm/build/lib")
+add_custom_target(symlink_plugins ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${PLUGINS_DIR}
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+        ${ROCM_PLUGIN_SRC_DIR}/libAMDGCNSubmitAddressMessages-rocm.so
+        ${PLUGINS_DIR}/libAMDGCNSubmitAddressMessages-rocm.so
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+        ${ROCM_PLUGIN_SRC_DIR}/libAMDGCNSubmitBBStart-rocm.so
+        ${PLUGINS_DIR}/libAMDGCNSubmitBBStart-rocm.so
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+        ${ROCM_PLUGIN_SRC_DIR}/libAMDGCNSubmitBBInterval-rocm.so
+        ${PLUGINS_DIR}/libAMDGCNSubmitBBInterval-rocm.so
+    DEPENDS instrument-amdgpu-kernels-rocm
+    COMMENT "Creating plugin symlinks in build/lib/plugins/"
+)
+if(DEFINED TRITON_LLVM)
+    set(TRITON_PLUGIN_SRC_DIR "${CMAKE_BINARY_DIR}/external/instrument-amdgpu-kernels-triton/build/lib")
+    add_custom_command(TARGET symlink_plugins POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E create_symlink
+            ${TRITON_PLUGIN_SRC_DIR}/libAMDGCNSubmitAddressMessages-triton.so
+            ${PLUGINS_DIR}/libAMDGCNSubmitAddressMessages-triton.so
+        COMMAND ${CMAKE_COMMAND} -E create_symlink
+            ${TRITON_PLUGIN_SRC_DIR}/libAMDGCNSubmitBBStart-triton.so
+            ${PLUGINS_DIR}/libAMDGCNSubmitBBStart-triton.so
+        COMMAND ${CMAKE_COMMAND} -E create_symlink
+            ${TRITON_PLUGIN_SRC_DIR}/libAMDGCNSubmitBBInterval-triton.so
+            ${PLUGINS_DIR}/libAMDGCNSubmitBBInterval-triton.so
+        COMMENT "Creating Triton plugin symlinks in build/lib/plugins/"
+    )
+    add_dependencies(symlink_plugins instrument-amdgpu-kernels-triton)
 endif()
 
 # Set target and root/lib/test directory
@@ -177,13 +218,24 @@ include(${LIB_DIR}/CMakeLists.txt)
 include(${PLUGIN_DIR}/CMakeLists.txt)
 #include(${TEST_DIR}/CMakeLists.txt)
 
-# Set the VERSION and SOVERSION values
-set_property(TARGET ${TARGET_NAME} PROPERTY VERSION "${LIB_VERSION_STRING}")
-set_property(TARGET ${TARGET_NAME} PROPERTY SOVERSION "${LIB_VERSION_MAJOR}")
 # If the library is a release, strip the target library
 if("${CMAKE_BUILD_TYPE}" STREQUAL release)
-  add_custom_command(TARGET ${INTERCEPTOR_TARGET} POST_BUILD COMMAND ${CMAKE_STRIP} *.so)
+  add_custom_command(TARGET ${INTERCEPTOR_TARGET} POST_BUILD
+    COMMAND ${CMAKE_STRIP} $<TARGET_FILE:${INTERCEPTOR_TARGET}>)
 endif()
+
+# Create build/bin/ and build/config/ symlinks so the build tree mirrors the
+# install tree layout. omniprobe script can derive all paths from its location.
+add_custom_target(build_tree_symlinks ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/bin
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+        ${CMAKE_SOURCE_DIR}/omniprobe/omniprobe
+        ${CMAKE_BINARY_DIR}/bin/omniprobe
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+        ${CMAKE_SOURCE_DIR}/omniprobe/config
+        ${CMAKE_BINARY_DIR}/config
+    COMMENT "Creating build/bin/omniprobe and build/config symlinks"
+)
 
 # Build tests
 option(INTERCEPTOR_BUILD_TESTING "Build test examples" OFF)
@@ -202,25 +254,30 @@ if(INTERCEPTOR_BUILD_TESTING)
 endif()
 
 # Installation and packaging
-set(DEST_NAME ${INTERCEPTOR_NAME})
-if(DEFINED CPACK_PACKAGING_INSTALL_PREFIX)
-  get_filename_component(pkg_name ${CPACK_PACKAGING_INSTALL_PREFIX} NAME)
-  get_filename_component(pkg_dir ${CPACK_PACKAGING_INSTALL_PREFIX} DIRECTORY)
-  if(pkg_name STREQUAL ${DEST_NAME})
-    set(CPACK_PACKAGING_INSTALL_PREFIX ${pkg_dir})
-  endif()
-else()
+if(NOT DEFINED CPACK_PACKAGING_INSTALL_PREFIX)
   set(CPACK_PACKAGING_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX})
 endif()
 message("CMake-install-prefix: ${CMAKE_INSTALL_PREFIX}")
 message("CPack-install-prefix: ${CPACK_PACKAGING_INSTALL_PREFIX}")
-message("-----------Dest-name: ${DEST_NAME}")
 
-# Install header and library
-install(TARGETS ${INTERCEPTOR_TARGET} LIBRARY DESTINATION lib/${DEST_NAME})
-install(PROGRAMS ${ROOT_DIR}/omniprobe/omniprobe DESTINATION bin/${DEST_NAME})
-install(DIRECTORY ${ROOT_DIR}/omniprobe/config DESTINATION bin/${DEST_NAME} FILES_MATCHING PATTERN "*")
-install(FILES "${CMAKE_BINARY_DIR}/runtime_config.txt" DESTINATION bin/${DEST_NAME})
+# Install omniprobe into <prefix>/omniprobe/
+install(TARGETS ${INTERCEPTOR_TARGET} LIBRARY DESTINATION omniprobe/lib)
+install(PROGRAMS ${ROOT_DIR}/omniprobe/omniprobe DESTINATION omniprobe/bin)
+install(DIRECTORY ${ROOT_DIR}/omniprobe/config DESTINATION omniprobe FILES_MATCHING PATTERN "*")
+
+# Install LLVM instrumentation plugins from ExternalProject build dirs
+install(DIRECTORY ${CMAKE_BINARY_DIR}/external/instrument-amdgpu-kernels-rocm/build/lib/
+    DESTINATION omniprobe/lib/plugins
+    USE_SOURCE_PERMISSIONS
+    FILES_MATCHING PATTERN "*.so"
+    PATTERN "CMakeFiles" EXCLUDE)
+if(DEFINED TRITON_LLVM)
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/external/instrument-amdgpu-kernels-triton/build/lib/
+        DESTINATION omniprobe/lib/plugins
+        USE_SOURCE_PERMISSIONS
+        FILES_MATCHING PATTERN "*.so"
+        PATTERN "CMakeFiles" EXCLUDE)
+endif()
 
 # Packaging directives
 set(CPACK_GENERATOR "DEB" "RPM" "TGZ")
