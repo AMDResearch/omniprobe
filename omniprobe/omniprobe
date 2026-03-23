@@ -352,17 +352,18 @@ def setup_env(parms):
                     try:
                         os.makedirs(parent_dir)
                         print(f"WARNING: Created directory {parent_dir} for log output.")
-                        env['LOGDUR_LOG_LOCATION'] = parms.log_location
-                        env_dump['LOGDUR_LOG_LOCATION'] = parms.log_location
                     except OSError as e:
                         print(f"WARNING: Could not create directory {parent_dir} for log output: {e}. Will log to the console.")
                         parms.log_location = "console"
-                else:
-                    env['LOGDUR_LOG_LOCATION'] = parms.log_location
-                    env_dump['LOGDUR_LOG_LOCATION'] = parms.log_location
     else:
+        parms.log_location = "console"
+
+    if parms.log_location == "console":
         env['LOGDUR_LOG_LOCATION'] = "console"
         env_dump['LOGDUR_LOG_LOCATION'] = "console"
+    else:
+        env['LOGDUR_LOG_LOCATION'] = parms.log_location
+        env_dump['LOGDUR_LOG_LOCATION'] = parms.log_location
 
     assume_triton = False
     if len(parms.cache_location):
