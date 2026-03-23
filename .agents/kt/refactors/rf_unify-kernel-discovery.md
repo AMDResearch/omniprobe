@@ -2,9 +2,9 @@
 
 ## Status
 - [x] TODO
-- [ ] In Progress
+- [x] In Progress
 - [ ] Blocked
-- [ ] Done
+- [x] Done
 
 ## Objective
 
@@ -178,6 +178,23 @@ Phase 3 — Verify:
 
 ## Progress Log
 
+### Session 2026-03-23
+- Implemented a simpler approach than the full KernelRegistry refactor: augmented coCache
+  with registerRuntimeKernel() and resolveRuntimeArgDescriptors() instead of replacing it
+- Added TDD test: hipModuleLoad-based kernel in separate .hsaco (module_load_test)
+- Test confirmed current limitation (auto-discovery fails), then confirmed fix works
+- Key implementation details:
+  - coCache::registerRuntimeKernel() called from HSA symbol hook for all kernels
+  - coCache::resolveRuntimeArgDescriptors() uses AMD loader API v1.01 to get code object
+    bytes (MEMORY or FILE storage), passes to KernelArgHelper::addCodeObject() for COMGR
+  - Upgraded coCache from loader API v1.00 to v1.01 for iterate/get_info functions
+  - Fixed deadlock: addKernel() releases interceptor mutex before calling registerRuntimeKernel()
+  - Fixed KernelArgHelper("") to skip file loading when constructed with empty path
+  - runtime_kernel_objects_ map stores kernel_object addresses to avoid re-entering HSA hook
+- Gates: 22/22 tests pass (0 regressions), all 3 module_load tests pass
+- Decision: Deferred full KernelRegistry class (dossier Phase 1) — augmenting coCache
+  achieves the goal with much smaller blast radius
+
 ### Session 2026-03-17
 - Explored all three data stores in detail (kernel_objects_, coCache maps, kernelDB internals)
 - Evaluated and rejected merging coCache into kernelDB (analysis-only vs. runtime state)
@@ -220,14 +237,13 @@ performance profiles and lifecycle concerns. kernelDB is also a git submodule sh
 across projects; adding HSA runtime coupling would reduce its reusability.
 
 ## Open Questions
-- Can argument descriptors be reliably extracted at `hsa_executable_symbol_get_info()` hook
-  time, or must we defer to dispatch time? (Proposed approach: lazy extraction at first
-  dispatch, using AMD loader API + KernelArgHelper.)
-- Are there cases where `hipModuleLoad()` resolves symbols after the first dispatch?
-- For lazy `kernel_co_map_` population: can the AMD loader API reverse-lookup the code
-  object from a symbol handle, or do we need to also hook
-  `hsa_executable_load_agent_code_object()` to capture code object data at load time?
+- (Resolved) Arg descriptors extracted lazily at first dispatch via AMD loader API v1.01
+  (iterate_loaded_code_objects + loaded_code_object_get_info → KernelArgHelper::addCodeObject)
+- (Resolved) AMD loader API can reverse-lookup executable from kernel_object address via
+  hsa_ven_amd_loader_query_executable, then iterate its loaded code objects
+- kernel_co_map_ not populated for runtime-discovered kernels (kernelDB scanning skipped);
+  this is acceptable — kernelDB analysis is optional for handler reports
 
 ## Last Verified
-Commit: N/A
-Date: 2026-03-17
+Commit: 0770fdd
+Date: 2026-03-23
