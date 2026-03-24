@@ -4,7 +4,7 @@
 Python script that orchestrates running instrumented applications. Sets up environment variables, invokes the target application, and handles output finalization.
 
 ## Core Concepts
-- **Environment Setup**: Configures HSA_TOOLS_LIB, LOGDUR_*, LLVM_PASS_PLUGIN_PATH
+- **Environment Setup**: Configures LD_PRELOAD, LOGDUR_*, LLVM_PASS_PLUGIN_PATH
 - **Handler Selection**: `-a` flag selects analysis type (e.g., MemoryAnalysis)
 - **Output Location**: `-o` flag specifies output file or "console"
 - **Instrumented Mode**: `-i` flag enables dispatching instrumented kernels
@@ -69,7 +69,7 @@ Configured in `omniprobe/config/analytics.py`:
 - Triton mode: Omniprobe sets `LLVM_PASS_PLUGIN_PATH` when `-c <cache>` is provided
 
 ## Dependencies
-- liblogDuration64.so (loaded via HSA_TOOLS_LIB)
+- liblogDuration64.so (loaded via LD_PRELOAD; rocprofiler-sdk discovers via rocprofiler_configure symbol)
 - Handler plugins (loaded via LOGDUR_HANDLERS)
 - Instrumentation plugins (loaded via LLVM_PASS_PLUGIN_PATH)
 
@@ -82,7 +82,7 @@ Configured in `omniprobe/config/analytics.py`:
 ### HIP Workflow
 1. User compiles HIP code with `-fpass-plugin=/path/to/libAMDGCNSubmit*-rocm.so`
 2. Executable contains both original and instrumented kernels
-3. Omniprobe sets `HSA_TOOLS_LIB` and `LOGDUR_INSTRUMENTED=1` to enable dispatch interception
+3. Omniprobe sets `LD_PRELOAD` and `LOGDUR_INSTRUMENTED=1` to enable dispatch interception
 4. liblogDuration64.so swaps to instrumented kernels at runtime
 
 ### Triton Workflow
@@ -99,4 +99,4 @@ Configured in `omniprobe/config/analytics.py`:
 - `libAMDGCNSubmitBBInterval-triton.so` exists but no analyzer currently uses it
 
 ## Last Verified
-Date: 2026-03-16
+Date: 2026-03-24
