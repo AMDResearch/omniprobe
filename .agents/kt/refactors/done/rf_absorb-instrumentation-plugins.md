@@ -2,9 +2,9 @@
 
 ## Status
 - [x] TODO
-- [ ] In Progress
+- [x] In Progress
 - [ ] Blocked
-- [ ] Done
+- [x] Done
 
 ## Objective
 
@@ -430,11 +430,11 @@ ls /tmp/omniprobe-test/omniprobe/lib/plugins/
 
 #### Phase A: Absorb source files and create CMake function
 
-1. [ ] **Create feature branch** `rf/absorb-instrumentation-plugins` — Gate: branch exists
+1. [x] **Create feature branch** `rf/absorb-instrumentation-plugins` — Gate: branch exists
    - Create from `main`.
    - Commit: N/A (branch creation only)
 
-2. [ ] **Copy source files into `src/instrumentation/`** — Gate: files exist
+2. [x] **Copy source files into `src/instrumentation/`** — Gate: files exist
    - Copy `external/instrument-amdgpu-kernels/src/*.cpp`
      → `src/instrumentation/`
    - Copy `external/instrument-amdgpu-kernels/include/*.h`
@@ -445,14 +445,14 @@ ls /tmp/omniprobe-test/omniprobe/lib/plugins/
      instrument-amdgpu-kernels at <hash>").
    - Update dossier: mark step done.
 
-3. [ ] **Write `cmake_modules/add_instrumentation_plugins.cmake`** — Gate: N/A (tested in step 5)
+3. [x] **Write `cmake_modules/add_instrumentation_plugins.cmake`** — Gate: N/A (tested in step 5)
    - Implement function as described in Design Decisions above.
    - Handle: LLVM discovery via `llvm-config`, per-target properties,
      conditional LLVM linking, RTTI detection, compiler flags, install rules.
    - Commit: "add CMake function for instrumentation plugin targets"
    - Update dossier: mark step done.
 
-4. [ ] **Integrate into parent `CMakeLists.txt`** — Gate: `cmake -B build ...` configures OK
+4. [x] **Integrate into parent `CMakeLists.txt`** — Gate: `cmake -B build ...` configures OK
    - Inline kerneldb/dh_comms `ext_proj_add` calls (replace with direct
      `include_directories` + `add_subdirectory`).
    - `include(add_instrumentation_plugins)` after the kerneldb/dh_comms
@@ -467,7 +467,7 @@ ls /tmp/omniprobe-test/omniprobe/lib/plugins/
    - Commit: "replace ExternalProject with add_instrumentation_plugins"
    - Update dossier: mark step done, record cmake configure output.
 
-5. [ ] **Build and verify** — Gate: build succeeds, `.so` files in `build/lib/plugins/`
+5. [x] **Build and verify** — Gate: build succeeds, `.so` files in `build/lib/plugins/`
    - Delete build dir and reconfigure from scratch (to avoid stale
      ExternalProject artifacts).
    - `cmake --build build`
@@ -477,17 +477,17 @@ ls /tmp/omniprobe-test/omniprobe/lib/plugins/
 
 #### Phase B: Verify correctness
 
-6. [ ] **Run handler tests** — Gate: 22/22 pass
+6. [x] **Run handler tests** — Gate: 22/22 pass
    - `LD_LIBRARY_PATH=$PWD/build:$LD_LIBRARY_PATH ./tests/run_handler_tests.sh`
    - Fix any failures; commit fixes separately.
    - Update dossier: mark step done, record test results.
 
-7. [ ] **Run Triton tests** — Gate: 5/5 pass
+7. [x] **Run Triton tests** — Gate: 5/5 pass
    - `LD_LIBRARY_PATH=$PWD/build:$LD_LIBRARY_PATH ./tests/triton/run_test.sh`
    - Fix any failures; commit fixes separately.
    - Update dossier: mark step done, record test results.
 
-8. [ ] **Verify install tree** — Gate: correct layout, `omniprobe -e` works
+8. [x] **Verify install tree** — Gate: correct layout, `omniprobe -e` works
    - `cmake --install build --prefix /tmp/omniprobe-test`
    - Verify tree matches expected layout (plugins in `omniprobe/lib/plugins/`).
    - `OMNIPROBE_ROOT=/tmp/omniprobe-test/omniprobe omniprobe -e` shows
@@ -496,7 +496,7 @@ ls /tmp/omniprobe-test/omniprobe/lib/plugins/
 
 #### Phase C: Remove submodule and cleanup
 
-9. [ ] **Remove git submodule** — Gate: clean rebuild succeeds
+9. [x] **Remove git submodule** — Gate: clean rebuild succeeds
     - `git submodule deinit -f external/instrument-amdgpu-kernels`
     - `git rm external/instrument-amdgpu-kernels`
     - Remove entry from `.gitmodules`
@@ -505,13 +505,13 @@ ls /tmp/omniprobe-test/omniprobe/lib/plugins/
     - Clean rebuild to verify nothing depended on the submodule.
     - Update dossier: mark step done.
 
-10. [ ] **Remove `cmake_modules/ext_proj_add.cmake`** — Gate: build succeeds
+10. [x] **Remove `cmake_modules/ext_proj_add.cmake`** — Gate: build succeeds
     - File is no longer referenced after step 4 inlined its logic.
     - `git rm cmake_modules/ext_proj_add.cmake`
     - Commit: "remove ext_proj_add.cmake (logic inlined)"
     - Update dossier: mark step done.
 
-11. [ ] **Final verification** — Gate: clean rebuild from scratch, all tests pass
+11. [x] **Final verification** — Gate: clean rebuild from scratch, all tests pass
     - Delete `build/`, reconfigure from scratch, rebuild.
     - Handler tests: 22/22
     - Triton tests: 5/5
@@ -522,7 +522,7 @@ ls /tmp/omniprobe-test/omniprobe/lib/plugins/
 
 ### Current Step
 
-Step 1: Create feature branch.
+All steps complete.
 
 ## Rejected Approaches
 
@@ -567,6 +567,18 @@ improve the existing ExternalProject approach instead.
 - Design decision: inline ext_proj_add for kerneldb/dh_comms, remove the module
 - Next: create feature branch and begin Phase A
 
+### Session 2026-03-24: Refactor completed
+- Completed all 11 micro-steps across 3 phases
+- Commits: 2d3911b, dd6d9b7, 76b6141, 202e783, be27f3a, 49f4138
+- Key discovery: LLVM plugins must be compiled with the matching LLVM's clang++,
+  not hipcc. Initial approach using `add_library()` failed because CMake uses
+  the project's `CMAKE_CXX_COMPILER` (hipcc) for all CXX targets. Switched to
+  `add_custom_command()` to invoke clang++ from `llvm-config --bindir` directly.
+- Also discovered: test targets depended on `symlink_plugins` target (removed).
+  Updated to depend on `AMDGCNSubmitAddressMessages-rocm` directly.
+- Gates passed: clean build, 22/22 handler tests, 5/5 Triton tests, install tree correct
+- Branch: `rf/absorb-instrumentation-plugins` ready for merge
+
 ## Last Verified
-Commit: N/A
+Commit: 49f4138
 Date: 2026-03-24
