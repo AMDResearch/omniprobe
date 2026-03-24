@@ -330,6 +330,19 @@ if(DEFINED TRITON_LLVM)
 endif()
 ```
 
+### Preserving git history
+
+The submodule's git history is NOT merged into the parent repo. Instead:
+- The original `instrument-amdgpu-kernels` GitHub repo is kept as-is
+  (can be archived later, out of scope).
+- The commit that copies the source files into `src/instrumentation/`
+  references the submodule's HEAD commit hash, so the provenance is clear.
+- If the full history is ever needed, it's available in the original repo.
+
+This was chosen over `git subtree add` (which merges all submodule commits
+into the parent history) for simplicity. If the executing session finds a
+reason to prefer subtree merge, that's fine too.
+
 ### Source file location
 
 `src/instrumentation/` with a private `include/` subdirectory. This keeps
@@ -427,7 +440,9 @@ ls /tmp/omniprobe-test/omniprobe/lib/plugins/
    - Copy `external/instrument-amdgpu-kernels/include/*.h`
      → `src/instrumentation/include/`
    - Do NOT remove submodule yet (need it for fallback).
-   - Commit: "copy instrumentation plugin sources from submodule"
+   - Commit message must reference the submodule's HEAD commit hash
+     for provenance (e.g., "copy instrumentation plugin sources from
+     instrument-amdgpu-kernels at <hash>").
    - Update dossier: mark step done.
 
 3. [ ] **Write `cmake_modules/add_instrumentation_plugins.cmake`** — Gate: N/A (tested in step 5)
