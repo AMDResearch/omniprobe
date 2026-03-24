@@ -118,6 +118,7 @@ target_link_libraries(
     kernelDB64
     amd_comgr
     elf
+    rocprofiler-sdk::rocprofiler-sdk
 )
 
 find_path(LIBDWARF_INCLUDE_DIR

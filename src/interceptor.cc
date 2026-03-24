@@ -67,6 +67,9 @@ THE SOFTWARE.
 
 #include "inc/interceptor.h"
 
+#include <rocprofiler-sdk/registration.h>
+#include <rocprofiler-sdk/intercept_table.h>
+
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -1015,87 +1018,137 @@ shared_mutex hsaInterceptor::stop_mutex_;
 
 timeHelper globalTime;
 
+// ---------------------------------------------------------------------------
+// Cleanup helpers
+// ---------------------------------------------------------------------------
+
+// Idempotent: shuts down worker threads and waits for pending signals to drain.
+// Safe to call multiple times and from multiple cleanup paths.
+static void ensure_shutdown()
+{
+    auto* hook = hsaInterceptor::getInstanceIfExists();
+    if (hook) {
+        hook->shutdown();
+        int wait_count = 0;
+        while (hook->hasPendingSignals() && wait_count < 1000) {
+            usleep(1000);
+            wait_count++;
+        }
+    }
+}
+
+// Idempotent: shuts down, then deletes the singleton.
+static void ensure_cleanup()
+{
+    ensure_shutdown();
+    auto* hook = hsaInterceptor::getInstanceIfExists();
+    if (hook) {
+        hsaInterceptor::cleanup();
+    }
+}
+
+// Register atexit handler exactly once. Called from the rocprofiler-sdk
+// initialization path. atexit handlers run BEFORE __attribute__((destructor))
+// functions, so this is the primary cleanup path.
+static void register_atexit_handler()
+{
+    static bool registered = false;
+    if (!registered) {
+        atexit(ensure_cleanup);
+        registered = true;
+    }
+}
+
+// Backup cleanup: runs during process exit as a destructor.
+// If the atexit handler already cleaned up, this is a no-op.
+static void process_exit_cleanup() __attribute__((destructor(65535)));
+void process_exit_cleanup()
+{
+    ensure_shutdown();
+}
+
+// ---------------------------------------------------------------------------
+// rocprofiler-sdk registration (primary tool loading mechanism)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+void rocp_hsa_table_callback(rocprofiler_intercept_table_t type,
+                             uint64_t                      /* lib_version */,
+                             uint64_t                      lib_instance,
+                             void**                        tables,
+                             uint64_t                      num_tables,
+                             void*                         /* user_data */)
+{
+    if (type != ROCPROFILER_HSA_TABLE) return;
+    if (lib_instance != 0) {
+        cerr << "omniprobe: unexpected multiple HSA runtime instances" << endl;
+        return;
+    }
+    if (num_tables < 1 || tables == nullptr) {
+        cerr << "omniprobe: HSA intercept table registration provided no tables" << endl;
+        return;
+    }
+
+    auto* table = static_cast<HsaApiTable*>(tables[0]);
+    hsaInterceptor::getInstance(table, 0, 0, nullptr);
+    register_atexit_handler();
+}
+
+void rocp_tool_fini(void* /* tool_data */)
+{
+    ensure_cleanup();
+    cerr << "hsaInterceptor: Application elapsed usecs: "
+         << std::dec << globalTime.getElapsedNanos() / 1000 << "us" << endl;
+}
+
+} // anonymous namespace
+
 extern "C" {
 
-    /*
-        The HSA runtime has a feature for which you can write extension libraries to hook out the HSA runtime
-        API to do clever things like profilers.  The environment variable HSA_TOOLS_LIB points to a shared
-        lib that contains an "OnLoad" method which will be invoked by the HSA runtime.  One of the method
-        parameters is what amounts to a vtable of the entire HSA api.  Overwriting the vtable entries
-        allows the HSA_TOOL to masquerade as the runtime to gain visibility on the application itself.
-        Typically an HSA_TOOL will forward calls on to the original APIs once it has processed the call beforehand.
+// rocprofiler-sdk discovers this symbol in loaded libraries and calls it
+// during ROCm runtime initialization.
+PUBLIC_API rocprofiler_tool_configure_result_t*
+rocprofiler_configure(uint32_t                 /* version */,
+                      const char*              /* runtime_version */,
+                      uint32_t                 /* priority */,
+                      rocprofiler_client_id_t* client_id)
+{
+    client_id->name = "omniprobe";
 
-        rocmhook constructs a view of the application (memory allocations, kernels loaded, etc) and uses that
-        to support the ability to capture traces and hardware counters during kernel execution. rocmhook also has
-        the ability to take snapshots of device memory and restore the contents of memory during runtime.  This was
-        implemented to support kernel replay, which does not occur by default but must be explicitly invoked.
+    rocprofiler_at_intercept_table_registration(
+        rocp_hsa_table_callback, ROCPROFILER_HSA_TABLE, nullptr);
 
-    */
-
-    PUBLIC_API bool OnLoad(HsaApiTable* table, uint64_t runtime_version, uint64_t failed_tool_count,
-                           const char* const* failed_tool_names) {
-        //cerr << "Trying to init hsaInterceptor" << endl;
-        hsaInterceptor *hook = hsaInterceptor::getInstance(table, runtime_version, failed_tool_count, failed_tool_names);
-        //cerr << "hsaInterceptor: Initializing: 0x" << hex << hook << endl;
-
-        // Register atexit handler to ensure cleanup happens before process exit
-        // atexit handlers run BEFORE __attribute__((destructor)) functions
-        static bool atexit_registered = false;
-        if (!atexit_registered) {
-            atexit([]() {
-                auto* hook = hsaInterceptor::getInstanceIfExists();
-                if (hook) {
-                    hook->shutdown();
-                    // Wait for operations to complete
-                    int wait_count = 0;
-                    while (hook->hasPendingSignals() && wait_count < 1000) {
-                        usleep(1000);
-                        wait_count++;
-                    }
-                    if (wait_count < 1000) {
-                        hsaInterceptor::cleanup();
-                    }
-                }
-            });
-            atexit_registered = true;
-        }
-
-        return true;
-    }
-
-    PUBLIC_API void OnUnload() {
-        // Check if already cleaned up by atexit handler
-        auto* hook = hsaInterceptor::getInstanceIfExists();
-        if (hook) {
-            hsaInterceptor::cleanup();
-            cerr << "hsaInterceptor: Application elapsed usecs: " << std::dec << globalTime.getElapsedNanos() / 1000 << "us" << std::endl;
-        }
-    }
-
-    // This runs during process exit, even before HSA runtime calls OnUnload()
-    // We need this to ensure threads are stopped before C++ runtime shutdown
-    // Use high priority to run as early as possible during exit
-    // Note: If atexit handler already cleaned up, this is a no-op
-    static void process_exit_cleanup() __attribute__((destructor(65535)));
-    void process_exit_cleanup()
-    {
-        auto* hook = hsaInterceptor::getInstanceIfExists();
-        if (hook) {
-            // This shouldn't happen if atexit worked properly, but handle it anyway
-            hook->shutdown();
-            int wait_count = 0;
-            while (hook->hasPendingSignals() && wait_count < 1000) {
-                usleep(1000);
-                wait_count++;
-            }
-        }
-    }
-
-   /* static void unload_me() __attribute__((destructor));
-    void unload_me()
-    {
-        // cout << "ROCMHOOK: Unloading" << endl;
-        hsaInterceptor::cleanup();
-        cerr << "hsaInterceptor: Application elapsed usecs: " << globalTime.getElapsedNanos() / 1000 << "us\n";
-    }*/
+    static auto cfg = rocprofiler_tool_configure_result_t{
+        sizeof(rocprofiler_tool_configure_result_t),
+        nullptr,       // no separate init callback — we init in the table callback
+        &rocp_tool_fini,
+        nullptr        // no tool_data
+    };
+    return &cfg;
 }
+
+// ---------------------------------------------------------------------------
+// Legacy HSA_TOOLS_LIB entry points (error guard)
+// ---------------------------------------------------------------------------
+// These symbols must remain exported so that if a user mistakenly sets
+// HSA_TOOLS_LIB to point to this library, the HSA runtime can resolve
+// them. OnLoad aborts with a clear error message instead of silently
+// double-initializing.
+
+PUBLIC_API bool OnLoad(HsaApiTable* /* table */, uint64_t /* runtime_version */,
+                       uint64_t /* failed_tool_count */,
+                       const char* const* /* failed_tool_names */) {
+    cerr << "\n"
+         << "ERROR: omniprobe no longer uses HSA_TOOLS_LIB for tool loading.\n"
+         << "Please unset HSA_TOOLS_LIB and use the 'omniprobe' command instead.\n"
+         << "Aborting.\n" << endl;
+    abort();
+    return false;
+}
+
+PUBLIC_API void OnUnload() {
+    // No-op — cleanup is handled by rocp_tool_fini and the atexit handler.
+}
+
+} // extern "C"

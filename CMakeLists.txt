@@ -86,6 +86,7 @@ else()
 endif()
 
 find_package(hip REQUIRED)
+find_package(rocprofiler-sdk REQUIRED HINTS ${ROCM_PATH})
 
 if(INTERCEPTOR_TOPLEVEL_PROJECT)
     set(CMAKE_CXX_STANDARD
