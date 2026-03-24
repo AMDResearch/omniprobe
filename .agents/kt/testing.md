@@ -77,11 +77,18 @@ Orchestrates end-to-end tests by sourcing feature-specific subscripts.
 
 **What it does**:
 1. Auto-detects build directory (`build/` relative to repo root)
-2. Uses repo's omniprobe script (`${REPO_ROOT}/omniprobe/omniprobe`) - never hardcoded paths
+2. Resolves omniprobe via `OMNIPROBE_ROOT` (defaults to `build/`), using `${OMNIPROBE_ROOT}/bin/omniprobe`
 3. Sets `ROCR_VISIBLE_DEVICES=0` to target GPU 0
 4. Runs instrumented test kernels from `build/tests/test_kernels/`
 5. Captures output and validates against expected patterns
 6. Reports pass/fail with colored output
+
+**Install-tree testing**: Set `OMNIPROBE_ROOT` to test from an install or relocated tree:
+```bash
+OMNIPROBE_ROOT=/path/to/install/omniprobe ./tests/run_handler_tests.sh
+```
+All test scripts use this pattern. The Triton test is an exception — it uses the `OMNIPROBE`
+env var directly (`OMNIPROBE=/path/to/install/omniprobe/bin/omniprobe`).
 
 **Test helpers** (defined in subscripts):
 ```bash
@@ -214,7 +221,7 @@ Simple HIP kernels for testing specific scenarios. These are automatically instr
 - Test kernels compiled with `-fpass-plugin=${INST_PLUGIN}`
 - Plugin path: `build/lib/plugins/libAMDGCNSubmitAddressMessages-rocm.so`
 - Bitcode files copied to `build/lib/bitcode/` (via `copy_bitcode` target)
-- Plugin symlinks created in `build/lib/plugins/` (via `symlink_plugins` target)
+- Plugins built directly to `build/lib/plugins/` by `add_instrumentation_plugins()` CMake function
 - Instrumentation happens at compile time, producing ready-to-run instrumented executables
 
 **Building test kernels**:
@@ -389,6 +396,14 @@ The compilation produces a Clang Offload Bundle which must be unbundled first.
 
 ## Recent Changes
 
+**2026-03-24** (rf_absorb-instrumentation-plugins):
+- Fixed OMNIPROBE_ROOT support in 4 test scripts: `hipblaslt/run_test.sh`,
+  `rocblas_filter/run_test.sh`, `rocblas_hipblaslt/run_test.sh`,
+  `library_filter_chain/run_test.sh`. All now use `OMNIPROBE_ROOT/bin/omniprobe`
+  (was hardcoded to `${REPO_ROOT}/omniprobe/omniprobe`, breaking install-tree testing).
+- Test kernel CMakeLists.txt: updated plugin dependency from `symlink_plugins`
+  to `AMDGCNSubmitAddressMessages-rocm` (symlink target removed by refactor).
+
 **2026-03-23** (rf_unify-kernel-discovery):
 - Added module-load kernel discovery test suite (`run_module_load_tests.sh`, tests 20-22)
 - New test kernel: `module_load_kernel.hip` compiled to standalone `.hsaco` with instrumentation
@@ -433,10 +448,12 @@ The compilation produces a Clang Offload Bundle which must be unbundled first.
 - Reordered suites: handler, library filter chain, hipBLASLt, rocBLAS, combined, Triton (6 suites)
 
 ## Last Verified
-Date: 2026-03-23
+Commit: b891eb2
+Date: 2026-03-24
 - Handler tests: 22/22 passing (3 handler + 6 block filter + 3 library filter + 7 scope filter + 3 module-load)
-- Library filter chain: 5/5 passing
-- hipBLASLt instrumentation: 5/5 passing (requires `INSTRUMENTED_HIPBLASLT_LIB_DIR`; skips otherwise)
-- rocBLAS integration: 5/5 passing (requires `INSTRUMENTED_ROCBLAS_LIB_DIR`; skips otherwise)
-- rocBLAS + hipBLASLt combined: 5/5 passing (requires both; skips otherwise)
 - Triton integration: 5/5 passing (requires `TRITON_DIR`; skips otherwise)
+- hipBLASLt instrumentation: 5/5 passing (requires `INSTRUMENTED_HIPBLASLT_LIB_DIR`; skips otherwise)
+- Library filter chain: needs investigation (test 2 hangs; previously tests 4-5 failed on 2026-03-12)
+- rocBLAS integration: needs investigation (instrumented sscal not found in current build)
+- rocBLAS + hipBLASLt combined: not tested (blocked by rocBLAS issue above)
+- All suites verified from build tree, install tree, and relocated install tree (cleanroom test)
