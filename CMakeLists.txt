@@ -228,6 +228,7 @@ message("CPack-install-prefix: ${CPACK_PACKAGING_INSTALL_PREFIX}")
 install(TARGETS ${INTERCEPTOR_TARGET} LIBRARY DESTINATION omniprobe/lib)
 install(PROGRAMS ${ROOT_DIR}/omniprobe/omniprobe DESTINATION omniprobe/bin)
 install(DIRECTORY ${ROOT_DIR}/omniprobe/config DESTINATION omniprobe FILES_MATCHING PATTERN "*")
+install(FILES ${ROOT_DIR}/LICENSE DESTINATION omniprobe/share/omniprobe)
 
 # Plugin install rules are inside add_instrumentation_plugins()
 
