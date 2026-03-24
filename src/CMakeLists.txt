@@ -114,7 +114,7 @@ target_link_libraries(
     stdc++
     #c++fs
     ${HSA_RUNTIME_LIB}
-    ${DH_COMMS_LIBRARIES}/libdh_comms.so
+    dh_comms
     kernelDB64
     amd_comgr
     elf
@@ -142,7 +142,7 @@ target_link_libraries(
     ${STRESSTEST_NAME}
   PRIVATE
     ${ROCM_PATH}/lib/libhiprtc.so
-    ${DH_COMMS_LIBRARIES}/libdh_comms.so
+    dh_comms
     logDuration64
 )
 
@@ -176,7 +176,7 @@ target_link_libraries(
     ${HEATMAP_EXAMPLE}
   PRIVATE
     ${ROCM_PATH}/lib/libhiprtc.so
-    ${DH_COMMS_LIBRARIES}/libdh_comms.so
+    dh_comms
     logDuration64
 )
 

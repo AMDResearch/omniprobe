@@ -118,7 +118,7 @@ target_link_libraries(
     c
     stdc++
     stdc++fs
-    ${DH_COMMS_LIBRARIES}/libdh_comms.so
+    dh_comms
     kernelDB64
 )
 
@@ -129,7 +129,7 @@ target_link_libraries(
     c
     stdc++
     stdc++fs
-    ${DH_COMMS_LIBRARIES}/libdh_comms.so
+    dh_comms
     kernelDB64
 )
 
@@ -140,7 +140,7 @@ target_link_libraries(
     c
     stdc++
     stdc++fs
-    ${DH_COMMS_LIBRARIES}/libdh_comms.so
+    dh_comms
     kernelDB64
     logDuration64
 )
@@ -152,7 +152,7 @@ target_link_libraries(
     c
     stdc++
     stdc++fs
-    ${DH_COMMS_LIBRARIES}/libdh_comms.so
+    dh_comms
     kernelDB64
     logDuration64
 )
