@@ -3,7 +3,13 @@
 ## Overview
 Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runtime information such as memory access patterns, cache line usage, and LDS bank conflicts.
 
-**Recent Changes** (2026-03-23):
+**Recent Changes** (2026-03-24):
+- Absorbed `instrument-amdgpu-kernels` submodule into `src/instrumentation/`
+  (refactor `rf_absorb-instrumentation-plugins`, done). Replaced `ExternalProject_Add`
+  with `add_instrumentation_plugins()` CMake function using `llvm-config` and custom
+  commands. Removed `ext_proj_add.cmake`. Only dh_comms and kerneldb remain as submodules.
+
+**Changes** (2026-03-23):
 - Install tree restructure complete (`rf_install-tree-restructure`, done).
   Both build and install trees now use `<root>/omniprobe/{bin,lib,lib/plugins,lib/bitcode,config}`.
   `omniprobe` script derives all paths from its own location (`dirname(dirname(abspath(__file__)))`),
@@ -105,6 +111,7 @@ Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runti
 | comms_mgr | `src/comms_mgr.cc` | Pool management for dh_comms objects |
 | Memory Analysis | `src/memory_analysis_handler.cc` | Uncoalesced access + bank conflict detection |
 | Plugins | `plugins/` | Message handler factory interface |
+| Instrumentation | `src/instrumentation/` | LLVM IR instrumentation plugins |
 | omniprobe CLI | `omniprobe/omniprobe` | Python orchestrator script |
 | Testing | `tests/` | End-to-end test infrastructure via omniprobe |
 
@@ -114,7 +121,9 @@ Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runti
 |-------------|----------|-------------|-------------|
 | dh_comms | `external/dh_comms/` | Device-host message passing | `external/dh_comms/.agents/kt/` |
 | kerneldb | `external/kerneldb/` | ISA extraction, DWARF parsing | `external/kerneldb/.agents/kt/` |
-| instrument-amdgpu-kernels | `external/instrument-amdgpu-kernels/` | LLVM IR instrumentation plugins | `external/instrument-amdgpu-kernels/.agents/kt/` |
+
+Note: `instrument-amdgpu-kernels` was absorbed into `src/instrumentation/` (2026-03-24).
+It is no longer a submodule. See `sub_instrument_amdgpu.md` for details.
 
 ### Working with Submodules
 
@@ -209,4 +218,4 @@ Useful build artifacts:
 | `DH_COMMS_GROUP_FILTER_X/Y/Z` | Block index filters (N or N:M range) |
 
 ## Last Verified
-Date: 2026-03-23
+Date: 2026-03-24

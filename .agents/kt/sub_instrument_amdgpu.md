@@ -1,23 +1,22 @@
-# instrument-amdgpu-kernels (Sub-project Integration)
+# Instrumentation Plugins (formerly instrument-amdgpu-kernels submodule)
 
 ## Location
-`external/instrument-amdgpu-kernels/` (git submodule)
-
-## Sub-project KT
-`external/instrument-amdgpu-kernels/.agents/kt/architecture.md`
+`src/instrumentation/` (absorbed from submodule, refactor `rf_absorb-instrumentation-plugins`, done)
 
 ## Role in Omniprobe
 LLVM IR instrumentation plugins. At compile time, clones kernels and inserts instrumentation calls. The original kernel is preserved; the clone is suffixed and receives an extra argument.
 
-**Recent Changes** (2026-03-03):
-- Removed 5 plugins that don't use dh_comms bitcode
-- Simplified to 3 core plugins: AddressMessages, BBStart, BBInterval
-- Removed examples/, instrumentation/, tests/ directories
-- Renamed lib/ → src/
+## Build System
+Plugins are built via `add_instrumentation_plugins()` function in
+`cmake_modules/add_instrumentation_plugins.cmake`. Called once per LLVM variant:
+- ROCm: `add_instrumentation_plugins(SUFFIX rocm LLVM_DIR ${ROCM_PATH}/llvm)`
+- Triton: `add_instrumentation_plugins(SUFFIX triton LLVM_DIR ${TRITON_LLVM} LINK_LLVM_LIBS)`
 
-## Integration Points
+**Key design**: Plugins are compiled using `add_custom_command()` with the LLVM variant's own
+`clang++` (from `llvm-config --bindir`), NOT hipcc. This is required because LLVM pass plugins
+must match the LLVM they'll be loaded into.
 
-### Plugins Produced
+## Plugins Produced
 - `libAMDGCNSubmitAddressMessages-{rocm,triton}.so` — address message instrumentation
 - `libAMDGCNSubmitBBStart-{rocm,triton}.so` — basic block entry tracking
 - `libAMDGCNSubmitBBInterval-{rocm,triton}.so` — basic block timing
@@ -26,13 +25,13 @@ All plugins use dh_comms bitcode for device-side message submission.
 Bitcode located via `getBitcodePath()`: looks in `../bitcode/` relative to plugin dir
 (i.e., `lib/bitcode/` when plugin is in `lib/plugins/`), with fallback to same directory.
 
-### Key Concepts
+## Key Concepts
 - **Kernel Cloning**: Original kernel `foo` → instrumented `foo_inst`
 - **Extra Argument**: Instrumented kernel gets `void* dh_comms_descriptor`
 - **Address Space Mapping**: FLAT(0), GLOBAL(1), SHARED(3), CONSTANT(4)
 - **DWARF Embedding**: Source location encoded in messages
 
-### Omniprobe Usage
+## Omniprobe Usage
 1. Build with `LLVM_PASS_PLUGIN_PATH` pointing to plugin
 2. Executable contains both original and instrumented kernels
 3. liblogDuration intercepts dispatch, finds `_inst` variant
@@ -62,23 +61,22 @@ info are skipped. Syntax: `file[:N[:M][,N[:M]...]][;...]` — see rf_instrumenta
 - **Triton mode**: Omniprobe sets `LLVM_PASS_PLUGIN_PATH` automatically based on selected analyzer
 - **HIP mode**: Users must manually compile with `-fpass-plugin=<plugin>.so`
 
-## Also Load
-- Full sub-project KT at `external/instrument-amdgpu-kernels/.agents/kt/architecture.md` (when available)
-
-## Directory Structure (Simplified)
+## Directory Structure
 
 ```
-instrument-amdgpu-kernels/
-├── src/                        # Plugin source (renamed from lib/)
-│   ├── AMDGCNSubmitAddressMessages.cpp
-│   ├── AMDGCNSubmitBBStart.cpp
-│   ├── AMDGCNSubmitBBInterval.cpp
-│   ├── InstrumentationCommon.cpp
-│   └── CMakeLists.txt
-├── include/                    # Public headers
-└── CMakeLists.txt
+src/instrumentation/
+├── AMDGCNSubmitAddressMessages.cpp
+├── AMDGCNSubmitBBStart.cpp
+├── AMDGCNSubmitBBInterval.cpp
+├── InstrumentationCommon.cpp
+└── include/
+    ├── AMDGCNSubmitAddressMessage.h
+    ├── AMDGCNSubmitBBInterval.h
+    ├── AMDGCNSubmitBBStart.h
+    ├── InstrumentationCommon.h
+    └── utils.h
 ```
 
 ## Last Verified
-Submodule commit: 643a30c
-Date: 2026-03-23
+Commit: 49f4138
+Date: 2026-03-24

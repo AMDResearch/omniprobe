@@ -22,9 +22,10 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build"
 TEST_OUTPUT_DIR="${SCRIPT_DIR}/test_output"
 
-# Use repo's omniprobe - always use relative paths, never hardcoded installation paths
-OMNIPROBE="${REPO_ROOT}/omniprobe/omniprobe"
+# Use OMNIPROBE_ROOT if set (install/relocate tree), otherwise default to build tree
 OMNIPROBE_BUILD_DIR="${REPO_ROOT}/build"
+OMNIPROBE_ROOT="${OMNIPROBE_ROOT:-${OMNIPROBE_BUILD_DIR}}"
+OMNIPROBE="${OMNIPROBE_ROOT}/bin/omniprobe"
 
 # Parse arguments
 BUILD_ONLY=false

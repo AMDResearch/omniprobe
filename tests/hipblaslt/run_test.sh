@@ -19,7 +19,9 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-OMNIPROBE="${REPO_ROOT}/omniprobe/omniprobe"
+BUILD_DIR="${REPO_ROOT}/build"
+OMNIPROBE_ROOT="${OMNIPROBE_ROOT:-${BUILD_DIR}}"
+OMNIPROBE="${OMNIPROBE_ROOT}/bin/omniprobe"
 TEST_BINARY="${SCRIPT_DIR}/test_hipblaslt_transform"
 OUTPUT_DIR="${REPO_ROOT}/tests/test_output"
 ROCR_VISIBLE_DEVICES="${ROCR_VISIBLE_DEVICES:-0}"
