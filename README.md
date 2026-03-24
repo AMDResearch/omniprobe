@@ -52,7 +52,7 @@ feasible.
 
 ```
 Omniprobe is developed by Advanced Micro Devices, Research and Advanced Development
-Copyright (c) 2025 Advanced Micro Devices. All rights reserved.
+Copyright (c) 2026 Advanced Micro Devices. All rights reserved.
 
 usage: omniprobe [options] -- application
 
