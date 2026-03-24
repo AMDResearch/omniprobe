@@ -19,7 +19,9 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-OMNIPROBE="${REPO_ROOT}/omniprobe/omniprobe"
+BUILD_DIR="${REPO_ROOT}/build"
+OMNIPROBE_ROOT="${OMNIPROBE_ROOT:-${BUILD_DIR}}"
+OMNIPROBE="${OMNIPROBE_ROOT}/bin/omniprobe"
 TEST_SCAL="${REPO_ROOT}/tests/rocblas_filter/test_rocblas_scal"
 TEST_GEMM="${REPO_ROOT}/tests/rocblas_filter/test_rocblas_gemm"
 OUTPUT_DIR="${REPO_ROOT}/tests/test_output"
