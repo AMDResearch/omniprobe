@@ -75,7 +75,7 @@ print(ascii_art)
 
 #LOGDUR_INSTRUMENTED
 #LOGDUR_KERNEL_CACHE
-#HSA_TOOLS_LIB
+#LD_PRELOAD (rocprofiler-sdk discovers the tool via rocprofiler_configure symbol)
 #TRITON_LOGGER_LEVEL=3
 #TRITON_HIP_LLD_PATH=${ROCM_HOME}/llvm/bin/ld.lld
 #TRITON_ALWAYS_COMPILE=1
@@ -248,7 +248,7 @@ rocm_path = get_rocm_path()
 
 analytics_config = {}
 
-op_run_env = {"LOGDUR_INSTRUMENTED": "false", "HSA_TOOLS_LIB": os.path.join(lib_dir, "liblogDuration64.so")}
+op_run_env = {"LOGDUR_INSTRUMENTED": "false", "LD_PRELOAD": os.path.join(lib_dir, "liblogDuration64.so")}
 
 def validate_triton_config():
     global triton_config
@@ -386,8 +386,13 @@ def setup_env(parms):
             env['LOGDUR_FILTER'] = parms.kernels
             env_dump['LOGDUR_FILTER'] = parms.kernels
 
-    env['HSA_TOOLS_LIB'] = op_run_env['HSA_TOOLS_LIB']
-    env_dump['HSA_TOOLS_LIB'] = op_run_env['HSA_TOOLS_LIB']
+    # Load via LD_PRELOAD so rocprofiler-sdk discovers rocprofiler_configure()
+    preload_lib = op_run_env['LD_PRELOAD']
+    if 'LD_PRELOAD' in env:
+        env['LD_PRELOAD'] = preload_lib + ':' + env['LD_PRELOAD']
+    else:
+        env['LD_PRELOAD'] = preload_lib
+    env_dump['LD_PRELOAD'] = env['LD_PRELOAD']
     env['LOGDUR_HANDLERS'] = ','.join(parms.handlers)
     env_dump['LOGDUR_HANDLERS'] = ','.join(parms.handlers)
 
