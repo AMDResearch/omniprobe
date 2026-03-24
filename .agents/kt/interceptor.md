@@ -4,7 +4,9 @@
 HSA tools library that intercepts kernel dispatches at runtime. When a dispatch occurs, it checks for an instrumented kernel variant and optionally swaps in the instrumented version with modified kernel arguments.
 
 ## Core Concepts
-- **HSA Tools Library**: Loaded via `HSA_TOOLS_LIB` env var when HSA runtime initializes
+- **rocprofiler-sdk Registration**: Loaded via `LD_PRELOAD`; rocprofiler-sdk discovers the tool
+  by scanning for the `rocprofiler_configure()` symbol. Registers for `ROCPROFILER_HSA_TABLE`
+  interception. Legacy `HSA_TOOLS_LIB` path aborts with an error message.
 - **API Table Hooking**: Modifies HSA function pointer table to intercept calls
 - **Kernel Object Map**: Maps kernel handles to descriptors (name, symbol, agent, kernarg_size)
 - **Signal Pool**: Reusable HSA signals for tracking kernel completion
@@ -17,7 +19,8 @@ HSA tools library that intercepts kernel dispatches at runtime. When a dispatch 
 - Shutdown sequence: set `shutting_down_` flag, join threads, cleanup
 
 ## Data Flow
-1. `OnLoad()` called by HSA runtime → creates singleton, hooks API
+1. `rocprofiler_configure()` called by rocprofiler-sdk → registers HSA table callback →
+   callback receives `HsaApiTable*` → creates singleton, hooks API
 2. `hsa_queue_create()` intercepted → registers queue + agent
 3. `hsa_executable_symbol_get_info()` intercepted → captures kernel objects into `kernel_objects_` AND registers them in `kernel_cache_` (coCache) via `registerRuntimeKernel()` for instrumented alternative lookup
 4. Startup: code objects registered in `kernel_cache_` (coCache) but kernelDB scanning is **deferred**
@@ -27,8 +30,10 @@ HSA tools library that intercepts kernel dispatches at runtime. When a dispatch 
 8. Signal runner thread processes completed kernels, invokes handler reports
 
 ## Interfaces
-- `OnLoad(HsaApiTable*, ...)` — HSA entry point — `src/interceptor.cc:990`
-- `OnUnload()` — HSA cleanup — `src/interceptor.cc:1028`
+- `rocprofiler_configure()` — rocprofiler-sdk tool entry point (extern "C") — `src/interceptor.cc`
+- `rocp_hsa_table_callback()` — receives HsaApiTable*, calls getInstance() — `src/interceptor.cc`
+- `OnLoad()` — legacy error guard, aborts with message to unset HSA_TOOLS_LIB — `src/interceptor.cc`
+- `OnUnload()` — no-op (cleanup via rocp_tool_fini + atexit) — `src/interceptor.cc`
 - `hsaInterceptor::getInstance()` — singleton accessor — `inc/interceptor.h:120`
 - `hsaInterceptor::doPackets()` — packet interception logic — `inc/interceptor.h:113`
 - `hsaInterceptor::fixupPacket()` — modify dispatch packet — `inc/interceptor.h:112`
@@ -92,4 +97,4 @@ Filters which libraries are scanned for kernels, configured via `--library-filte
 - None currently documented
 
 ## Last Verified
-Date: 2026-03-23
+Date: 2026-03-24

@@ -4,6 +4,10 @@
 Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runtime information such as memory access patterns, cache line usage, and LDS bank conflicts.
 
 **Recent Changes** (2026-03-24):
+- Migrated from `HSA_TOOLS_LIB` to rocprofiler-sdk registration API
+  (refactor `rf_rocprofiler-sdk`, done). `liblogDuration64.so` now exports
+  `rocprofiler_configure()` and is loaded via `LD_PRELOAD`. `OnLoad()` aborts with
+  an error if called via the legacy `HSA_TOOLS_LIB` mechanism.
 - Absorbed `instrument-amdgpu-kernels` submodule into `src/instrumentation/`
   (refactor `rf_absorb-instrumentation-plugins`, done). Replaced `ExternalProject_Add`
   with `add_instrumentation_plugins()` CMake function using `llvm-config` and custom
@@ -90,7 +94,7 @@ Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runti
 ## Data Flow
 
 1. **Build time**: LLVM plugins clone kernels, insert `v_submit_message()` calls
-2. **Runtime**: `omniprobe` script sets `HSA_TOOLS_LIB=liblogDuration64.so`
+2. **Runtime**: `omniprobe` script sets `LD_PRELOAD=liblogDuration64.so` (rocprofiler-sdk discovers tool)
 3. **Dispatch**: `hsaInterceptor` intercepts dispatch, swaps to instrumented kernel
 4. **Kernel exec**: Instrumented kernel streams messages to shared buffer
 5. **Host thread**: `dh_comms` polls buffer, invokes message handlers
@@ -209,7 +213,7 @@ Useful build artifacts:
 
 | Variable | Purpose |
 |----------|---------|
-| `HSA_TOOLS_LIB` | Points to liblogDuration64.so |
+| `LD_PRELOAD` | Points to liblogDuration64.so (rocprofiler-sdk discovers tool via symbol scan) |
 | `LOGDUR_HANDLERS` | Comma-separated list of handler .so files |
 | `LOGDUR_INSTRUMENTED` | Enable instrumented kernel dispatch |
 | `LLVM_PASS_PLUGIN_PATH` | Path to instrumentation plugin |
@@ -218,4 +222,4 @@ Useful build artifacts:
 | `DH_COMMS_GROUP_FILTER_X/Y/Z` | Block index filters (N or N:M range) |
 
 ## Last Verified
-Date: 2026-03-24
+Date: 2026-03-24 (post rf_rocprofiler-sdk)
