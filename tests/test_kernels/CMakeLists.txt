@@ -39,7 +39,7 @@ target_compile_options(simple_heatmap_test PRIVATE
     -fpass-plugin=${INST_PLUGIN}
 )
 target_link_options(simple_heatmap_test PRIVATE -fgpu-rdc)
-add_dependencies(simple_heatmap_test copy_bitcode symlink_plugins)
+add_dependencies(simple_heatmap_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
 
 # Simple memory analysis test kernel
 add_executable(simple_memory_analysis_test simple_memory_analysis_test.cpp)
@@ -49,7 +49,7 @@ target_compile_options(simple_memory_analysis_test PRIVATE
     -fpass-plugin=${INST_PLUGIN}
 )
 target_link_options(simple_memory_analysis_test PRIVATE -fgpu-rdc)
-add_dependencies(simple_memory_analysis_test copy_bitcode symlink_plugins)
+add_dependencies(simple_memory_analysis_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
 
 # Dual kernel test - dispatches two kernels to test scanning frequency
 add_executable(dual_kernel_test dual_kernel_test.cpp)
@@ -59,7 +59,7 @@ target_compile_options(dual_kernel_test PRIVATE
     -fpass-plugin=${INST_PLUGIN}
 )
 target_link_options(dual_kernel_test PRIVATE -fgpu-rdc)
-add_dependencies(dual_kernel_test copy_bitcode symlink_plugins)
+add_dependencies(dual_kernel_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
 
 # Block filter test kernel
 add_executable(block_filter_test block_filter_test.cpp)
@@ -69,7 +69,7 @@ target_compile_options(block_filter_test PRIVATE
     -fpass-plugin=${INST_PLUGIN}
 )
 target_link_options(block_filter_test PRIVATE -fgpu-rdc)
-add_dependencies(block_filter_test copy_bitcode symlink_plugins)
+add_dependencies(block_filter_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
 
 # Module-load test: kernel compiled to standalone .hsaco, loaded via hipModuleLoad at runtime.
 # This exercises the code path where instrumented kernels live in a dynamically-loaded code
@@ -93,7 +93,7 @@ add_custom_command(
     DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/module_load_kernel.hip
         copy_bitcode
-        symlink_plugins
+        AMDGCNSubmitAddressMessages-rocm
     COMMENT "Compiling module_load_kernel.hip → .hsaco with instrumentation"
 )
 add_custom_target(module_load_kernel_hsaco ALL DEPENDS ${MODULE_LOAD_HSACO})
