@@ -953,8 +953,11 @@ void hsaInterceptor::addKernel(uint64_t kernelObject, std::string& name, hsa_exe
            return;  // Already registered
    }
    // Register runtime-discovered kernels in the cache so that
-   // findInstrumentedAlternative() can find them without --library-filter
-   if (run_instrumented_)
+   // findInstrumentedAlternative() can find them without --library-filter.
+   // Skip registration for kernels from excluded files to respect the library filter.
+   if (run_instrumented_ &&
+       !(library_filter_.isActive() &&
+         kernel_cache_.isKernelFromExcludedFile(kernelObject, library_filter_)))
        kernel_cache_.registerRuntimeKernel(thisName, symbol, kernelObject, agent, kernarg_size);
 }
 

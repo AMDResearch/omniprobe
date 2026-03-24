@@ -174,6 +174,7 @@ public:
     const amd_kernel_code_t* getKernelCode(uint64_t kernel_object);
     void registerRuntimeKernel(const std::string& name, hsa_executable_symbol_t symbol,
                                uint64_t kernel_object, hsa_agent_t agent, uint32_t kernarg_size);
+    bool isKernelFromExcludedFile(uint64_t kernel_object, const class LibraryFilter& filter);
 private:
     bool resolveRuntimeArgDescriptors(hsa_agent_t agent);
     HsaApiTable *apiTable_;
@@ -190,6 +191,8 @@ private:
     std::map<hsa_agent_t, std::map<std::string, CodeObjectRef>, hsa_cmp<hsa_agent_t>> kernel_co_map_;
     // Runtime kernel objects: agent -> (name -> kernel_object address) for resolveRuntimeArgDescriptors
     std::map<hsa_agent_t, std::map<std::string, uint64_t>, hsa_cmp<hsa_agent_t>> runtime_kernel_objects_;
+    // Cache: executable.handle -> whether it comes from an excluded file
+    std::map<uint64_t, bool> excluded_executable_cache_;
 };
 
 class KernelArgHelper {

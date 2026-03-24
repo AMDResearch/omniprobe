@@ -21,6 +21,7 @@ THE SOFTWARE.
 *******************************************************************************/
 
 #include "inc/utils.h"
+#include "inc/library_filter.h"
 #include "kernelDB.h"
 #include <algorithm>
 #include <regex>
@@ -217,6 +218,77 @@ void coCache::registerRuntimeKernel(const std::string& name, hsa_executable_symb
     }
     kernarg_sizes_[kernel_object] = kernarg_size;
     runtime_kernel_objects_[agent][name] = kernel_object;
+}
+
+bool coCache::isKernelFromExcludedFile(uint64_t kernel_object, const LibraryFilter& filter)
+{
+    // Find which executable this kernel belongs to
+    hsa_executable_t executable;
+    auto status = loader_api_.hsa_ven_amd_loader_query_executable(
+        reinterpret_cast<const void*>(kernel_object), &executable);
+    if (status != HSA_STATUS_SUCCESS)
+        return false;  // Can't determine — don't exclude
+
+    // Check cache
+    {
+        lock_guard<std::mutex> lock(mutex_);
+        auto it = excluded_executable_cache_.find(executable.handle);
+        if (it != excluded_executable_cache_.end())
+            return it->second;
+    }
+
+    // Not cached — iterate loaded code objects to find the source file URI
+    bool excluded = false;
+    struct IterData {
+        const LibraryFilter* filter;
+        bool* excluded;
+        hsa_ven_amd_loader_1_01_pfn_t* api;
+    } iter_data = {&filter, &excluded, &loader_api_};
+
+    loader_api_.hsa_ven_amd_loader_executable_iterate_loaded_code_objects(
+        executable,
+        [](hsa_executable_t, hsa_loaded_code_object_t lco, void* data) -> hsa_status_t {
+            auto* d = static_cast<IterData*>(data);
+
+            // Get URI length
+            uint32_t uri_len = 0;
+            auto s = d->api->hsa_ven_amd_loader_loaded_code_object_get_info(
+                lco, HSA_VEN_AMD_LOADER_LOADED_CODE_OBJECT_INFO_URI_LENGTH, &uri_len);
+            if (s != HSA_STATUS_SUCCESS || uri_len == 0)
+                return HSA_STATUS_SUCCESS;  // Continue iteration
+
+            // Get URI string
+            std::string uri(uri_len, '\0');
+            s = d->api->hsa_ven_amd_loader_loaded_code_object_get_info(
+                lco, HSA_VEN_AMD_LOADER_LOADED_CODE_OBJECT_INFO_URI, uri.data());
+            if (s != HSA_STATUS_SUCCESS)
+                return HSA_STATUS_SUCCESS;
+
+            // Extract file path from URI: "file:///path#offset=X&size=Y"
+            const std::string file_prefix = "file://";
+            if (uri.compare(0, file_prefix.size(), file_prefix) != 0)
+                return HSA_STATUS_SUCCESS;
+
+            std::string path = uri.substr(file_prefix.size());
+            // Remove fragment (#offset=X&size=Y)
+            auto hash_pos = path.find('#');
+            if (hash_pos != std::string::npos)
+                path = path.substr(0, hash_pos);
+
+            if (d->filter->isExcluded(path)) {
+                *d->excluded = true;
+                return HSA_STATUS_ERROR;  // Stop iteration early
+            }
+            return HSA_STATUS_SUCCESS;
+        },
+        &iter_data);
+
+    // Cache result
+    {
+        lock_guard<std::mutex> lock(mutex_);
+        excluded_executable_cache_[executable.handle] = excluded;
+    }
+    return excluded;
 }
 
 bool coCache::resolveRuntimeArgDescriptors(hsa_agent_t agent)
