@@ -31,8 +31,8 @@ Provides a factory interface for loading message handlers from shared libraries.
 | Plugin | Source | Handler |
 |--------|--------|---------|
 | libMemAnalysis64.so | `plugins/memory_analysis_plugin.cc` | memory_analysis_handler_t |
-| libMessageLogger64.so | `plugins/logger_plugin.cc` | message_logger |
-| libBasicBlockAnalysis64.so | `plugins/basic_block_plugin.cc` | basic_block_handler |
+| libLogMessages64.so | `plugins/logger_plugin.cc` | message_logger |
+| libBasicBlocks64.so | `plugins/basic_block_plugin.cc` | basic_block_handler |
 
 ## Creating a Custom Plugin
 1. Create .cc file with `getMessageHandlers()` implementation

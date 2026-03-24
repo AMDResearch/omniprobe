@@ -70,7 +70,7 @@ Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runti
                                           │
                            ┌──────────────▼──────────────┐
                            │  liblogDuration64.so        │
-                           │  (HSA tools library)        │
+                           │  (rocprofiler-sdk tool)     │
                            │  - Intercepts HSA dispatch  │
                            │  - Swaps instrumented knls  │
                            │  - Manages dh_comms + hdlrs │
@@ -86,7 +86,7 @@ Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runti
 └─────────────┘    └─────────────┘ └─────────────┘ └─────────────┘   └─────────────┘
 
        ┌───────────────────────────────────────────────────────────────────────┐
-       │  instrument-amdgpu-kernels (submodule)                                │
+       │  Instrumentation (src/instrumentation/)                               │
        │  LLVM IR passes that clone kernels and insert instrumentation calls   │
        └───────────────────────────────────────────────────────────────────────┘
 ```
@@ -173,9 +173,12 @@ build/
 <prefix>/omniprobe/
   bin/omniprobe          (Python script)
   config/                (analytics.py, triton_config.py)
+  include/dh_comms/*.h   (dh_comms public headers)
+  include/kerneldb/*.h   (kerneldb public headers)
   lib/*.so               (interceptor + handlers + runtime deps)
   lib/plugins/*.so       (LLVM instrumentation plugins)
   lib/bitcode/*.bc       (dh_comms device bitcode)
+  share/omniprobe/LICENSE
 ```
 
 ### Path resolution
@@ -194,8 +197,9 @@ OMNIPROBE_ROOT=/path/to/install/omniprobe tests/run_handler_tests.sh
 
 ## Build
 
-- CMake-based, requires ROCm (hipcc, HSA headers)
-- Sub-projects built via `ext_proj_add()` macro
+- CMake-based, requires ROCm (hipcc, HSA headers, rocprofiler-sdk)
+- Sub-projects (dh_comms, kerneldb) built via `add_subdirectory()`
+- Instrumentation plugins built via `add_instrumentation_plugins()` CMake function
 - Produces: `liblogDuration64.so`, message handler plugins, `omniprobe` script
 - Tests: `cmake -DINTERCEPTOR_BUILD_TESTING=ON`, run via `tests/run_handler_tests.sh`
 

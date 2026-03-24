@@ -13,7 +13,7 @@
 
 ## HSA/ROCm
 - **HSA (Heterogeneous System Architecture)**: Standard for CPU-GPU integration
-- **HSA Tools Library**: Shared library loaded by HSA runtime for instrumentation
+- **HSA Tools Library**: (Legacy, deprecated) Shared library loaded by HSA runtime via `HSA_TOOLS_LIB`. Omniprobe now uses rocprofiler-sdk registration via `LD_PRELOAD`
 - **AQL (Architected Queuing Language)**: HSA command queue packet format
 - **Dispatch Packet**: AQL packet that launches a kernel
 - **Kernel Object**: Handle identifying a compiled kernel
