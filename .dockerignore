@@ -37,8 +37,9 @@ __pycache__/
 containers/toolchain.Dockerfile
 containers/omniprobe.Dockerfile
 containers/omniprobe.def
-containers/build.sh
-containers/run.sh
+containers/toolchain.def
+containers/build-container.sh
+containers/run-container.sh
 containers/.dockerignore
 containers/*.sif
 # Note: triton_install.sh is intentionally NOT excluded as it's needed for the build

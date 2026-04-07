@@ -114,16 +114,16 @@ General omniprobe arguments:
 
 ### Quick start (container)
 
-We provide containerized execution environments for users to get started with omniprobe right away. Leverage the [`containers/run.sh`](containers/run.sh) script to jump into a container with the project and all of its dependencies pre-installed. Use the `--docker` or `--apptainer` flags to build the image for your preferred container runtime.
+We provide containerized execution environments for users to get started with omniprobe right away. Leverage the [`containers/run-container.sh`](containers/run-container.sh) script to jump into a container with the project and all of its dependencies pre-installed. Use the `--docker` or `--apptainer` flags to build the image for your preferred container runtime.
 
 Example:
 ```console
-$ ./containers/run.sh 
+$ ./containers/run-container.sh
 Error: Must specify either --docker or --apptainer.
-Usage: ./containers/run.sh [--docker] [--apptainer] [--rocm VERSION]
+Usage: ./containers/run-container.sh [--docker] [--apptainer] [--rocm VERSION]
   --docker      Run using Docker container
   --apptainer   Run using Apptainer container
-  --rocm        ROCm version (default: 6.3, supported: 6.3 6.4)
+  --rocm        ROCm version (default: 7.2, supported: 7.0 7.1 7.2)
 ```
 
 That's it! If a container matching your detected [`VERSION`](VERSION) of omniprobe doesn't exist already, one will be built automatically.

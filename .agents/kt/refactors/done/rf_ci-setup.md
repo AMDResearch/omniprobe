@@ -51,8 +51,8 @@ Two-tier container architecture with Ubuntu 24.04.
 ### Modified
 - `containers/omniprobe.Dockerfile` — rewritten to use toolchain as base
 - `containers/omniprobe.def` — updated for ROCm 7.x + new triton_install.sh interface
-- `containers/build.sh` — updated version defaults
-- `containers/run.sh` — updated version defaults
+- `containers/build-container.sh` — updated version defaults
+- `containers/run-container.sh` — updated version defaults
 - `containers/triton_install.sh` — added `--skip-llvm` flag, fixed pip caching
 - `README.md` — updated CI badges
 
@@ -65,7 +65,7 @@ Two-tier container architecture with Ubuntu 24.04.
 
 ## Successor Refactors
 
-- `rf_container-local` — clean up `.def`, `build.sh`, `run.sh` (deferred items from this refactor)
+- `rf_container-local` — clean up `.def`, `build-container.sh`, `run-container.sh` (deferred items from this refactor)
 
 ## Lessons Learned
 

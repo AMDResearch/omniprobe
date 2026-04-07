@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Script to run the hiptimize container with project mounted
-# Supports both Docker and Apptainer with automatic building
+# Run an Omniprobe container with the project directory mounted.
+# Supports both Docker and Apptainer; builds automatically if needed.
 
 # Container name
 name="omniprobe"
@@ -57,7 +57,7 @@ elif [ "$use_docker" = false ] && [ "$use_apptainer" = false ]; then
     echo "Usage: $0 [--docker] [--apptainer] [--rocm VERSION]"
     echo "  --docker      Run using Docker container"
     echo "  --apptainer   Run using Apptainer container"
-    echo "  --rocm        ROCm version (default: 6.3, supported: ${supported_rocm_versions[*]})"
+    echo "  --rocm        ROCm version (default: 7.2, supported: ${supported_rocm_versions[*]})"
     exit 1
 fi
 
@@ -75,7 +75,7 @@ if [ "$use_docker" = true ]; then
         echo "Building Docker image..."
         echo ""
         
-        if ! "$script_dir/build.sh" --docker --rocm "$rocm_version"; then
+        if ! "$script_dir/build-container.sh" --docker --rocm "$rocm_version"; then
             echo "Error: Failed to build Docker image."
             exit 1
         fi
@@ -117,7 +117,7 @@ elif [ "$use_apptainer" = true ]; then
         echo "Building Apptainer image automatically..."
         echo ""
         
-        if ! "$script_dir/build.sh" --apptainer --rocm "$rocm_version"; then
+        if ! "$script_dir/build-container.sh" --apptainer --rocm "$rocm_version"; then
             echo "Error: Failed to build Apptainer image."
             exit 1
         fi
