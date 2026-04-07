@@ -41,13 +41,21 @@ omniprobe -i -a /path/to/libMyHandler.so -- ./my_app
 
 ### Available analyzers
 
-| Analyzer | Description | Requires `-i` |
-|----------|-------------|:---:|
-| `MemoryAnalysis` | Detects uncoalesced global memory accesses and LDS bank conflicts | Yes |
-| `Heatmap` | Per-dispatch memory access heatmap by page | Yes |
-| `BasicBlockAnalysis` | Basic block execution timing with percentile breakdown | Yes |
-| `AddressLogger` | Raw memory address trace logging | Yes |
-| `BasicBlockLogger` | Raw basic block timestamp logging | Yes |
+| Analyzer | Description | Compile-time plugin | Requires `-i` |
+|----------|-------------|-------------------|:---:|
+| `MemoryAnalysis` | Detects uncoalesced global memory accesses and LDS bank conflicts | `libAMDGCNSubmitAddressMessages` | Yes |
+| `Heatmap` | Per-dispatch memory access heatmap by page | `libAMDGCNSubmitAddressMessages` | Yes |
+| `AddressLogger` | Raw memory address trace logging | `libAMDGCNSubmitAddressMessages` | Yes |
+| `BasicBlockAnalysis` | Basic block execution timing with percentile breakdown | `libAMDGCNSubmitBBStart` | Yes |
+| `BasicBlockLogger` | Raw basic block timestamp logging | `libAMDGCNSubmitBBStart` | Yes |
+
+Each plugin has `-rocm` and `-triton` variants (e.g.,
+`libAMDGCNSubmitAddressMessages-rocm.so`). For HIP applications, use the
+`-rocm` variant at compile time. For Triton, the CLI selects the `-triton`
+variant automatically.
+
+See [HIP Instrumentation](hip-instrumentation.md) for how to compile HIP
+applications with these plugins.
 
 #### MemoryAnalysis
 
@@ -112,9 +120,9 @@ use one of the higher-level analyzers.
 Logs raw basic block entry timestamps. Like AddressLogger, this produces the raw
 trace for custom post-processing.
 
-> **Note**: `BasicBlockLogger` and `BasicBlockAnalysis` require a Triton-specific
-> LLVM plugin (`libAMDGCNSubmitBBStart-triton.so`) and only work with Triton
-> kernels.
+> **Note**: `BasicBlockLogger` and `BasicBlockAnalysis` require the
+> `libAMDGCNSubmitBBStart` plugin (use `-rocm.so` for HIP, `-triton.so` for
+> Triton).
 
 ## Instrumented mode
 
@@ -127,6 +135,11 @@ omniprobe -i -a MemoryAnalysis -- ./my_app
 When `-i` is set, Omniprobe swaps original kernel dispatches for their
 instrumented clones at runtime. Instrumented kernels contain additional
 instructions that stream memory access or timing data to the host.
+
+For HIP applications, the instrumented clones must already exist in the
+binary — this requires compiling with an Omniprobe LLVM plugin. See
+[HIP Instrumentation](hip-instrumentation.md) for details. For Triton,
+instrumentation happens automatically during JIT compilation.
 
 Without `-i`, Omniprobe still intercepts dispatches for basic timing, but does
 not run the instrumented kernel variants.
@@ -292,6 +305,13 @@ Same syntax as `--instrumentation-scope`, one entry per line. Blank lines and
 lines starting with `#` are ignored.
 
 For detailed Triton usage, see [Triton Instrumentation](triton-instrumentation.md).
+
+> **Note**: Scoped instrumentation also works for HIP applications, but it must
+> be applied at compile time by setting the `INSTRUMENTATION_SCOPE` or
+> `INSTRUMENTATION_SCOPE_FILE` environment variables before running `hipcc`.
+> The `--instrumentation-scope` CLI flag only works for Triton (where Omniprobe
+> controls JIT compilation). See
+> [HIP Instrumentation — Scoped instrumentation](hip-instrumentation.md#scoped-instrumentation).
 
 ## Diagnostic options
 

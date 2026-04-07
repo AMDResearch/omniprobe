@@ -102,6 +102,14 @@ See [docs/usage.md](docs/usage.md) for the complete reference with examples.
 
 See [docs/usage.md#analyzers](docs/usage.md#analyzers) for details on each.
 
+## Instrumenting HIP Applications
+
+To analyze your own HIP kernels, compile them with an Omniprobe LLVM plugin
+and run with `omniprobe -i`. The plugin creates instrumented kernel clones
+alongside the originals — no source changes needed.
+See [docs/hip-instrumentation.md](docs/hip-instrumentation.md) for the full
+guide, including scoped instrumentation and CMake integration.
+
 ## Instrumenting Libraries
 
 Pre-compiled GPU libraries (rocBLAS, hipBLASLt) require special instrumented
