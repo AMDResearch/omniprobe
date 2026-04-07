@@ -308,7 +308,7 @@ omniprobe -a MemoryAnalysis -i -c ~/.triton/cache \
 This instruments only the `tl.load` and `tl.store` lines, reducing overhead
 and focusing the report on the memory operations you care about.
 
-## Reference: omniprobe CLI options relevant to Triton
+## Reference: Omniprobe CLI options relevant to Triton
 
 | Flag | Description |
 |---|---|

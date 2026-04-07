@@ -277,7 +277,7 @@ nm $SANDBOX/rocblas-install/lib/librocblas.so | grep __amd_crk_ | head
 nm $SANDBOX/rocblas-install/lib/rocblas/library/Kernels.so-000-gfx90a*.hsaco | grep __amd_crk_ | head
 ```
 
-## Step 4: Run with omniprobe
+## Step 4: Run with Omniprobe
 
 ### Filesystem requirement
 
