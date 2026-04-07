@@ -4,6 +4,11 @@
 Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runtime information such as memory access patterns, cache line usage, and LDS bank conflicts.
 
 **Recent Changes** (2026-04-07):
+- Documentation rewrite for v1.0 complete (`rf_documentation-v1`, done).
+  New docs/: `building-from-source.md`, `container-usage.md`, `usage.md`.
+  README.md rewritten: elevator pitch, quick start, usage overview table
+  linking to `docs/usage.md` sections. Removed history/alpha disclaimers.
+  Existing docs (triton, rocblas) had minor heading capitalization fixes.
 - Container local scripts refactor complete (`rf_container-local`, done).
   Two-stage Apptainer build mirroring Docker split: `toolchain.def` (LLVM/Triton)
   + `omniprobe.def` (code build, `Bootstrap: localimage` from toolchain SIF).
