@@ -3,7 +3,15 @@
 ## Overview
 Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runtime information such as memory access patterns, cache line usage, and LDS bank conflicts.
 
-**Recent Changes** (2026-03-24):
+**Recent Changes** (2026-04-07):
+- Container local scripts refactor complete (`rf_container-local`, done).
+  Two-stage Apptainer build mirroring Docker split: `toolchain.def` (LLVM/Triton)
+  + `omniprobe.def` (code build, `Bootstrap: localimage` from toolchain SIF).
+  Renamed `build.sh` → `build-container.sh`, `run.sh` → `run-container.sh`.
+  Fixed PEP 668 compliance in both `.def` and Dockerfile (venv activation).
+  Install prefix: `/opt` (produces `/opt/omniprobe/{bin,lib,...}`).
+
+**Changes** (2026-03-24):
 - Migrated from `HSA_TOOLS_LIB` to rocprofiler-sdk registration API
   (refactor `rf_rocprofiler-sdk`, done). `liblogDuration64.so` now exports
   `rocprofiler_configure()` and is loaded via `LD_PRELOAD`. `OnLoad()` aborts with
@@ -37,7 +45,7 @@ Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runti
     + `omniprobe.Dockerfile` (code build, ~10min)
   - Base image: `rocm/dev-ubuntu-24.04:7.2`
   - Workflows: `toolchain-image.yml`, `build.yml`, `triton-staleness-check.yml`
-  - Successor: `rf_container-local.md` (clean up `.def`, `build.sh`, `run.sh`)
+  - Successor: `rf_container-local.md` (clean up `.def`, `build-container.sh`, `run-container.sh`)
 
 **Changes** (2026-03-08):
 - Standalone `ROCm/hipBLASLt` and `ROCm/rocBLAS` repos are deprecated; source now
