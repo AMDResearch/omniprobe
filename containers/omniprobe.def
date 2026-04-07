@@ -1,55 +1,63 @@
-Bootstrap: docker
-From: rocm/dev-ubuntu-22.04:{{ ROCM_VERSION }}
+#
+# Omniprobe application image — cheap, rebuilt on code changes.
+# Layers on top of the toolchain image (toolchain.def / toolchain SIF).
+#
+# Apptainer equivalent of omniprobe.Dockerfile.
+#
+# Build:
+#   apptainer build --build-arg TOOLCHAIN_SIF=path/to/toolchain.sif \
+#       omniprobe.sif omniprobe.def
+
+Bootstrap: localimage
+From: {{ TOOLCHAIN_SIF }}
 
 %arguments
-    ROCM_VERSION=7.2
+    TOOLCHAIN_SIF=containers/toolchain_0.1.0-rocm7.2.sif
     HIP_ARCHITECTURES=gfx90a
 
 %labels
-    Description "Apptainer container for LOGDURATION"
+    Description Omniprobe: GPU kernel instrumentation toolkit
 
 %environment
-    export PATH=/opt/logduration/bin/logDuration:/opt/rocm/bin:/app/triton/.venv/bin:${PATH}
-    export ROCM_PATH=/opt/rocm
-    export LD_LIBRARY_PATH=/opt/rocm/lib:${LD_LIBRARY_PATH}
-    export TRITON_HIP_LLD_PATH=${ROCM_PATH}/llvm/bin/ld.lld
-    export TRITON_LLVM=/app/triton/llvm-project/build
+    export PATH=/opt/omniprobe/bin:${PATH}
 
 %files
     . /app/omniprobe
 
 %post
-    # Set globals
-    export PATH=/opt/logduration/bin/logDuration:/opt/rocm/bin:/app/triton/.venv/bin:${PATH}
+    set -eu
+
+    export PATH=/opt/rocm/bin:/app/triton/.venv/bin:${PATH}
     export ROCM_PATH=/opt/rocm
     export LD_LIBRARY_PATH=/opt/rocm/lib:${LD_LIBRARY_PATH}
     export TRITON_HIP_LLD_PATH=${ROCM_PATH}/llvm/bin/ld.lld
     export TRITON_LLVM=/app/triton/llvm-project/build
-    mkdir -p /app
-    cd /app
 
-    # Install and update common packages
-    apt-get update
-    apt-get install -y software-properties-common
-    apt-get upgrade -y
-    apt-get install -y git build-essential cmake ninja-build wget clang lld libzstd-dev libomp-dev ccache libdwarf-dev python3-dev python3-venv rocm-llvm-dev
-    python3 -m pip install --upgrade pip
-    python3 -m pip install --upgrade setuptools
+    # =========================
+    # Install Python dependencies
+    # =========================
+    cd /app/omniprobe
+    . /app/triton/.venv/bin/activate
+    python3 -m pip install -r omniprobe/requirements.txt
 
-    # Triton install
-    ls /app/omniprobe
-    /app/omniprobe/containers/triton_install.sh --triton-version v3.6.0
-
-    cd /app
-    ls
-    cd omniprobe
-    pip install -r omniprobe/requirements.txt
-    if [ -d build ]; then rm -rf build; fi
-    mkdir -p /opt/logduration
+    # =========================
+    # Build and install
+    # =========================
+    mkdir -p /opt/omniprobe
+    # Note: prefix is /opt so CMake installs into /opt/omniprobe/{bin,lib,...}
+    rm -rf build
     mkdir -p build
-    cmake -DCMAKE_INSTALL_PREFIX=/opt/logduration -DCMAKE_PREFIX_PATH=$ROCM_PATH -DTRITON_LLVM=$TRITON_LLVM -DCMAKE_HIP_ARCHITECTURES={{ HIP_ARCHITECTURES }} -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build
+    cmake \
+        -DCMAKE_INSTALL_PREFIX=/opt \
+        -DCMAKE_PREFIX_PATH=${ROCM_PATH} \
+        -DTRITON_LLVM=${TRITON_LLVM} \
+        -DCMAKE_HIP_ARCHITECTURES={{ HIP_ARCHITECTURES }} \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_VERBOSE_MAKEFILE=ON \
+        -S . -B build
     cmake --build build --target install
+    rm -rf build
 
 %runscript
-    cd /workspace
+    cd /workspace 2>/dev/null || true
     exec /bin/bash

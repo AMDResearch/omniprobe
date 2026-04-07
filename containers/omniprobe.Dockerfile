@@ -17,16 +17,16 @@ WORKDIR /app/omniprobe
 # =========================
 # Build and install
 # =========================
-RUN python3 -m pip install -r omniprobe/requirements.txt && \
-    mkdir -p /opt/logduration && \
-    cmake --version && \
+RUN . /app/triton/.venv/bin/activate && \
+    python3 -m pip install -r omniprobe/requirements.txt && \
+    mkdir -p /opt/omniprobe && \
     rm -rf build && \
     mkdir -p build && \
-    cmake -DCMAKE_INSTALL_PREFIX=/opt/logduration -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DTRITON_LLVM=${TRITON_LLVM} -DCMAKE_HIP_ARCHITECTURES=${HIP_ARCHITECTURES} -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build && \
+    cmake -DCMAKE_INSTALL_PREFIX=/opt -DCMAKE_PREFIX_PATH=${ROCM_PATH} -DTRITON_LLVM=${TRITON_LLVM} -DCMAKE_HIP_ARCHITECTURES=${HIP_ARCHITECTURES} -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON -S . -B build && \
     cmake --build build --target install && \
     rm -rf build
 
-ENV PATH=/opt/logduration/bin/logDuration:${PATH}
+ENV PATH=/opt/omniprobe/bin:${PATH}
 
 # Set working directory for mounted projects
 WORKDIR /workspace
