@@ -24,9 +24,11 @@ echo "==========================================================================
 # Use project's instrumented test kernels
 HEATMAP_TEST="${BUILD_DIR}/tests/test_kernels/simple_heatmap_test"
 MEMORY_ANALYSIS_TEST="${BUILD_DIR}/tests/test_kernels/simple_memory_analysis_test"
+BANK_CONFLICT_TEST="${BUILD_DIR}/tests/test_kernels/bank_conflict_test"
 
 check_kernel "$HEATMAP_TEST"
 check_kernel "$MEMORY_ANALYSIS_TEST"
+check_kernel "$BANK_CONFLICT_TEST"
 
 # Test 1: Memory heatmap handler
 run_test "heatmap_basic" \
@@ -45,6 +47,27 @@ run_test "heatmap_page_accesses" \
     "$HEATMAP_TEST" \
     "Heatmap" \
     "accesses"
+
+# Test 4: Verify bank conflict handler reports execution count and conflict count
+# The handler prints "executed N times, M bank conflicts in total" only when M > 0,
+# confirming both that the handler processed data and that conflicts were quantified.
+run_test "bank_conflict_quantified" \
+    "$BANK_CONFLICT_TEST" \
+    "MemoryAnalysis" \
+    "executed .* times, .* bank conflicts in total"
+
+# Test 5: Bank conflict detection - the unpadded transpose must trigger bank conflicts
+# The handler prints "N bank conflicts in total" only when N > 0.
+run_test "bank_conflict_detected" \
+    "$BANK_CONFLICT_TEST" \
+    "MemoryAnalysis" \
+    "bank conflicts in total"
+
+# Test 6: Bank conflict report header
+run_test "bank_conflict_report_header" \
+    "$BANK_CONFLICT_TEST" \
+    "MemoryAnalysis" \
+    "Bank conflicts report"
 
 # Export updated counters for parent script
 export TESTS_RUN TESTS_PASSED TESTS_FAILED

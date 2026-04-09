@@ -51,6 +51,16 @@ target_compile_options(simple_memory_analysis_test PRIVATE
 target_link_options(simple_memory_analysis_test PRIVATE -fgpu-rdc)
 add_dependencies(simple_memory_analysis_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
 
+# Bank conflict test kernel - LDS bank conflicts via unpadded matrix transpose
+add_executable(bank_conflict_test bank_conflict_test.cpp)
+set_source_files_properties(bank_conflict_test.cpp PROPERTIES LANGUAGE HIP)
+target_compile_options(bank_conflict_test PRIVATE
+    ${TEST_KERNEL_COMPILE_FLAGS}
+    -fpass-plugin=${INST_PLUGIN}
+)
+target_link_options(bank_conflict_test PRIVATE -fgpu-rdc)
+add_dependencies(bank_conflict_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
+
 # Dual kernel test - dispatches two kernels to test scanning frequency
 add_executable(dual_kernel_test dual_kernel_test.cpp)
 set_source_files_properties(dual_kernel_test.cpp PROPERTIES LANGUAGE HIP)
