@@ -68,7 +68,7 @@ Orchestrates end-to-end tests by sourcing feature-specific subscripts.
 
 **Modular structure** (refactored 2026-03-04):
 - `test_common.sh` — shared utilities, counters, colors, helper functions
-- `run_basic_tests.sh` — Heatmap/MemoryAnalysis handler tests (tests 1-3)
+- `run_basic_tests.sh` — Heatmap/MemoryAnalysis handler tests (tests 1-6)
 - `run_block_filter_tests.sh` — `--filter-x/y/z` tests (tests 4-9)
 - `run_library_filter_tests.sh` — `--library-filter` tests (tests 10-12)
 - `run_scope_filter_tests.sh` — `INSTRUMENTATION_SCOPE` tests (tests 13-19)
@@ -103,8 +103,8 @@ run_library_filter_test "test_name" "/path/to/kernel" '{"exclude":[...]}' "prese
 ```
 
 **Current tests** (22 total):
-1-3. Basic handler tests (Heatmap, MemoryAnalysis)
-4-9. Block filter tests (`--filter-x/y/z` CLI)
+1-6. Basic handler tests (Heatmap, MemoryAnalysis, excess cache lines, bank conflicts)
+7-12. Block filter tests (`--filter-x/y/z` CLI)
 10-12. Library filter tests (`--library-filter` exclude/include)
 13-19. Scope filter tests (`INSTRUMENTATION_SCOPE` compile-time filtering)
 20-22. Module-load kernel discovery tests (hipModuleLoad .hsaco)
@@ -196,9 +196,16 @@ Simple HIP kernels for testing specific scenarios. These are automatically instr
 - Automatically instrumented and used by `heatmap_basic` test
 
 **`simple_memory_analysis_test.cpp`**:
-- Two kernels: coalesced and strided memory access
-- Tests: uncoalesced access detection
-- Automatically instrumented and used by `memory_analysis_cache_lines` test
+- Two kernels: coalesced and strided memory access (stride=16 ints → 16× excess cache lines)
+- Tests: excess cache line detection via strided access pattern
+- Reads back result to prevent dead-store elimination
+- Automatically instrumented and used by `memory_analysis_cache_lines` and `memory_analysis_excess_cache_lines` tests
+
+**`bank_conflict_test.cpp`**:
+- Matrix transpose using unpadded 32×32 shared memory tile
+- Column reads from LDS trigger bank conflicts (32 threads hit same bank)
+- Tests: bank conflict detection and quantification
+- Automatically instrumented and used by `bank_conflict_detected` and `bank_conflict_report_header` tests
 
 **`scope_filter_test.cpp`**:
 - Kernel with 4 `// SCOPE_MARKER` lines (2 loads, 2 stores) on distinct lines
@@ -218,7 +225,7 @@ Simple HIP kernels for testing specific scenarios. These are automatically instr
 - Used by all test kernels
 
 **Automatic Instrumentation** (via `tests/test_kernels/CMakeLists.txt`):
-- Test kernels compiled with `-fpass-plugin=${INST_PLUGIN}`
+- Test kernels compiled with `-g -fpass-plugin=${INST_PLUGIN}`
 - Plugin path: `build/lib/plugins/libAMDGCNSubmitAddressMessages-rocm.so`
 - Bitcode files copied to `build/lib/bitcode/` (via `copy_bitcode` target)
 - Plugins built directly to `build/lib/plugins/` by `add_instrumentation_plugins()` CMake function
@@ -336,6 +343,8 @@ ninja handler_integration_test
 - Test kernels use `CHECK_HIP` macro for clean error handling (not GoogleTest macros)
 - End-to-end tests validate full pipeline, not individual components
 - Tests must run on real GPU hardware (device 0 via `ROCR_VISIBLE_DEVICES=0`)
+- **Test kernels must be compiled with `-g`** (debug info). Without it, DWARF source location info is missing (`<unknown source file>:0:0`), causing the MemoryAnalysis handler's `get_dwarf_info()` to throw when looking up ISA instructions for line 0, which silently drops all messages via the `access_size == 0xffff` early return. This is set in `TEST_KERNEL_COMPILE_FLAGS` in `tests/test_kernels/CMakeLists.txt`. Any new test kernels using `TEST_KERNEL_COMPILE_FLAGS` inherit this automatically.
+- **Test kernels should read back results** (e.g., `hipMemcpy` to host) to prevent the compiler from eliminating device stores as dead code when kernel and host code are in the same translation unit.
 
 ## Dependencies
 
@@ -396,6 +405,16 @@ The compilation produces a Clang Offload Bundle which must be unbundled first.
 
 ## Recent Changes
 
+**2026-04-09**:
+- Added `-g` to `TEST_KERNEL_COMPILE_FLAGS` — required for DWARF-based analysis in handlers.
+  Without it, MemoryAnalysis handler silently drops all messages (access_size == 0xffff).
+- Added `bank_conflict_test.cpp` — unpadded 32×32 matrix transpose that triggers LDS bank conflicts
+- Added readback to `simple_memory_analysis_test.cpp` to prevent dead-store elimination
+- Expanded basic handler tests from 3 to 6:
+  - Test 4: excess cache line detection (strided kernel)
+  - Test 5: bank conflict quantification (transpose kernel)
+  - Test 6: bank conflict report header
+
 **2026-03-24** (rf_absorb-instrumentation-plugins):
 - Fixed OMNIPROBE_ROOT support in 4 test scripts: `hipblaslt/run_test.sh`,
   `rocblas_filter/run_test.sh`, `rocblas_hipblaslt/run_test.sh`,
@@ -448,9 +467,9 @@ The compilation produces a Clang Offload Bundle which must be unbundled first.
 - Reordered suites: handler, library filter chain, hipBLASLt, rocBLAS, combined, Triton (6 suites)
 
 ## Last Verified
-Commit: b891eb2
-Date: 2026-03-24
-- Handler tests: 22/22 passing (3 handler + 6 block filter + 3 library filter + 7 scope filter + 3 module-load)
+Commit: (pending)
+Date: 2026-04-09
+- Handler tests: 25/25 passing (6 basic handler + 6 block filter + 3 library filter + 7 scope filter + 3 module-load)
 - Triton integration: 5/5 passing (requires `TRITON_DIR`; skips otherwise)
 - hipBLASLt instrumentation: 5/5 passing (requires `INSTRUMENTED_HIPBLASLT_LIB_DIR`; skips otherwise)
 - Library filter chain: needs investigation (test 2 hangs; previously tests 4-5 failed on 2026-03-12)

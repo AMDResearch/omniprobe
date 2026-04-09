@@ -5,6 +5,7 @@
 # Compiler flags for test kernels: treat warnings as errors
 set(TEST_KERNEL_COMPILE_FLAGS
     -fgpu-rdc
+    -g                              # Debug info required for DWARF-based analysis in handlers
     -Werror                         # Treat all warnings as errors
     -Wno-error=unused-parameter     # Allow unused parameters (common in kernels)
 )

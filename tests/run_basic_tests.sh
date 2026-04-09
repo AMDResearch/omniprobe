@@ -48,20 +48,20 @@ run_test "heatmap_page_accesses" \
     "Heatmap" \
     "accesses"
 
-# Test 4: Verify bank conflict handler reports execution count and conflict count
-# The handler prints "executed N times, M bank conflicts in total" only when M > 0,
-# confirming both that the handler processed data and that conflicts were quantified.
-run_test "bank_conflict_quantified" \
-    "$BANK_CONFLICT_TEST" \
+# Test 4: Verify strided kernel reports excess cache lines (needed < used)
+# The handler prints "cache lines needed, N cache lines used" only when there is excess,
+# so its presence proves the detection works. Requires -g for DWARF info.
+run_test "memory_analysis_excess_cache_lines" \
+    "$MEMORY_ANALYSIS_TEST" \
     "MemoryAnalysis" \
-    "executed .* times, .* bank conflicts in total"
+    "cache lines needed, .* cache lines used"
 
 # Test 5: Bank conflict detection - the unpadded transpose must trigger bank conflicts
-# The handler prints "N bank conflicts in total" only when N > 0.
+# The handler prints "executed N times, M bank conflicts in total" only when M > 0.
 run_test "bank_conflict_detected" \
     "$BANK_CONFLICT_TEST" \
     "MemoryAnalysis" \
-    "bank conflicts in total"
+    "executed .* times, .* bank conflicts in total"
 
 # Test 6: Bank conflict report header
 run_test "bank_conflict_report_header" \

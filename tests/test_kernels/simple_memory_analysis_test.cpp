@@ -39,6 +39,10 @@ int main() {
     strided_kernel<<<no_blocks, blocksize>>>(data, size, 16);
     CHECK_HIP(hipDeviceSynchronize());
 
+    // Read back to prevent dead-store elimination
+    int h_result;
+    CHECK_HIP(hipMemcpy(&h_result, data, sizeof(int), hipMemcpyDeviceToHost));
+
     CHECK_HIP(hipFree(data));
 
     std::cerr << "simple_memory_analysis_test done" << std::endl;
