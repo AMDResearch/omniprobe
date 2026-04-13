@@ -27,7 +27,7 @@ THE SOFTWARE.
 #include "kernelDB.h"
 
 
-class time_interval_handler_wrapper : public dh_comms::message_handler_base
+class time_interval_handler_wrapper : public dh_comms::kdb_message_handler_base
 {
 public:
     time_interval_handler_wrapper(const std::string& strKernel, uint64_t dispatch_id, bool verbose = false);

@@ -115,7 +115,7 @@ typedef struct {
 }wave_state_t;
 
 
-class basic_block_analysis : public dh_comms::message_handler_base
+class basic_block_analysis : public dh_comms::kdb_message_handler_base
 {
 public:
     basic_block_analysis(const std::string& strKernel, uint64_t dispatch_id, std::string& strLocation, bool verbose = false);

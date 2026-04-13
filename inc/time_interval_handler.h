@@ -33,7 +33,7 @@ struct time_interval {
 //! track of the sum of the time covered by the messages as well as the total
 //! elapsed time between the earliest start time in any message and the latest
 //! stop time in any message.
-class __attribute__((visibility("default"))) time_interval_handler_t : public message_handler_base {
+class __attribute__((visibility("default"))) time_interval_handler_t : public kdb_message_handler_base {
 public:
   time_interval_handler_t(const std::string& strKernel, uint64_t dispatch_id, const std::string& location, bool verbose = false);
   time_interval_handler_t(bool verbose);

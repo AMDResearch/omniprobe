@@ -29,7 +29,7 @@ namespace dh_comms {
 
 //! The memory_heatmap_t class keeps track of how many accesses to each memory
 //! page are done. Page size is configurable.
-class __attribute__((visibility("default"))) memory_heatmap_t : public message_handler_base {
+class __attribute__((visibility("default"))) memory_heatmap_t : public kdb_message_handler_base {
 public:
   memory_heatmap_t(const std::string& strKernel, uint64_t dispatch_id, const std::string& location, size_t page_size = 1024 * 1024, bool verbose = false);
   memory_heatmap_t(size_t page_size = 1024 * 1024, bool verbose = false);

@@ -28,7 +28,7 @@ THE SOFTWARE.
 #include "message_handlers.h"
 #include "json_helpers.h"
 
-class message_logger_t : public dh_comms::message_handler_base
+class message_logger_t : public dh_comms::kdb_message_handler_base
 {
 public:
     message_logger_t(const std::string& strKernel, uint64_t dispatch_id, std::string& location, bool verbose = false);
