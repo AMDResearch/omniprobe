@@ -136,13 +136,37 @@ private:
 };
 
 typedef struct arg_descriptor {
+    struct hidden_arg_layout {
+        std::string value_kind;
+        size_t offset;
+        size_t size;
+    };
+
     size_t explicit_args_length;
     size_t explicit_args_count;
     size_t hidden_args_length;
     size_t kernarg_length;
     uint32_t private_segment_size;
     uint32_t group_segment_size;
+
+    // Descriptor state for the original non-instrumented kernel when this
+    // descriptor represents an instrumented clone. Keeping both layouts
+    // explicit avoids baking future hidden-argument ABI work into today's
+    // explicit-argument insertion assumptions.
+    size_t source_explicit_args_length;
+    size_t source_hidden_args_length;
+    size_t source_kernarg_length;
     size_t clone_hidden_args_length;
+    std::vector<hidden_arg_layout> hidden_args;
+
+    const hidden_arg_layout *findHiddenArg(const std::string &value_kind) const
+    {
+        auto it = std::find_if(hidden_args.begin(), hidden_args.end(),
+                               [&](const hidden_arg_layout &arg) {
+                                   return arg.value_kind == value_kind;
+                               });
+        return it == hidden_args.end() ? nullptr : &*it;
+    }
 }arg_descriptor_t;
 
 

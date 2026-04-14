@@ -676,6 +676,12 @@ void hsaInterceptor::fixupKernArgs(void *dst, void *src, void *comms, arg_descri
     assert(dst);
     assert(src);
     memset(dst, 0, desc.kernarg_length);
+    const size_t source_explicit_args_length =
+        desc.source_explicit_args_length ? desc.source_explicit_args_length
+                                         : desc.explicit_args_length - sizeof(void *);
+    const size_t source_hidden_args_length =
+        desc.source_hidden_args_length ? desc.source_hidden_args_length
+                                       : desc.clone_hidden_args_length;
     // The descriptor here is a descriptor of the instrumented kernel, so
     // the parameter list of the non-instrumented original is always short one void*
     // relative to the desriptor supplied to this method
@@ -686,16 +692,15 @@ void hsaInterceptor::fixupKernArgs(void *dst, void *src, void *comms, arg_descri
     // We copy from the non-instrumented clone from the location after the last explicit arg in the src.
     // It has 1 fewer arguments than the instrumented clone (i.e. no dh_comms *)
     //void *hidden_args_src = &(((void **)src)[desc.explicit_args_count - 1]);
-    void *hidden_args_src = &(((char *)src)[desc.explicit_args_length - sizeof(void *)]);
-    // In Triton, for some reason we sometimes get non-instrumented kernsl with no hidden arguments
-    // So we only want to copy hidden arguments if there ARE some. If there are, the length to
-    // copy is the original size of the kernarg data - the size of explicit arguments. But since its
-    // a kernarg segment from a non-instrumented clone, we subtract one from the arg count
-    if (desc.clone_hidden_args_length)
+    void *hidden_args_src = &(((char *)src)[source_explicit_args_length]);
+    // In Triton, for some reason we sometimes get non-instrumented kernsl with no hidden arguments.
+    // Keep the source hidden-region layout explicit so later hidden-argument ABI work can stop
+    // inferring the original layout from the clone's inserted explicit pointer.
+    if (source_hidden_args_length)
     {
         // assert that we aren't going to copy a larger kernarg segment into a smaller one
-        assert(desc.clone_hidden_args_length <= desc.kernarg_length - desc.explicit_args_length);
-        memcpy(hidden_args_dst, hidden_args_src, desc.clone_hidden_args_length);
+        assert(source_hidden_args_length <= desc.kernarg_length - desc.explicit_args_length);
+        memcpy(hidden_args_dst, hidden_args_src, source_hidden_args_length);
     }
     /* The weird thing here is that, apparently, kernel arguments are 4-byteb aligned
      * regardless of the actual argument size. This really bit me working on this code

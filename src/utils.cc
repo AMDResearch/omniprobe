@@ -423,7 +423,8 @@ bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descrip
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = arg_map_.find(agent);
-        size_t clone_hidden_args_length = 0;
+        arg_descriptor_t source_desc = {};
+        bool have_source_desc = false;
         if (it != arg_map_.end())
         {
             std::string strName;
@@ -432,8 +433,8 @@ bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descrip
                 auto itclone = it->second.find(name);
                 if (itclone != it->second.end())
                 {
-                    if (itclone->second.hidden_args_length)
-                        clone_hidden_args_length = itclone->second.kernarg_length - itclone->second.explicit_args_length;
+                    source_desc = itclone->second;
+                    have_source_desc = true;
                 }
 
                 strName = getInstrumentedName(name);
@@ -444,7 +445,13 @@ bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descrip
             if (dit != it->second.end())
             {
                 desc = dit->second;
-                desc.clone_hidden_args_length = clone_hidden_args_length;
+                if (have_source_desc)
+                {
+                    desc.source_explicit_args_length = source_desc.explicit_args_length;
+                    desc.source_hidden_args_length = source_desc.hidden_args_length;
+                    desc.source_kernarg_length = source_desc.kernarg_length;
+                    desc.clone_hidden_args_length = source_desc.hidden_args_length;
+                }
                 return true;
             }
         }
@@ -456,7 +463,8 @@ bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descrip
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = arg_map_.find(agent);
-        size_t clone_hidden_args_length = 0;
+        arg_descriptor_t source_desc = {};
+        bool have_source_desc = false;
         if (it != arg_map_.end())
         {
             std::string strName;
@@ -465,8 +473,8 @@ bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descrip
                 auto itclone = it->second.find(name);
                 if (itclone != it->second.end())
                 {
-                    if (itclone->second.hidden_args_length)
-                        clone_hidden_args_length = itclone->second.kernarg_length - itclone->second.explicit_args_length;
+                    source_desc = itclone->second;
+                    have_source_desc = true;
                 }
                 strName = getInstrumentedName(name);
             }
@@ -476,7 +484,13 @@ bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descrip
             if (dit != it->second.end())
             {
                 desc = dit->second;
-                desc.clone_hidden_args_length = clone_hidden_args_length;
+                if (have_source_desc)
+                {
+                    desc.source_explicit_args_length = source_desc.explicit_args_length;
+                    desc.source_hidden_args_length = source_desc.hidden_args_length;
+                    desc.source_kernarg_length = source_desc.kernarg_length;
+                    desc.clone_hidden_args_length = source_desc.hidden_args_length;
+                }
                 return true;
             }
         }
@@ -1057,11 +1071,13 @@ std::string KernelArgHelper::get_metadata_string(amd_comgr_metadata_node_t node)
  * At runtime, this library silently replaces the application's kernel with an instrumentd equivalent that has the added void *
  * parameter. But that means the kernel args passed to the original kernel are incomplete. So we have to create
  * a new kernarg segement that contains the approprate device memory pointer in its last argument.
- * kernarg segments contain both explicit and implicit (or hidden) parameters. The pointer to the dh_comms_descriptor has
- * to be inserted between the original explicit arguments and the first implicit argument. Therefore, in order
- * to reconstruct a kernarg segment that will work, we need to know the layout, especially where in the kernarg
- * segment we need to insert the dh_comms_descriptor *. This method extracts the relevant metadata
- * from a code object exectuble needed to reconstruct a kernarg segment for an instrumented kernel.*/
+ * kernarg segments contain both explicit and implicit (or hidden) parameters.
+ * Omniprobe historically inserted an extra explicit pointer immediately before
+ * the hidden region. The hsaco instrumentation work needs a fuller description
+ * of hidden-argument layout so the runtime can eventually target a hidden
+ * Omniprobe-owned field instead of inferring everything from the explicit
+ * insertion scheme. This method extracts the metadata needed to reason about
+ * both regions explicitly from a code object executable.*/
 
 void KernelArgHelper::computeKernargData(amd_comgr_metadata_node_t exec_map)
 {
@@ -1117,7 +1133,11 @@ void KernelArgHelper::computeKernargData(amd_comgr_metadata_node_t exec_map)
                         //std::cout << "Name, Offset, Size\n";
                         //std::cout << parm_name << "," << arg_offset << "," << arg_size << std::endl;
                         if (parm_name.rfind("hidden_",0) == 0)
-                            desc.hidden_args_length = arg_offset + arg_size;
+                        {
+                            desc.hidden_args.push_back({parm_name, arg_offset, arg_size});
+                            desc.hidden_args_length = std::max(desc.hidden_args_length,
+                                                               arg_offset + arg_size);
+                        }
                         else
                         {
                             desc.explicit_args_count++;
@@ -1128,6 +1148,9 @@ void KernelArgHelper::computeKernargData(amd_comgr_metadata_node_t exec_map)
             }
             desc.explicit_args_length = std::min(roundArgsLength(desc.explicit_args_length), desc.kernarg_length);
             desc.hidden_args_length = desc.kernarg_length - desc.explicit_args_length;
+            desc.source_explicit_args_length = desc.explicit_args_length;
+            desc.source_hidden_args_length = desc.hidden_args_length;
+            desc.source_kernarg_length = desc.kernarg_length;
             kernels_[strName] = desc;
         }
     }
