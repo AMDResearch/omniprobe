@@ -7,6 +7,9 @@ kernels) and **runtime** (run the instrumented binary with Omniprobe).
 For instrumenting pre-compiled GPU libraries (rocBLAS, hipBLASLt), see
 [rocBLAS Maximal Instrumentation](rocblas-maximal-instrumentation.md).
 For Triton kernels, see [Triton Instrumentation](triton-instrumentation.md).
+For the branch architecture and implementation plan for binary-only `.hsaco`
+instrumentation and the converged hidden-argument ABI, see
+[HSACO Instrumentation Architecture](hsaco-instrumentation-architecture.md).
 
 ## How it works
 
