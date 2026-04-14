@@ -63,17 +63,6 @@ time_interval_handler_t::~time_interval_handler_t()
 }
 
   
-bool time_interval_handler_t::handle(const message_t &message, const std::string& kernel_name, kernelDB::kernelDB& kdb)
-{
-    // This if block is just to get the compiler to quick throwing errors for unused parameters
-    if (kernel_name.length() == 0)
-    {
-        std::vector<uint32_t> lines;
-        kdb.getKernelLines(kernel_name, lines);
-    }
-    return handle(message);
-}
-
 bool time_interval_handler_t::handle(const message_t &message) {
   if (message.wave_header().user_type != message_type::time_interval) {
     if (verbose_) {
@@ -108,18 +97,10 @@ void time_interval_handler_t::setupLogger()
 }
 
 
-void time_interval_handler_t::report(const std::string& kernel_name, kernelDB::kernelDB& kdb)
-{
-    if (kernel_name.length() == 0)
-    {
-        std::vector<uint32_t> lines;
-        kdb.getKernelLines(kernel_name, lines);
-    }
-    setupLogger();
-    report();
-}
+
 
 void time_interval_handler_t::report() {
+    setupLogger();
     if (format_ != "json")
     {
       if (no_intervals_ != 0) {

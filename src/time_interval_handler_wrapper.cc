@@ -43,48 +43,36 @@ time_interval_handler_wrapper::~time_interval_handler_wrapper()
 {
 }
 
-bool time_interval_handler_wrapper::handle(const dh_comms::message_t &message, const std::string& kernel, kernelDB::kernelDB& kdb)
-{
-    auto hdr = message.wave_header();
-    try
-    {
-        if (hdr.user_type == dh_comms::message_type::time_interval)
-        {
-            auto& instructions = kdb.getInstructionsForLine(kernel, hdr.dwarf_line);
-            if (instructions.size())
-            {
-                if (current_block_)
-                {
-                    auto it = block_timings_.find(current_block_);
-                    if (it != block_timings_.end())
-                        it->second += hdr.timestamp - start_time_;
-                    else
-                        block_timings_[current_block_] = hdr.timestamp - start_time_;
-                }
-                current_block_ = instructions[0].block_;
-                start_time_ = hdr.timestamp;
-            }
-        }
-    }
-    catch (std::runtime_error e)
-    {
-    }
-    return handle(message);
-}
-
 bool time_interval_handler_wrapper::handle(const dh_comms::message_t &message)
 {
-    return wrapped_.handle(message);
-}
-
-void time_interval_handler_wrapper::report(const std::string& kernel_name, kernelDB::kernelDB& kdb)
-{
-    if (kernel_name.length() == 0)
+    if (kdb_p_)
     {
-        std::vector<uint32_t> lines;
-        kdb.getKernelLines(kernel_name, lines);
+        auto hdr = message.wave_header();
+        try
+        {
+            if (hdr.user_type == dh_comms::message_type::time_interval)
+            {
+                auto& instructions = kdb_p_->getInstructionsForLine(kernel_name_, hdr.dwarf_line);
+                if (instructions.size())
+                {
+                    if (current_block_)
+                    {
+                        auto it = block_timings_.find(current_block_);
+                        if (it != block_timings_.end())
+                            it->second += hdr.timestamp - start_time_;
+                        else
+                            block_timings_[current_block_] = hdr.timestamp - start_time_;
+                    }
+                    current_block_ = instructions[0].block_;
+                    start_time_ = hdr.timestamp;
+                }
+            }
+        }
+        catch (std::runtime_error e)
+        {
+        }
     }
-    report();
+    return wrapped_.handle(message);
 }
 
 void time_interval_handler_wrapper::report()

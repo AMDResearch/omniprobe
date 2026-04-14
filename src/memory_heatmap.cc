@@ -50,15 +50,6 @@ memory_heatmap_t::~memory_heatmap_t()
         delete log_file_;
 }
 
-bool memory_heatmap_t::handle(const message_t &message, const std::string& kernel_name, kernelDB::kernelDB& kdb) {
-    // This if block is just to get the compiler to quick throwing errors for unused parameters
-    if (kernel_name.length() == 0)
-    {
-        std::vector<uint32_t> lines;
-        kdb.getKernelLines(kernel_name, lines);
-    }
-    return handle(message);
-}
 bool memory_heatmap_t::handle(const message_t &message) {
   if (message.wave_header().user_type != message_type::address) {
     if (verbose_) {
@@ -80,22 +71,6 @@ bool memory_heatmap_t::handle(const message_t &message) {
   return true;
 }
 
-void memory_heatmap_t::report(const std::string& kernel_name, kernelDB::kernelDB& kdb)
-{
-    setupLogger();
-    if (kernel_name.length() == 0)
-    {
-        std::vector<uint32_t> lines;
-        kdb.getKernelLines(kernel_name, lines);
-    }
-    report();
-    if (location_ != "console")
-    {
-        delete log_file_;
-        log_file_ = nullptr;
-    }
-}
-
 void memory_heatmap_t::setupLogger()
 {
     if (location_ == "console")
@@ -105,6 +80,7 @@ void memory_heatmap_t::setupLogger()
 }
 
 void memory_heatmap_t::report() {
+  setupLogger();
   if (format_ != "json")
   {
       if (page_counts_.size() != 0) {
@@ -131,6 +107,11 @@ void memory_heatmap_t::report() {
     }
     json.addVector("pages", pages);
     *log_file_ << json.getJSON() << std::endl;
+  }
+  if (location_ != "console")
+  {
+      delete log_file_;
+      log_file_ = nullptr;
   }
 }
 

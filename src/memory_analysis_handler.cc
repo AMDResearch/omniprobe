@@ -251,17 +251,6 @@ bool memory_analysis_handler_t::handle(const message_t &message) {
   return false;
 }
 
-bool memory_analysis_handler_t::handle(const message_t &message, const std::string &kernel_name,
-                                       kernelDB::kernelDB &kdb) {
-  kdb_p = &kdb;
-  this->kernel_name = kernel_name;
-
-  auto result = handle(message);
-
-  this->kernel_name = "";
-  kdb_p = nullptr;
-  return result;
-}
 
 std::string rw2str(uint8_t rw_kind, const std::map<uint8_t, const char *> &rw2str_map) {
   std::string rw_string;
@@ -365,7 +354,7 @@ bool memory_analysis_handler_t::handle_cache_line_count_analysis(const message_t
   uint8_t rw_kind = message.wave_header().user_data & 0b11;
   uint16_t ir_data_size = (message.wave_header().user_data >> 6) & 0xffff;
   uint16_t data_size = ir_data_size;
-  dwarf_info_t dwarf_info = get_dwarf_info(message, kernel_name, kdb_p, instr_size_map, verbose_);
+  dwarf_info_t dwarf_info = get_dwarf_info(message, kernel_name_, kdb_p_, instr_size_map, verbose_);
   if (dwarf_info.access_size ==
       0xffff) { // no instruction found in ISA for source line in IR, may have been combined with other instructions.
     if (verbose_) {
@@ -641,19 +630,6 @@ void memory_analysis_handler_t::setupLogger()
         log_file_ = new std::ofstream(location_, std::ios::app);
 }
 
-
-void memory_analysis_handler_t::report(const std::string &kernel_name, kernelDB::kernelDB &kdb) {
-  if (kernel_name.length() == 0) {
-    std::vector<uint32_t> lines;
-    kdb.getKernelLines(kernel_name, lines);
-  }
-  report();
-  if (location_ != "console")
-  {
-    delete log_file_;
-    log_file_ = nullptr;
-  }
-}
 
 void memory_analysis_handler_t::report() {
   setupLogger();

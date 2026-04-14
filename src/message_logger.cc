@@ -59,7 +59,7 @@ message_logger_t::~message_logger_t()
     if(location_ != "console")
         delete log_file_;
 }
-bool message_logger_t::handle(const dh_comms::message_t &message, const std::string& kernel, kernelDB::kernelDB& kdb)
+bool message_logger_t::handle(const dh_comms::message_t &message)
 {
     JSONHelper json;
     dh_comms::wave_header_t hdr = message.wave_header();
@@ -76,42 +76,6 @@ bool message_logger_t::handle(const dh_comms::message_t &message, const std::str
             handle_header(message, json);
             *log_file_ << json.getJSON() << std::endl;
             break;
-    }
-    return true;
-}
-
-bool message_logger_t::handle(const dh_comms::message_t &message)
-{
-    auto hdr = message.wave_header();
-    if (message.wave_header().user_type != dh_comms::message_type::address)
-    {
-        if (verbose_)
-        {
-            printf("message_logger: skipping message with user type 0x%x\n", message.wave_header().user_type);
-        }
-        return false;
-    }
-    assert(message.data_item_size() == sizeof(uint64_t));
-
-
-    *log_file_ << "ADDRESS_MESSAGE," << std::dec << hdr.timestamp << ",\"" << strKernel_ << "\"," << hdr.dwarf_line << "," << dispatch_id_ << ",";
-
-
-    *log_file_ << "0x" << std::hex << std::setw(sizeof(void*) * 2) << std::setfill('0') << hdr.exec << "," << std::dec << hdr.xcc_id << "," << hdr.se_id << "," << hdr.cu_id << ",";
-    *log_file_ << (hdr.user_data & 0b11) << ",";
-    for (size_t i = 0; i != message.no_data_items(); ++i)
-    {
-        uint64_t address = *(const uint64_t *)message.data_item(i);
-        if (verbose_)
-        {
-            //printf("memory_heatmap: added address 0x%lx to map\n", address);
-        }
-
-        *log_file_ << "0x" << std::hex << std::setw(sizeof(void*) * 2) << std::setfill('0') << address;
-        if (i < message.no_data_items() - 1)
-            *log_file_ << ",";
-        else
-            *log_file_ << std::endl;
     }
     return true;
 }
@@ -208,16 +172,6 @@ void message_logger_t::handle_header(const dh_comms::message_t& message, JSONHel
     else
         json.addField("user_data", (uint16_t)hdr.user_data);
     return;
-}
-
-void message_logger_t::report(const std::string& kernel_name, kernelDB::kernelDB& kdb)
-{
-    if (kernel_name.length() == 0)
-    {
-        std::vector<uint32_t> lines;
-        kdb.getKernelLines(kernel_name, lines);
-    }
-    report();
 }
 
 void message_logger_t::report()

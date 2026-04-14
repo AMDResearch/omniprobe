@@ -41,6 +41,7 @@ THE SOFTWARE.
 #include "dh_comms.h"
 #include "memory_heatmap.h"
 #include "kernelDB.h"
+#include "inc/kdb_message_handler_base.h"
 
 
 typedef struct pool_specs

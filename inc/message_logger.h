@@ -28,16 +28,14 @@ THE SOFTWARE.
 #include "message_handlers.h"
 #include "json_helpers.h"
 
-class message_logger_t : public dh_comms::kdb_message_handler_base
+class message_logger_t : public dh_comms::message_handler_base
 {
 public:
     message_logger_t(const std::string& strKernel, uint64_t dispatch_id, std::string& location, bool verbose = false);
     message_logger_t(const message_logger_t&) = default;
     virtual ~message_logger_t();
     virtual bool handle(const dh_comms::message_t &message) override;
-    virtual bool handle(const dh_comms::message_t &message, const std::string& kernel, kernelDB::kernelDB& kdb) override;
     virtual void report() override;
-    virtual void report(const std::string& kernel_name, kernelDB::kernelDB& kdb) override;
     virtual void clear() override;
     bool handle_address_message(const dh_comms::message_t& message, JSONHelper& json);
     bool handle_timeinterval_message(const dh_comms::message_t& message, JSONHelper& json);

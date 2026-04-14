@@ -23,7 +23,7 @@ THE SOFTWARE.
 #pragma once
 #include "dh_comms.h"
 #include "message_handlers.h"
-#include "kernelDB.h"
+#include "inc/kdb_message_handler_base.h"
 #include <set>
 #include <atomic>
 
@@ -115,7 +115,7 @@ typedef struct {
 }wave_state_t;
 
 
-class basic_block_analysis : public dh_comms::kdb_message_handler_base
+class basic_block_analysis : public kdb_message_handler_base
 {
 public:
     basic_block_analysis(const std::string& strKernel, uint64_t dispatch_id, std::string& strLocation, bool verbose = false);
@@ -123,8 +123,6 @@ public:
     void setupLogger();
     virtual ~basic_block_analysis();
     virtual bool handle(const dh_comms::message_t &message) override;
-    virtual bool handle(const dh_comms::message_t &message, const std::string& kernel, kernelDB::kernelDB& kdb) override;
-    virtual void report(const std::string& kernel_name, kernelDB::kernelDB& kdb) override;
     virtual void report() override;
     virtual void clear() override;
     void updateComputeResources(dh_comms::wave_header_t& hdr);

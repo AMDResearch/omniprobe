@@ -29,6 +29,7 @@ THE SOFTWARE.
 // Compile with hipcc -O3 --amdgpu-target=gfx908 -I${ROCM_PATH}/roctracer/include -L${ROCM_PATH}/roctracer/lib -lroctx64 test.cpp
 
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <unistd.h>
 #include <hip/hip_profile.h>

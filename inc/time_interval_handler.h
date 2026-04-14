@@ -23,6 +23,10 @@
 #pragma once
 #include "message_handlers.h"
 
+#include <fstream>
+#include <iostream>
+#include <string>
+
 namespace dh_comms {
 struct time_interval {
   uint64_t start;
@@ -33,7 +37,7 @@ struct time_interval {
 //! track of the sum of the time covered by the messages as well as the total
 //! elapsed time between the earliest start time in any message and the latest
 //! stop time in any message.
-class __attribute__((visibility("default"))) time_interval_handler_t : public kdb_message_handler_base {
+class __attribute__((visibility("default"))) time_interval_handler_t : public message_handler_base {
 public:
   time_interval_handler_t(const std::string& strKernel, uint64_t dispatch_id, const std::string& location, bool verbose = false);
   time_interval_handler_t(bool verbose);
@@ -41,9 +45,7 @@ public:
   void setupLogger();
   virtual ~time_interval_handler_t();
   virtual bool handle(const message_t &message) override;
-  virtual bool handle(const message_t &message, const std::string& kernel_name, kernelDB::kernelDB& kdb) override;
   virtual void report() override;
-  virtual void report(const std::string& kernel_name, kernelDB::kernelDB& kdb) override;
   virtual void clear() override;
 
 private:

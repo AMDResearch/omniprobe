@@ -59,13 +59,16 @@ dh_comms::dh_comms * comms_mgr::checkoutCommsObject(hsa_agent_t agent, std::stri
     if (it != mem_mgrs_.end())
     {
         mem_mgr = it->second;
-        dh_comms::dh_comms *obj = new dh_comms::dh_comms(DH_SUB_BUFFER_COUNT, DH_SUB_BUFFER_CAPACITY, kdb, false, false, mem_mgr);
+        dh_comms::dh_comms *obj = new dh_comms::dh_comms(DH_SUB_BUFFER_COUNT, DH_SUB_BUFFER_CAPACITY, false, false, mem_mgr);
         std::vector<dh_comms::message_handler_base *> handlers;
         handler_mgr_.getMessageHandlers(strKernelName, dispatch_id, handlers);
         if (handlers.size())
         {
             for(auto it : handlers)
             {
+                auto *kdb_handler = dynamic_cast<kdb_message_handler_base *>(it);
+                if (kdb_handler)
+                    kdb_handler->set_context(kdb, strKernelName);
                 auto tmp = std::unique_ptr<dh_comms::message_handler_base>(it);
                 obj->append_handler(std::move(tmp));
             }

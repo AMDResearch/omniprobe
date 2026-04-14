@@ -1,4 +1,3 @@
-
 /******************************************************************************
 Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
 
@@ -21,33 +20,28 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 *******************************************************************************/
 #pragma once
-#include "dh_comms.h"
+
 #include "message_handlers.h"
-#include "time_interval_handler.h"
-#include "inc/kdb_message_handler_base.h"
+#include "kernelDB.h"
+#include <string>
 
-
-class time_interval_handler_wrapper : public kdb_message_handler_base
-{
+/// Base class for Omniprobe message handlers that need access to KernelDB.
+///
+/// After construction, call set_context() before processing begins to provide
+/// the KernelDB instance and kernel name. Handlers use the stored kdb_p_ and
+/// kernel_name_ in their handle(msg) and report() implementations.
+class kdb_message_handler_base : public dh_comms::message_handler_base {
 public:
-    time_interval_handler_wrapper(const std::string& strKernel, uint64_t dispatch_id, bool verbose = false);
-    time_interval_handler_wrapper(const time_interval_handler_wrapper &) = default;
-    virtual ~time_interval_handler_wrapper();
-    virtual bool handle(const dh_comms::message_t &message) override;
-    virtual void report() override;
-    virtual void clear() override;
+  kdb_message_handler_base() = default;
+  kdb_message_handler_base(const kdb_message_handler_base &) = default;
+  virtual ~kdb_message_handler_base() = default;
 
-private:
-    uint64_t first_start_;
-    uint64_t last_stop_;
-    uint64_t total_time_;
-    size_t no_intervals_;
-    bool verbose_;
-    std::string strKernel_;
-    uint64_t dispatch_id_;
-    kernelDB::basicBlock *current_block_;
-    uint64_t start_time_;
-    dh_comms::time_interval_handler_t wrapped_;
-    std::map<kernelDB::basicBlock *, uint64_t> block_timings_;
+  void set_context(kernelDB::kernelDB *kdb, const std::string &kernel_name) {
+    kdb_p_ = kdb;
+    kernel_name_ = kernel_name;
+  }
 
+protected:
+  kernelDB::kernelDB *kdb_p_ = nullptr;
+  std::string kernel_name_;
 };
