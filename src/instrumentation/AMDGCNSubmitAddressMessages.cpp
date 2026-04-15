@@ -42,6 +42,7 @@ THE SOFTWARE.
 #include <cstdlib>
 #include <dlfcn.h>
 #include <limits.h>
+#include <optional>
 #include <type_traits>
 #include <unistd.h>
 
@@ -59,6 +60,143 @@ std::string LoadOrStoreMap(const BasicBlock::iterator &I) {
     return "STORE";
   else
     throw std::runtime_error("Error: unknown operation type");
+}
+
+static AllocaInst *createEntryAlloca(Function &F, Type *Ty, StringRef Name) {
+  IRBuilder<> Builder(&*F.getEntryBlock().getFirstInsertionPt());
+  return Builder.CreateAlloca(Ty, nullptr, Name);
+}
+
+static Value *createRuntimeCtxStorage(Function &F, Module &M, Value *DhPtr) {
+  auto &Ctx = M.getContext();
+  IRBuilder<> Builder(&*F.getEntryBlock().getFirstInsertionPt());
+  Type *PtrTy = PointerType::get(Ctx, 0);
+  StructType *RuntimeCtxTy =
+      StructType::get(PtrTy, PtrTy, PtrTy, Builder.getInt64Ty());
+  AllocaInst *RuntimeCtx = Builder.CreateAlloca(RuntimeCtxTy, nullptr,
+                                                "omniprobe.runtime_ctx");
+
+  Value *DhField = Builder.CreateStructGEP(RuntimeCtxTy, RuntimeCtx, 0);
+  Value *ConfigField = Builder.CreateStructGEP(RuntimeCtxTy, RuntimeCtx, 1);
+  Value *StateField = Builder.CreateStructGEP(RuntimeCtxTy, RuntimeCtx, 2);
+  Value *DispatchField = Builder.CreateStructGEP(RuntimeCtxTy, RuntimeCtx, 3);
+
+  Value *DhAsVoidPtr = Builder.CreatePointerCast(DhPtr, PtrTy);
+  Builder.CreateStore(DhAsVoidPtr, DhField);
+  Builder.CreateStore(ConstantPointerNull::get(cast<PointerType>(PtrTy)),
+                      ConfigField);
+  Builder.CreateStore(ConstantPointerNull::get(cast<PointerType>(PtrTy)),
+                      StateField);
+  Builder.CreateStore(ConstantInt::get(Builder.getInt64Ty(), 0), DispatchField);
+  return RuntimeCtx;
+}
+
+static Value *populateCaptureStorage(IRBuilder<> &Builder,
+                                     const ProbeSurrogateSpec &Spec,
+                                     const Function &F, Module &M) {
+  std::vector<Type *> FieldTypes;
+  std::vector<Value *> FieldValues;
+  const size_t VisibleArgCount = getVisibleKernelArgumentCount(F);
+  for (size_t SpecArgIndex = 0; SpecArgIndex < Spec.kernel_args.size();
+       ++SpecArgIndex) {
+    const std::string &KernelArgName = Spec.kernel_args[SpecArgIndex];
+    const Argument *Matched = nullptr;
+    if (auto Ordinal = resolveKernelArgumentOrdinal(F, KernelArgName)) {
+      if (*Ordinal < VisibleArgCount && *Ordinal < F.arg_size())
+        Matched = F.getArg(*Ordinal);
+    }
+    if (!Matched) {
+      if (SpecArgIndex < VisibleArgCount && SpecArgIndex < F.arg_size()) {
+        Matched = F.getArg(SpecArgIndex);
+        llvm::errs() << "Probe surrogate " << Spec.surrogate
+                     << " falling back to kernel-arg ordinal "
+                     << SpecArgIndex << " for requested arg '"
+                     << KernelArgName << "' in kernel " << F.getName()
+                     << "\n";
+      }
+    }
+    if (!Matched) {
+      llvm::errs() << "Probe surrogate " << Spec.surrogate
+                   << " requested unknown kernel arg '" << KernelArgName
+                   << "' for kernel " << F.getName() << "\n";
+      continue;
+    }
+
+    Value *StoredValue = const_cast<Argument *>(Matched);
+    Type *StoredType = StoredValue->getType();
+    if (StoredType->isPointerTy()) {
+      StoredValue = Builder.CreatePtrToInt(StoredValue, Builder.getInt64Ty());
+      StoredType = Builder.getInt64Ty();
+    } else if (StoredType->isIntegerTy(1)) {
+      StoredValue = Builder.CreateZExt(StoredValue, Builder.getInt8Ty());
+      StoredType = Builder.getInt8Ty();
+    } else if (StoredType->isIntegerTy() && StoredType->getIntegerBitWidth() < 64) {
+      StoredValue = Builder.CreateZExt(StoredValue, Builder.getInt64Ty());
+      StoredType = Builder.getInt64Ty();
+    } else if (StoredType->isIntegerTy() && StoredType->getIntegerBitWidth() > 64) {
+      StoredValue = Builder.CreateTrunc(StoredValue, Builder.getInt64Ty());
+      StoredType = Builder.getInt64Ty();
+    } else if (!StoredType->isIntegerTy()) {
+      llvm::errs() << "Probe surrogate " << Spec.surrogate
+                   << " requested unsupported kernel arg type for '" << KernelArgName
+                   << "' in kernel " << F.getName() << "\n";
+      continue;
+    }
+
+    FieldTypes.push_back(StoredType);
+    FieldValues.push_back(StoredValue);
+  }
+
+  if (FieldTypes.empty()) {
+    AllocaInst *Storage = createEntryAlloca(const_cast<Function &>(F), Builder.getInt8Ty(),
+                                            "omniprobe.empty_captures");
+    Builder.CreateStore(ConstantInt::get(Builder.getInt8Ty(), 0), Storage);
+    return Storage;
+  }
+
+  StructType *CaptureTy = StructType::get(M.getContext(), FieldTypes);
+  AllocaInst *CaptureStorage =
+      createEntryAlloca(const_cast<Function &>(F), CaptureTy,
+                        "omniprobe.captures");
+  for (unsigned Index = 0; Index < FieldValues.size(); ++Index) {
+    Value *FieldPtr = Builder.CreateStructGEP(CaptureTy, CaptureStorage, Index);
+    Builder.CreateStore(FieldValues[Index], FieldPtr);
+  }
+  return CaptureStorage;
+}
+
+static bool injectSurrogateAddressCall(const BasicBlock::iterator &I,
+                                       const Function &F, Module &M,
+                                       llvm::Value *DhPtr,
+                                       const ProbeSurrogateSpec &Spec,
+                                       bool IsLoad, llvm::Value *Addr,
+                                       Value *AddrSpaceVal,
+                                       Value *PointeeTypeSizeVal) {
+  auto &CTX = M.getContext();
+  IRBuilder<> Builder(dyn_cast<Instruction>(I));
+
+  Value *RuntimeCtx = createRuntimeCtxStorage(const_cast<Function &>(F), M, DhPtr);
+  Value *CaptureStorage = populateCaptureStorage(Builder, Spec, F, M);
+
+  Type *VoidPtrTy = PointerType::get(CTX, 0);
+  Value *AddressAsInt = Builder.CreatePtrToInt(Addr, Builder.getInt64Ty());
+  Value *BytesVal = Builder.CreateZExtOrTrunc(PointeeTypeSizeVal, Builder.getInt32Ty());
+  Value *AccessTypeVal = Builder.getInt8(IsLoad ? 0b01 : 0b10);
+  Value *AddressSpaceAsI8 = Builder.CreateZExtOrTrunc(AddrSpaceVal, Builder.getInt8Ty());
+
+  FunctionType *FT = FunctionType::get(
+      Type::getVoidTy(CTX),
+      {VoidPtrTy, VoidPtrTy, Builder.getInt64Ty(), Builder.getInt32Ty(),
+       Builder.getInt8Ty(), Builder.getInt8Ty()},
+      false);
+  FunctionCallee Surrogate =
+      M.getOrInsertFunction(Spec.surrogate, FT);
+  Builder.CreateCall(
+      FT, cast<Function>(Surrogate.getCallee()),
+      {Builder.CreatePointerCast(RuntimeCtx, VoidPtrTy),
+       Builder.CreatePointerCast(CaptureStorage, VoidPtrTy), AddressAsInt,
+       BytesVal, AccessTypeVal, AddressSpaceAsI8});
+  return true;
 }
 
 // Helper functions to detect AMDGPU buffer intrinsics
@@ -89,7 +227,8 @@ void InjectBufferInstrumentationFunction(const BasicBlock::iterator &I,
                                          const Function &F, llvm::Module &M,
                                          uint32_t &LocationCounter,
                                          llvm::Value *Ptr, bool IsLoad,
-                                         bool PrintLocationInfo) {
+                                         bool PrintLocationInfo,
+                                         const ProbeSurrogateSpec *SurrogateSpec) {
   auto &CTX = M.getContext();
   auto CI = dyn_cast<CallInst>(I);
   if (!CI)
@@ -164,17 +303,22 @@ void InjectBufferInstrumentationFunction(const BasicBlock::iterator &I,
                             Twine(DL != nullptr ? DL->getColumn() : 0))
                                .str();
 
-  FunctionType *FT = FunctionType::get(
-      Type::getVoidTy(CTX),
-      {Ptr->getType(), Ptr->getType(), Type::getInt64Ty(CTX),
-       Type::getInt32Ty(CTX), Type::getInt32Ty(CTX), Type::getInt8Ty(CTX),
-       Type::getInt8Ty(CTX), Type::getInt16Ty(CTX)},
-      false);
-  FunctionCallee InstrumentationFunction =
-      M.getOrInsertFunction("v_submit_address", FT);
-  Builder.CreateCall(FT, cast<Function>(InstrumentationFunction.getCallee()),
-                     {Ptr, Addr64, DbgFileHashVal, DbgLineVal, DbgColumnVal,
-                      AccessTypeVal, AddrSpaceVal, PointeeTypeSizeVal});
+  if (SurrogateSpec) {
+    injectSurrogateAddressCall(I, F, M, Ptr, *SurrogateSpec, IsLoad, Addr64,
+                               AddrSpaceVal, PointeeTypeSizeVal);
+  } else {
+    FunctionType *FT = FunctionType::get(
+        Type::getVoidTy(CTX),
+        {Ptr->getType(), Ptr->getType(), Type::getInt64Ty(CTX),
+         Type::getInt32Ty(CTX), Type::getInt32Ty(CTX), Type::getInt8Ty(CTX),
+         Type::getInt8Ty(CTX), Type::getInt16Ty(CTX)},
+        false);
+    FunctionCallee InstrumentationFunction =
+        M.getOrInsertFunction("v_submit_address", FT);
+    Builder.CreateCall(FT, cast<Function>(InstrumentationFunction.getCallee()),
+                       {Ptr, Addr64, DbgFileHashVal, DbgLineVal, DbgColumnVal,
+                        AccessTypeVal, AddrSpaceVal, PointeeTypeSizeVal});
+  }
 
   if (PrintLocationInfo) {
     errs() << "Injecting Buffer Intrinsic Trace Into AMDGPU Kernel: "
@@ -189,7 +333,8 @@ template <typename LoadOrStoreInst>
 void InjectInstrumentationFunction(const BasicBlock::iterator &I,
                                    const Function &F, llvm::Module &M,
                                    uint32_t &LocationCounter, llvm::Value *Ptr,
-                                   bool PrintLocationInfo) {
+                                   bool PrintLocationInfo,
+                                   const ProbeSurrogateSpec *SurrogateSpec) {
   auto &CTX = M.getContext();
   auto LSI = dyn_cast<LoadOrStoreInst>(I);
   Value *AccessTypeVal;
@@ -237,17 +382,22 @@ void InjectInstrumentationFunction(const BasicBlock::iterator &I,
 
   Value *Addr64 = Builder.CreatePointerCast(Addr, Ptr->getType());
 
-  FunctionType *FT = FunctionType::get(
-      Type::getVoidTy(CTX),
-      {Ptr->getType(), Addr64->getType(), Type::getInt64Ty(CTX),
-       Type::getInt32Ty(CTX), Type::getInt32Ty(CTX), Type::getInt8Ty(CTX),
-       Type::getInt8Ty(CTX), Type::getInt16Ty(CTX)},
-      false);
-  FunctionCallee InstrumentationFunction =
-      M.getOrInsertFunction("v_submit_address", FT);
-  Builder.CreateCall(FT, cast<Function>(InstrumentationFunction.getCallee()),
-                     {Ptr, Addr64, DbgFileHashVal, DbgLineVal, DbgColumnVal,
-                      AccessTypeVal, AddrSpaceVal, PointeeTypeSizeVal});
+  if (SurrogateSpec) {
+    injectSurrogateAddressCall(I, F, M, Ptr, *SurrogateSpec, LI != nullptr,
+                               Addr64, AddrSpaceVal, PointeeTypeSizeVal);
+  } else {
+    FunctionType *FT = FunctionType::get(
+        Type::getVoidTy(CTX),
+        {Ptr->getType(), Addr64->getType(), Type::getInt64Ty(CTX),
+         Type::getInt32Ty(CTX), Type::getInt32Ty(CTX), Type::getInt8Ty(CTX),
+         Type::getInt8Ty(CTX), Type::getInt16Ty(CTX)},
+        false);
+    FunctionCallee InstrumentationFunction =
+        M.getOrInsertFunction("v_submit_address", FT);
+    Builder.CreateCall(FT, cast<Function>(InstrumentationFunction.getCallee()),
+                       {Ptr, Addr64, DbgFileHashVal, DbgLineVal, DbgColumnVal,
+                        AccessTypeVal, AddrSpaceVal, PointeeTypeSizeVal});
+  }
   if (PrintLocationInfo) {
     errs() << "Injecting Mem Trace Function Into AMDGPU Kernel: " << SourceInfo
            << "\n";
@@ -277,10 +427,18 @@ bool AMDGCNSubmitAddressMessage::runOnModule(Module &M) {
            << " definition(s)\n";
   }
 
+  std::vector<ProbeSurrogateSpec> ProbeSpecs = loadProbeSurrogateManifest();
   std::vector<Function *> GpuKernels = collectGPUKernels(M);
 
   bool ModifiedCodeGen = false;
   for (auto &I : GpuKernels) {
+    std::optional<ProbeSurrogateSpec> SurrogateSpec =
+        findMemoryOpSurrogateForKernel(ProbeSpecs, I->getName());
+    if (SurrogateSpec) {
+      errs() << "Using generated memory-op surrogate "
+             << SurrogateSpec->surrogate << " for kernel " << I->getName()
+             << "\n";
+    }
     ValueToValueMapTy VMap;
     Function *NF = cloneKernelWithExtraArg(I, M, VMap);
 
@@ -303,21 +461,29 @@ bool AMDGCNSubmitAddressMessage::runOnModule(Module &M) {
 
         if (dyn_cast<LoadInst>(I) != nullptr) {
           InjectInstrumentationFunction<LoadInst>(I, *NF, M, LocationCounter,
-                                                  bufferPtr, true);
+                                                  bufferPtr, true,
+                                                  SurrogateSpec ? &*SurrogateSpec
+                                                                : nullptr);
           ModifiedCodeGen = true;
         } else if (dyn_cast<StoreInst>(I) != nullptr) {
           InjectInstrumentationFunction<StoreInst>(I, *NF, M, LocationCounter,
-                                                   bufferPtr, true);
+                                                   bufferPtr, true,
+                                                   SurrogateSpec ? &*SurrogateSpec
+                                                                 : nullptr);
           ModifiedCodeGen = true;
         } else if (auto CI = dyn_cast<CallInst>(I)) {
           // Handle AMDGPU buffer intrinsics
           if (isAMDGCNBufferLoad(CI)) {
             InjectBufferInstrumentationFunction(I, *NF, M, LocationCounter,
-                                                bufferPtr, true, true);
+                                                bufferPtr, true, true,
+                                                SurrogateSpec ? &*SurrogateSpec
+                                                              : nullptr);
             ModifiedCodeGen = true;
           } else if (isAMDGCNBufferStore(CI)) {
             InjectBufferInstrumentationFunction(I, *NF, M, LocationCounter,
-                                                bufferPtr, false, true);
+                                                bufferPtr, false, true,
+                                                SurrogateSpec ? &*SurrogateSpec
+                                                              : nullptr);
             ModifiedCodeGen = true;
           }
         }

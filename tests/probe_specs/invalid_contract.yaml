@@ -1,0 +1,16 @@
+version: 1
+
+helpers:
+  source: probes/memory_latency.hip
+
+probes:
+  - id: broken_probe
+    target:
+      kernels: [vector_add]
+    inject:
+      when: kernel_entry
+      helper: load_probe
+      contract: memory_op_v1
+    payload:
+      mode: scalar
+      message: address

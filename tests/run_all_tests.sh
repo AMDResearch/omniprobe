@@ -72,19 +72,28 @@ echo "==========================================================================
 # Suite 1: Handler tests (basic + block filter + library filter)
 run_suite "Handler tests" "${SCRIPT_DIR}/run_handler_tests.sh"
 
-# Suite 2: Library filter chain (has its own build step)
+# Suite 2: Probe spec validation
+run_suite "Probe spec validation" "${SCRIPT_DIR}/run_probe_spec_tests.sh"
+
+# Suite 3: Probe surrogate smoke test
+run_suite "Probe surrogate smoke" "${SCRIPT_DIR}/run_probe_surrogate_smoke_tests.sh"
+
+# Suite 4: Probe lifecycle smoke test
+run_suite "Probe lifecycle smoke" "${SCRIPT_DIR}/run_probe_lifecycle_smoke_tests.sh"
+
+# Suite 5: Library filter chain (has its own build step)
 run_suite "Library filter chain" "${SCRIPT_DIR}/library_filter_chain/run_test.sh"
 
-# Suite 3: hipBLASLt instrumentation (requires INSTRUMENTED_HIPBLASLT_LIB_DIR)
+# Suite 6: hipBLASLt instrumentation (requires INSTRUMENTED_HIPBLASLT_LIB_DIR)
 run_suite "hipBLASLt instrumentation" "${SCRIPT_DIR}/hipblaslt/run_test.sh"
 
-# Suite 4: rocBLAS integration (requires INSTRUMENTED_ROCBLAS_LIB_DIR)
+# Suite 7: rocBLAS integration (requires INSTRUMENTED_ROCBLAS_LIB_DIR)
 run_suite "rocBLAS integration" "${SCRIPT_DIR}/rocblas_filter/run_test.sh"
 
-# Suite 5: rocBLAS + hipBLASLt combined (requires INSTRUMENTED_ROCBLAS_LIB_DIR + INSTRUMENTED_HIPBLASLT_LIB_DIR)
+# Suite 8: rocBLAS + hipBLASLt combined (requires INSTRUMENTED_ROCBLAS_LIB_DIR + INSTRUMENTED_HIPBLASLT_LIB_DIR)
 run_suite "rocBLAS + hipBLASLt combined" "${SCRIPT_DIR}/rocblas_hipblaslt/run_test.sh"
 
-# Suite 6: Triton integration (requires TRITON_DIR)
+# Suite 9: Triton integration (requires TRITON_DIR)
 run_suite "Triton integration" "${SCRIPT_DIR}/triton/run_test.sh"
 
 # Summary

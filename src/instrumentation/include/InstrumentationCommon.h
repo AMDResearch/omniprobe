@@ -24,8 +24,10 @@ THE SOFTWARE.
 
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 #include <cstdint>
+#include <optional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -54,6 +56,35 @@ bool validateAMDGPUTarget(const llvm::Module &M);
 // Returns the loaded device module on success, nullptr on failure
 std::unique_ptr<llvm::Module> loadAndLinkBitcode(llvm::Module &M);
 
+struct ProbeSurrogateSpec {
+  std::string probe_id;
+  std::string surrogate;
+  std::string helper;
+  std::string contract;
+  std::string when;
+  std::vector<std::string> target_kernels;
+  std::vector<std::string> kernel_args;
+};
+
+struct KernelLifecycleSurrogatePair {
+  std::optional<ProbeSurrogateSpec> entry;
+  std::optional<ProbeSurrogateSpec> exit;
+};
+
+// Load generated probe-surrogate manifest from OMNIPROBE_PROBE_MANIFEST.
+std::vector<ProbeSurrogateSpec> loadProbeSurrogateManifest();
+
+// Find a matching memory-op surrogate for the given kernel name.
+std::optional<ProbeSurrogateSpec>
+findMemoryOpSurrogateForKernel(const std::vector<ProbeSurrogateSpec> &Specs,
+                               llvm::StringRef KernelName);
+
+// Find matching kernel-entry and kernel-exit surrogates for the given kernel
+// name. Either field may be empty if the manifest only supplies one side.
+KernelLifecycleSurrogatePair
+findKernelLifecycleSurrogatesForKernel(
+    const std::vector<ProbeSurrogateSpec> &Specs, llvm::StringRef KernelName);
+
 // Collect all GPU kernel functions from the module
 std::vector<llvm::Function *> collectGPUKernels(llvm::Module &M);
 
@@ -67,6 +98,20 @@ llvm::Function *cloneKernelWithExtraArg(llvm::Function *OrigKernel,
 // Return the trailing instrumentation buffer argument that was appended by
 // cloneKernelWithExtraArg().
 llvm::Argument *getInstrumentationBufferArg(llvm::Function *Kernel);
+
+// Returns true when Kernel is one of Omniprobe's cloned kernels with a trailing
+// instrumentation buffer argument.
+bool isInstrumentationCloneKernel(const llvm::Function &Kernel);
+
+// Returns the number of visible user kernel arguments, excluding Omniprobe's
+// appended instrumentation buffer argument when Kernel is a cloned kernel.
+size_t getVisibleKernelArgumentCount(const llvm::Function &Kernel);
+
+// Resolve a source-level kernel argument name to its visible argument ordinal.
+// Uses debug metadata when available, then falls back to preserved IR names.
+std::optional<unsigned>
+resolveKernelArgumentOrdinal(const llvm::Function &Kernel,
+                             llvm::StringRef RequestedName);
 
 // Represents a single scope entry: a file pattern with optional line ranges.
 struct ScopeEntry {

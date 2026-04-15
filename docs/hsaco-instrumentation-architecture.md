@@ -96,20 +96,376 @@ Recommended first selectors:
 - address-space / memory-op class
 - ISA mnemonic or opcode class for code-object instrumentation
 
+### V1 YAML schema
+
+The first user-facing spec should be YAML and deliberately smaller than the
+eventual selector DSL. It should express probe placement, helper source,
+message mode, and requested captures, but it should not restate execution
+context that HIP device code already knows how to query.
+
+In particular, the YAML should not redundantly model:
+
+- `threadIdx`, `blockIdx`, `blockDim`, or `gridDim`
+- lane id or execution mask
+- wave id / wave number
+- wave/thread headers already emitted by `dh_comms`
+
+Those are already available to helper code through HIP builtins and
+`dh_comms` headers, and duplicating them in the schema would create two sources
+of truth.
+
+Recommended v1 shape:
+
+```yaml
+version: 1
+
+helpers:
+  source: probes/memory_latency.hip
+  namespace: omniprobe_user
+
+defaults:
+  emission: auto
+  lane_headers: false
+  state: none
+
+probes:
+  - id: kernel_timing
+    target:
+      kernels: ["vector_add"]
+    inject:
+      when: [kernel_entry, kernel_exit]
+      helper: kernel_timing_probe
+      contract: kernel_lifecycle_v1
+    payload:
+      mode: scalar
+      message: time_interval
+    capture:
+      kernel_args: [n]
+      builtins: [grid_dim, block_dim]
+
+  - id: global_loads
+    target:
+      kernels: ["vector_add"]
+      match:
+        kind: isa_mnemonic
+        values: ["global_load", "flat_load"]
+    inject:
+      when: memory_op
+      helper: load_probe
+      contract: memory_op_v1
+    payload:
+      mode: vector
+      message: address
+    capture:
+      instruction: [address, bytes, addr_space, access_kind]
+      kernel_args:
+        - name: input
+          type: u64
+```
+
+V1 field semantics:
+
+- `helpers.source`: HIP source fragment or translation unit compiled by
+  Omniprobe into helper bitcode/object code for the target ISA
+- `helpers.namespace`: optional namespace used to avoid collisions between
+  generated Omniprobe wrappers and user helper names
+- `defaults.emission`: `auto`, `scalar`, or `vector`
+- `defaults.lane_headers`: request lane headers for scalar/vector message
+  submission when the helper actually emits through `dh_comms`
+- `defaults.state`: `none` in v1; reserved to grow into declared helper state
+  once Omniprobe has a runtime-backed storage model
+- `inject.when`: instrumentation point kind
+- `inject.helper`: user-authored helper function name
+- `inject.contract`: the event contract the helper implements
+- `payload.mode`: preferred `dh_comms` submission mode; this is a policy
+  choice, not a separate kernel ABI
+- `payload.message`: built-in message family such as `address` or
+  `time_interval`; `custom` remains valid when the helper emits its own payload
+- `capture.kernel_args`: explicit kernel arguments to marshal into the helper's
+  generated capture struct
+- `capture.instruction`: dynamic values available at the probe site, such as a
+  memory address or access width
+
+### Note on execution-context builtins
+
+The current direction is that execution-context values that are already
+available to device code should not become required fields in the stable helper
+ABI.
+
+That includes values such as:
+
+- `threadIdx`
+- `blockIdx`
+- `blockDim`
+- `gridDim`
+- lane id
+- wave id / wave number
+- execution mask
+- active lane count
+
+Those values can already be queried directly by helper code, and `dh_comms`
+already reads several of them when constructing wave and lane headers. For that
+reason, `capture.builtins` should be interpreted as a declaration that helper
+logic depends on those values, not as a mandate that Omniprobe always marshal
+them into the generated capture struct.
+
+The implementation bias should therefore be:
+
+- explicit marshaling for kernel arguments and probe-site dynamic payloads
+- helper-side builtin access for execution context
+- optional freezing/marshaling only where a specific frontend or analysis truly
+  requires it
+
+The important constraint is that YAML chooses from a small number of stable
+contracts. It should not allow arbitrary per-probe ad hoc helper signatures,
+because that would make the binary frontend brittle and would prevent the LLVM
+and code-object paths from converging.
+
+The repository scaffolding for this v1 surface lives in:
+
+- `tools/probes/validate_probe_spec.py` for schema validation and normalization
+- `tools/probes/generate_probe_surrogates.py` for generated surrogate source and
+  frontend-consumable manifest emission
+- `inc/omniprobe_probe_abi_v1.h` for the shared helper/runtime contract types
+
 ### Helper ABI
 
-Instrumentation bodies should be expressed as HIP device helper functions.
-Injected code should do the minimum amount of work needed to gather values and
-call a helper.
+Instrumentation bodies should be expressed as HIP device helper functions, but
+Omniprobe should not inject direct calls to arbitrary user helper signatures.
+Instead, v1 should separate the problem into three layers:
 
-The helper receives a probe context structure that includes at least:
-
-- pointer to `dh_comms_descriptor`
-- probe id
-- capture list pointer / count
-- execution builtins that the injector chooses to populate
+1. a stable hidden kernel ABI
+2. a generated surrogate/wrapper ABI
+3. a small family of typed user-helper contracts
 
 The helper ABI must not depend on an added explicit kernel parameter.
+
+### Hidden context ABI
+
+Every instrumented clone receives the same hidden Omniprobe context argument.
+That is the only kernel-level ABI extension both frontends are allowed to rely
+on.
+
+Recommended v1 runtime context:
+
+```cpp
+namespace omniprobe {
+
+enum class event_kind_v1 : uint16_t {
+  kernel_entry,
+  kernel_exit,
+  memory_load,
+  memory_store,
+  call_before,
+  call_after,
+  basic_block
+};
+
+enum class emission_mode_v1 : uint8_t {
+  auto_mode,
+  scalar,
+  vector
+};
+
+struct runtime_ctx_v1 {
+  dh_comms::dh_comms_descriptor *dh;
+  const void *config_blob;
+  void *state_blob;
+  uint64_t dispatch_id;
+};
+
+struct site_info_v1 {
+  uint32_t probe_id;
+  uint16_t event_kind;
+  uint8_t emission_mode;
+  uint8_t has_lane_headers;
+  uint32_t user_type;
+  uint32_t user_data;
+};
+
+} // namespace omniprobe
+```
+
+`runtime_ctx_v1` is shared across all probes. Different instrumentation points
+must not invent their own hidden-argument layout.
+
+### Generated surrogate ABI
+
+Omniprobe should compile or synthesize a site-specific device surrogate for
+each probe. The injected code calls the surrogate, not the user helper
+directly.
+
+That solves two problems:
+
+- the injector only has to materialize values that actually exist at the probe
+  site
+- the user helper can see a structured contract instead of a long positional
+  argument list
+
+The surrogate is responsible for:
+
+- loading `hidden_omniprobe_ctx`
+- constructing `site_info_v1`
+- gathering any requested kernel arguments into a generated capture struct
+- gathering site-local event values such as memory address, byte count, or
+  timestamp
+- calling the user helper with the appropriate typed contract
+
+### User helper contracts
+
+Different instrumentation points do imply different payload needs, but they do
+not justify unrelated top-level runtime ABIs.
+
+The right v1 split is:
+
+- one common runtime context ABI
+- one common site metadata ABI
+- a small family of event payload contracts
+
+That means kernel-entry and memory-op instrumentation should not be forced into
+the same dummy "everything struct", but they also should not create arbitrary
+per-probe signatures.
+
+Recommended v1 contract families:
+
+```cpp
+namespace omniprobe {
+
+template <typename Captures, typename Event>
+struct helper_args_v1 {
+  const runtime_ctx_v1 &runtime;
+  const site_info_v1 &site;
+  const Captures &captures;
+  const Event &event;
+};
+
+struct kernel_lifecycle_event_v1 {
+  uint64_t timestamp;
+};
+
+struct memory_op_event_v1 {
+  uint64_t address;
+  uint32_t bytes;
+  uint8_t access_kind;
+  uint8_t address_space;
+};
+
+struct call_event_v1 {
+  uint64_t timestamp;
+  uint32_t callee_id;
+};
+
+struct basic_block_event_v1 {
+  uint64_t timestamp;
+  uint32_t block_id;
+};
+
+} // namespace omniprobe
+```
+
+User helpers then implement one of a small number of typed entry points, for
+example:
+
+```cpp
+extern "C" __device__ void kernel_timing_probe(
+    const omniprobe::helper_args_v1<MyCaptures,
+    omniprobe::kernel_lifecycle_event_v1> &args);
+
+extern "C" __device__ void load_probe(
+    const omniprobe::helper_args_v1<MyCaptures,
+    omniprobe::memory_op_event_v1> &args);
+```
+
+### Why this answers the entry/exit vs memory-op question
+
+Kernel entry and exit probes are typically interested in:
+
+- timestamps
+- counters
+- dispatch-local aggregation
+- occasional scalar emission to `dh_comms`
+
+Memory-op probes are typically interested in:
+
+- per-lane memory address
+- access width
+- address space
+- load vs store classification
+
+Those are genuinely different dynamic payloads. They should therefore map to
+different event contracts such as `kernel_lifecycle_v1` and `memory_op_v1`.
+
+What should stay common is:
+
+- how the helper finds `dh_comms`
+- how the helper finds probe/site metadata
+- how selected kernel arguments are marshaled
+- how both frontends decide which contract a probe uses
+
+So the answer is:
+
+- yes, different instrumentation points imply different event payload
+  contracts
+- no, they should not imply unrelated hidden-argument ABIs or arbitrary helper
+  calling conventions
+
+### Kernel-argument marshaling
+
+Kernel arguments should be exposed to helper code in structured form, but only
+for the subset explicitly requested by the spec.
+
+Omniprobe should generate a `Captures` struct per probe that contains:
+
+- selected kernel arguments
+- selected builtins that are not already trivial to access directly
+- optional static site constants
+
+This is important for binary-only instrumentation. A code object may not carry
+enough source-level type information to reconstruct every kernel argument
+elegantly, so v1 should only guarantee structured access to arguments the probe
+spec explicitly asks for. Where metadata does not provide a strong type, the
+spec may need an explicit type override.
+
+### Scalar vs vector `dh_comms` submission
+
+Scalar versus vector emission is a property of the probe site and helper
+behavior, not a separate helper ABI.
+
+`dh_comms` already gives Omniprobe the right primitives:
+
+- `v_submit_address` for per-lane memory-address style events
+- `s_submit_wave_header` for scalar wave-level markers
+- `s_submit_time_interval` for scalar start/stop timing records
+- `s_submit_message` and `v_submit_message` for custom payloads
+
+Recommended v1 defaults:
+
+- `memory_op_v1`: `vector` by default
+- `kernel_lifecycle_v1`: `scalar` by default
+- `basic_block_v1`: `scalar` by default
+- `call_event_v1`: `scalar` by default unless the probe explicitly wants
+  per-lane behavior
+
+The helper is still free to aggregate locally and emit later, but the contract
+family should express what dynamic data is available at the site.
+
+### Stateful entry/exit helpers
+
+Entry/exit instrumentation often wants correlation rather than immediate
+emission, for example:
+
+- store a timestamp on entry
+- accumulate a counter during execution
+- emit a summary on exit
+
+That requirement does not need a separate helper ABI. It needs optional helper
+state reachable from the shared runtime context.
+
+For v1, Omniprobe should standardize the pointer slot (`runtime_ctx_v1::state_blob`)
+even if the first implementation only supports stateless helpers or a narrow
+runtime-provided state model. That keeps the contract compatible between the
+pass path and the binary-only path while leaving room for later per-dispatch or
+per-wave state allocation.
 
 ### Hidden Omniprobe context
 
@@ -357,6 +713,15 @@ The runtime changes are specifically about kernarg metadata and hidden-argument
 repacking, not about introducing a separate execution model.
 
 ## Implementation Workstreams
+
+Before ABI finalization work, Omniprobe should land the user-facing v1 spec
+surface:
+
+- YAML parser and validator for the probe spec
+- generated helper header for `runtime_ctx_v1`, `site_info_v1`, and the v1
+  event contracts
+- contract resolution that maps `inject.when` plus `inject.contract` to the
+  correct generated surrogate shape
 
 ### 1. Define the hidden-argument ABI
 

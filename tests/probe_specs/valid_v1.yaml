@@ -1,0 +1,45 @@
+version: 1
+
+helpers:
+  source: probes/memory_latency.hip
+  namespace: omniprobe_user
+
+defaults:
+  emission: auto
+  lane_headers: false
+  state: none
+
+probes:
+  - id: kernel_timing
+    target:
+      kernels: ["vector_add"]
+    inject:
+      when: [kernel_entry, kernel_exit]
+      helper: kernel_timing_probe
+      contract: kernel_lifecycle_v1
+    payload:
+      mode: scalar
+      message: time_interval
+    capture:
+      kernel_args: [n]
+      builtins: [grid_dim, block_dim]
+
+  - id: global_loads
+    target:
+      kernels:
+        - vector_add
+      match:
+        kind: isa_mnemonic
+        values: [global_load, flat_load]
+    inject:
+      when: memory_op
+      helper: load_probe
+      contract: memory_op_v1
+    payload:
+      mode: vector
+      message: address
+    capture:
+      instruction: [address, bytes, addr_space, access_kind]
+      kernel_args:
+        - name: input
+          type: u64

@@ -89,7 +89,7 @@ function(add_instrumentation_plugins)
     set(_out_dir "${CMAKE_BINARY_DIR}/lib/plugins")
     set(_include_flags "-I${_src_dir}/include")
 
-    set(_plugins AMDGCNSubmitAddressMessages AMDGCNSubmitBBStart AMDGCNSubmitBBInterval)
+    set(_plugins AMDGCNSubmitAddressMessages AMDGCNSubmitBBStart AMDGCNSubmitBBInterval AMDGCNSubmitKernelLifecycle)
     set(_all_outputs "")
 
     # Collect all headers for dependency tracking

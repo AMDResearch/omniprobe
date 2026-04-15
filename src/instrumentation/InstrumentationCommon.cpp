@@ -23,11 +23,13 @@ THE SOFTWARE.
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Bitcode/BitcodeReader.h"
+#include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Linker/Linker.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
@@ -35,6 +37,7 @@ THE SOFTWARE.
 #include <cstdlib>
 #include <dlfcn.h>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <type_traits>
 
@@ -42,6 +45,63 @@ using namespace llvm;
 
 namespace instrumentation {
 namespace common {
+
+static constexpr llvm::StringLiteral CloneKernelPrefix("__amd_crk_");
+static constexpr llvm::StringLiteral CloneKernelSuffix("Pv");
+
+static std::unique_ptr<llvm::Module> loadBitcodeModuleFromPath(
+    const std::string &BitcodePath, llvm::LLVMContext &Ctx) {
+  if (!llvm::sys::fs::exists(BitcodePath)) {
+    llvm::errs() << "Error: Bitcode file not found at " << BitcodePath << "\n";
+    return nullptr;
+  }
+
+  auto Buffer = MemoryBuffer::getFile(BitcodePath);
+  if (!Buffer) {
+    llvm::errs() << "Error loading bitcode file: " << BitcodePath << "\n";
+    return nullptr;
+  }
+
+  auto DeviceModuleOrErr =
+      parseBitcodeFile(Buffer->get()->getMemBufferRef(), Ctx);
+  if (!DeviceModuleOrErr) {
+    llvm::errs() << "Error parsing bitcode file: " << BitcodePath << "\n";
+    return nullptr;
+  }
+
+  return std::move(DeviceModuleOrErr.get());
+}
+
+static bool linkBitcodeModuleInto(llvm::Module &Dest, const llvm::Module &Src,
+                                  llvm::StringRef Label) {
+  llvm::errs() << "Linking device module from " << Label << " into GPU module\n";
+  if (llvm::Linker::linkModules(Dest, CloneModule(Src))) {
+    llvm::errs() << "Error linking device function module into instrumented "
+                    "module!\n";
+    return false;
+  }
+  return true;
+}
+
+static void linkExtraProbeBitcodeIfRequested(llvm::Module &M) {
+  const char *EnvValue = std::getenv("OMNIPROBE_PROBE_BITCODE");
+  if (!EnvValue || !*EnvValue)
+    return;
+
+  llvm::StringRef RawList(EnvValue);
+  llvm::SmallVector<llvm::StringRef, 4> Entries;
+  RawList.split(Entries, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+
+  for (llvm::StringRef Entry : Entries) {
+    std::string BitcodePath = Entry.trim().str();
+    if (BitcodePath.empty())
+      continue;
+    auto ExtraModule = loadBitcodeModuleFromPath(BitcodePath, M.getContext());
+    if (!ExtraModule)
+      continue;
+    linkBitcodeModuleInto(M, *ExtraModule, BitcodePath);
+  }
+}
 
 static std::string normalizeArchName(std::string arch) {
   const size_t feature_pos = arch.find(':');
@@ -177,37 +237,187 @@ bool validateAMDGPUTarget(const llvm::Module &M) {
 
 std::unique_ptr<llvm::Module> loadAndLinkBitcode(llvm::Module &M) {
   std::string BitcodePath = getBitcodePath(M);
-
-  if (!llvm::sys::fs::exists(BitcodePath)) {
-    llvm::errs() << "Error: Bitcode file not found at " << BitcodePath << "\n";
-    return nullptr;
-  }
-
-  auto Buffer = MemoryBuffer::getFile(BitcodePath);
-  if (!Buffer) {
-    llvm::errs() << "Error loading bitcode file: " << BitcodePath << "\n";
-    return nullptr;
-  }
-
-  auto DeviceModuleOrErr =
-      parseBitcodeFile(Buffer->get()->getMemBufferRef(), M.getContext());
-  if (!DeviceModuleOrErr) {
-    llvm::errs() << "Error parsing bitcode file: " << BitcodePath << "\n";
-    return nullptr;
-  }
-
   std::unique_ptr<llvm::Module> DeviceModule =
-      std::move(DeviceModuleOrErr.get());
-
-  llvm::errs() << "Linking device module from " << BitcodePath
-               << " into GPU module\n";
-  if (llvm::Linker::linkModules(M, CloneModule(*DeviceModule))) {
-    llvm::errs() << "Error linking device function module into instrumented "
-                    "module!\n";
+      loadBitcodeModuleFromPath(BitcodePath, M.getContext());
+  if (!DeviceModule)
     return nullptr;
-  }
+
+  if (!linkBitcodeModuleInto(M, *DeviceModule, BitcodePath))
+    return nullptr;
+
+  linkExtraProbeBitcodeIfRequested(M);
 
   return DeviceModule;
+}
+
+static std::vector<std::string> collectStringArray(const llvm::json::Value *Value,
+                                                   llvm::StringRef Context) {
+  std::vector<std::string> Result;
+  if (!Value)
+    return Result;
+  auto *Array = Value->getAsArray();
+  if (!Array) {
+    llvm::errs() << "Ignoring malformed JSON array for " << Context << "\n";
+    return Result;
+  }
+  for (const auto &Entry : *Array) {
+    if (auto Str = Entry.getAsString())
+      Result.push_back(Str->str());
+  }
+  return Result;
+}
+
+std::vector<ProbeSurrogateSpec> loadProbeSurrogateManifest() {
+  std::vector<ProbeSurrogateSpec> Specs;
+  const char *ManifestEnv = std::getenv("OMNIPROBE_PROBE_MANIFEST");
+  if (!ManifestEnv || !*ManifestEnv)
+    return Specs;
+
+  auto Buffer = llvm::MemoryBuffer::getFile(ManifestEnv);
+  if (!Buffer) {
+    llvm::errs() << "Failed to read probe manifest: " << ManifestEnv << "\n";
+    return Specs;
+  }
+
+  auto Parsed = llvm::json::parse(Buffer.get()->getBuffer());
+  if (!Parsed) {
+    llvm::errs() << "Failed to parse probe manifest JSON: " << ManifestEnv
+                 << "\n";
+    return Specs;
+  }
+
+  auto *Root = Parsed->getAsObject();
+  if (!Root) {
+    llvm::errs() << "Probe manifest root is not an object: " << ManifestEnv
+                 << "\n";
+    return Specs;
+  }
+
+  auto *Surrogates = Root->getArray("surrogates");
+  if (!Surrogates)
+    return Specs;
+
+  for (const auto &Entry : *Surrogates) {
+    auto *Obj = Entry.getAsObject();
+    if (!Obj)
+      continue;
+
+    auto ProbeId = Obj->getString("probe_id");
+    auto Surrogate = Obj->getString("surrogate");
+    auto Helper = Obj->getString("helper");
+    auto Contract = Obj->getString("contract");
+    auto When = Obj->getString("when");
+    if (!ProbeId || !Surrogate || !Helper || !Contract || !When)
+      continue;
+
+    ProbeSurrogateSpec Spec;
+    Spec.probe_id = ProbeId->str();
+    Spec.surrogate = Surrogate->str();
+    Spec.helper = Helper->str();
+    Spec.contract = Contract->str();
+    Spec.when = When->str();
+
+    if (auto *Target = Obj->getObject("target"))
+      Spec.target_kernels = collectStringArray(Target->get("kernels"),
+                                               "surrogates[].target.kernels");
+    if (auto *Capture = Obj->getObject("capture")) {
+      if (auto *KernelArgs = Capture->getArray("kernel_args")) {
+        for (const auto &KernelArgEntry : *KernelArgs) {
+          if (auto *KernelArgObj = KernelArgEntry.getAsObject()) {
+            if (auto Name = KernelArgObj->getString("name"))
+              Spec.kernel_args.push_back(Name->str());
+          }
+        }
+      }
+    }
+
+    Specs.push_back(std::move(Spec));
+  }
+
+  if (!Specs.empty()) {
+    llvm::errs() << "Loaded " << Specs.size()
+                 << " generated probe surrogate entries from "
+                 << ManifestEnv << "\n";
+  }
+  return Specs;
+}
+
+std::optional<ProbeSurrogateSpec>
+findMemoryOpSurrogateForKernel(const std::vector<ProbeSurrogateSpec> &Specs,
+                               llvm::StringRef KernelName) {
+  std::vector<std::string> CandidateNames{KernelName.str()};
+  char *Demangled = llvm::itaniumDemangle(KernelName.str());
+  if (Demangled) {
+    std::string DemangledName(Demangled);
+    CandidateNames.push_back(DemangledName);
+    size_t ParamPos = DemangledName.find('(');
+    if (ParamPos != std::string::npos)
+      CandidateNames.push_back(DemangledName.substr(0, ParamPos));
+  }
+  std::free(Demangled);
+
+  auto matchesTargetKernel = [&](const ProbeSurrogateSpec &Spec) {
+    if (Spec.target_kernels.empty())
+      return false;
+    for (const auto &Candidate : CandidateNames) {
+      auto It = std::find(Spec.target_kernels.begin(), Spec.target_kernels.end(),
+                          Candidate);
+      if (It != Spec.target_kernels.end())
+        return true;
+    }
+    return false;
+  };
+
+  for (const auto &Spec : Specs) {
+    if (Spec.contract != "memory_op_v1" || Spec.when != "memory_op")
+      continue;
+    if (matchesTargetKernel(Spec))
+      return Spec;
+  }
+  return std::nullopt;
+}
+
+KernelLifecycleSurrogatePair
+findKernelLifecycleSurrogatesForKernel(
+    const std::vector<ProbeSurrogateSpec> &Specs, llvm::StringRef KernelName) {
+  KernelLifecycleSurrogatePair Result;
+
+  std::vector<std::string> CandidateNames{KernelName.str()};
+  char *Demangled = llvm::itaniumDemangle(KernelName.str());
+  if (Demangled) {
+    std::string DemangledName(Demangled);
+    CandidateNames.push_back(DemangledName);
+    size_t ParamPos = DemangledName.find('(');
+    if (ParamPos != std::string::npos)
+      CandidateNames.push_back(DemangledName.substr(0, ParamPos));
+  }
+  std::free(Demangled);
+
+  auto matchesTargetKernel = [&](const ProbeSurrogateSpec &Spec) {
+    if (Spec.target_kernels.empty())
+      return false;
+    for (const auto &Candidate : CandidateNames) {
+      auto It = std::find(Spec.target_kernels.begin(), Spec.target_kernels.end(),
+                          Candidate);
+      if (It != Spec.target_kernels.end())
+        return true;
+    }
+    return false;
+  };
+
+  for (const auto &Spec : Specs) {
+    if (Spec.contract != "kernel_lifecycle_v1")
+      continue;
+    if (!matchesTargetKernel(Spec))
+      continue;
+    if (Spec.when == "kernel_entry" && !Result.entry) {
+      Result.entry = Spec;
+    } else if (Spec.when == "kernel_exit" && !Result.exit) {
+      Result.exit = Spec;
+    }
+  }
+
+  return Result;
 }
 
 std::vector<llvm::Function *> collectGPUKernels(llvm::Module &M) {
@@ -222,6 +432,76 @@ std::vector<llvm::Function *> collectGPUKernels(llvm::Module &M) {
   }
 
   return GpuKernels;
+}
+
+bool isInstrumentationCloneKernel(const llvm::Function &Kernel) {
+  return Kernel.getName().starts_with(CloneKernelPrefix) &&
+         Kernel.getName().ends_with(CloneKernelSuffix);
+}
+
+static const llvm::Function *
+findOriginalKernelForClone(const llvm::Function &Kernel) {
+  if (!isInstrumentationCloneKernel(Kernel))
+    return nullptr;
+
+  llvm::StringRef Name = Kernel.getName();
+  llvm::StringRef OriginalName =
+      Name.drop_front(CloneKernelPrefix.size()).drop_back(CloneKernelSuffix.size());
+  return Kernel.getParent()->getFunction(OriginalName);
+}
+
+size_t getVisibleKernelArgumentCount(const llvm::Function &Kernel) {
+  if (const llvm::Function *OriginalKernel = findOriginalKernelForClone(Kernel))
+    return OriginalKernel->arg_size();
+  return Kernel.arg_size();
+}
+
+static std::optional<unsigned>
+resolveKernelArgumentOrdinalFromSubprogram(const llvm::DISubprogram *Subprogram,
+                                           llvm::StringRef RequestedName) {
+  if (!Subprogram)
+    return std::nullopt;
+
+  for (llvm::Metadata *Node : Subprogram->getRetainedNodes()) {
+    auto *Local = llvm::dyn_cast_or_null<llvm::DILocalVariable>(Node);
+    if (!Local || !Local->isParameter() || Local->getName() != RequestedName)
+      continue;
+    unsigned ArgNo = Local->getArg();
+    if (ArgNo == 0)
+      return std::nullopt;
+    return ArgNo - 1;
+  }
+  return std::nullopt;
+}
+
+std::optional<unsigned>
+resolveKernelArgumentOrdinal(const llvm::Function &Kernel,
+                             llvm::StringRef RequestedName) {
+  if (RequestedName.empty())
+    return std::nullopt;
+
+  llvm::SmallVector<const llvm::Function *, 2> Candidates;
+  Candidates.push_back(&Kernel);
+  if (const llvm::Function *OriginalKernel = findOriginalKernelForClone(Kernel)) {
+    if (OriginalKernel != &Kernel)
+      Candidates.push_back(OriginalKernel);
+  }
+
+  for (const llvm::Function *Candidate : Candidates) {
+    if (auto Ordinal = resolveKernelArgumentOrdinalFromSubprogram(
+            Candidate->getSubprogram(), RequestedName)) {
+      return Ordinal;
+    }
+  }
+
+  for (const llvm::Function *Candidate : Candidates) {
+    for (const llvm::Argument &Arg : Candidate->args()) {
+      if (Arg.getName() == RequestedName)
+        return Arg.getArgNo();
+    }
+  }
+
+  return std::nullopt;
 }
 
 llvm::Function *cloneKernelWithExtraArg(llvm::Function *OrigKernel,
