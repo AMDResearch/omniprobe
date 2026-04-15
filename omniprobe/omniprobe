@@ -317,6 +317,8 @@ def prepare_hsaco_cache(parms):
         cmd.extend(["--kernel-filter", parms.kernels])
     if parms.hsaco_rebuild_mode:
         cmd.extend(["--source-rebuild-mode", parms.hsaco_rebuild_mode])
+    if parms.hsaco_surrogate_mode:
+        cmd.extend(["--surrogate-mode", parms.hsaco_surrogate_mode])
     for carrier in parms.carrier_inputs:
         cmd.extend(["--carrier-input", os.path.abspath(carrier)])
     for hsaco in parms.hsaco_inputs:
@@ -696,6 +698,24 @@ def add_general_group(parser):
             "\tOmniprobe's rebuild path. 'abi-changing' rebuilds with regenerated\n"
             "\tdescriptors and currently depends on descriptor-count evidence in the\n"
             "\tinput manifest."
+        ),
+    )
+
+    general_group.add_argument(
+        "--hsaco-surrogate-mode",
+        type=str,
+        metavar="MODE",
+        dest="hsaco_surrogate_mode",
+        required=False,
+        default="auto",
+        choices=["auto", "donor-slot", "donor-free"],
+        help=(
+            "\tHow Omniprobe prepares surrogate clone artifacts when --hsaco-input is\n"
+            "\tused and no matching carrier clone is available. 'donor-slot' uses the\n"
+            "\tlegacy donor-slot rebinding flow when the input already contains an eligible\n"
+            "\tOmniprobe clone slot. 'donor-free' uses whole-code-object regeneration.\n"
+            "\t'auto' prefers donor-slot when an eligible donor exists and otherwise falls\n"
+            "\tback to donor-free."
         ),
     )
     

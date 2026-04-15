@@ -76,6 +76,14 @@ REBUILT_ASM="$WORK_DIR/simple.rebuilt.s"
 REBUILT_OBJ="$WORK_DIR/simple.rebuilt.o"
 REBUILT_CO="$WORK_DIR/simple.rebuilt.co"
 REBUILT_REPORT="$WORK_DIR/simple.rebuilt.report.json"
+REGEN_CO="$WORK_DIR/simple.regen.co"
+REGEN_REPORT="$WORK_DIR/simple.regen.report.json"
+REGEN_CLONE_CO="$WORK_DIR/simple.regen.clone.co"
+REGEN_CLONE_REPORT="$WORK_DIR/simple.regen.clone.report.json"
+REGEN_CLONE_MANIFEST="$WORK_DIR/simple.regen.clone.manifest.json"
+REGEN_HIDDEN_CLONE_CO="$WORK_DIR/simple.regen.hidden.clone.co"
+REGEN_HIDDEN_CLONE_REPORT="$WORK_DIR/simple.regen.hidden.clone.report.json"
+REGEN_HIDDEN_CLONE_MANIFEST="$WORK_DIR/simple.regen.hidden.clone.manifest.json"
 MUTATED_IR="$WORK_DIR/simple.storev1.ir.json"
 MUTATED_DESCRIPTOR_REPORT="$WORK_DIR/simple.storev1.descriptor_safety.json"
 MUTATED_ASM="$WORK_DIR/simple.storev1.s"
@@ -99,6 +107,37 @@ python3 "$REPO_ROOT/tools/codeobj/rebuild_code_object.py" \
     --llvm-mc "$LLVM_MC" \
     --ld-lld "$LD_LLD"
 
+python3 "$REPO_ROOT/tools/codeobj/regenerate_code_object.py" \
+    "$WORK_DIR/simple.orig.co" \
+    --output "$REGEN_CO" \
+    --manifest "$MANIFEST" \
+    --report-output "$REGEN_REPORT" \
+    --llvm-mc "$LLVM_MC" \
+    --ld-lld "$LD_LLD"
+
+python3 "$REPO_ROOT/tools/codeobj/regenerate_code_object.py" \
+    "$WORK_DIR/simple.orig.co" \
+    --output "$REGEN_CLONE_CO" \
+    --manifest "$MANIFEST" \
+    --report-output "$REGEN_CLONE_REPORT" \
+    --add-noop-clone \
+    --llvm-mc "$LLVM_MC" \
+    --ld-lld "$LD_LLD"
+python3 "$REPO_ROOT/tools/codeobj/inspect_code_object.py" \
+    "$REGEN_CLONE_CO" \
+    --output "$REGEN_CLONE_MANIFEST"
+python3 "$REPO_ROOT/tools/codeobj/regenerate_code_object.py" \
+    "$WORK_DIR/simple.orig.co" \
+    --output "$REGEN_HIDDEN_CLONE_CO" \
+    --manifest "$MANIFEST" \
+    --report-output "$REGEN_HIDDEN_CLONE_REPORT" \
+    --add-hidden-abi-clone \
+    --llvm-mc "$LLVM_MC" \
+    --ld-lld "$LD_LLD"
+python3 "$REPO_ROOT/tools/codeobj/inspect_code_object.py" \
+    "$REGEN_HIDDEN_CLONE_CO" \
+    --output "$REGEN_HIDDEN_CLONE_MANIFEST"
+
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="codeobj_roundtrip_noop"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
@@ -116,6 +155,72 @@ else
     echo -e "  ${RED}✗ FAIL${NC} - No-op round-trip validation failed"
     echo "  Original output: $ORIG_OUT"
     echo "  Rebuilt output: $REBUILT_OUT"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="codeobj_regenerate_noop"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+echo "  Validate donor-free regeneration scaffold on the extracted code object"
+REGEN_OUT="$OUTPUT_DIR/${TEST_NAME}.out"
+
+if ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" "$HIP_LAUNCH_TEST" \
+    "$REGEN_CO" "$KERNEL_NAME" index > "$REGEN_OUT" 2>&1; then
+    echo -e "  ${GREEN}✓ PASS${NC} - Regenerated code object executes successfully"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Donor-free regeneration scaffold failed"
+    echo "  Output saved to: $REGEN_OUT"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="codeobj_regenerate_noop_clone"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+echo "  Validate donor-free same-ABI clone insertion on the extracted code object"
+REGEN_CLONE_OUT="$OUTPUT_DIR/${TEST_NAME}.out"
+
+CLONE_KERNEL_NAME="$(python3 -c 'import json,sys; report=json.load(open(sys.argv[1], encoding="utf-8")); print(report["clone_result"]["clone_kernel"])' "$REGEN_CLONE_REPORT")"
+
+if ! python3 -c 'import json,sys; manifest_path,clone_name=sys.argv[1:3]; m=json.load(open(manifest_path, encoding="utf-8")); kernels=m["kernels"]["metadata"]["kernels"]; names=[k.get("name") for k in kernels]; sys.exit(0 if "_Z13simple_kernelPim" in names and clone_name in names else 1)' \
+    "$REGEN_CLONE_MANIFEST" "$CLONE_KERNEL_NAME"; then
+    echo -e "  ${RED}✗ FAIL${NC} - Inserted clone metadata was not reflected in the rebuilt manifest"
+    echo "  Manifest saved to: $REGEN_CLONE_MANIFEST"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+elif ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" "$HIP_LAUNCH_TEST" \
+    "$REGEN_CLONE_CO" "$CLONE_KERNEL_NAME" index > "$REGEN_CLONE_OUT" 2>&1; then
+    echo -e "  ${GREEN}✓ PASS${NC} - Donor-free no-op clone launches successfully"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Donor-free no-op clone failed to launch"
+    echo "  Output saved to: $REGEN_CLONE_OUT"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="codeobj_regenerate_hidden_abi_clone"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+echo "  Validate donor-free hidden-ABI clone insertion on the extracted code object"
+REGEN_HIDDEN_CLONE_OUT="$OUTPUT_DIR/${TEST_NAME}.out"
+
+HIDDEN_CLONE_KERNEL_NAME="$(python3 -c 'import json,sys; report=json.load(open(sys.argv[1], encoding="utf-8")); print(report["clone_result"]["clone_kernel"])' "$REGEN_HIDDEN_CLONE_REPORT")"
+HIDDEN_CLONE_KERNARG_SIZE="$(python3 -c 'import json,sys; report=json.load(open(sys.argv[1], encoding="utf-8")); print(report["clone_result"]["instrumented_kernarg_length"])' "$REGEN_HIDDEN_CLONE_REPORT")"
+HIDDEN_CLONE_CTX_OFFSET="$(python3 -c 'import json,sys; report=json.load(open(sys.argv[1], encoding="utf-8")); print(report["clone_result"]["hidden_omniprobe_ctx"]["offset"])' "$REGEN_HIDDEN_CLONE_REPORT")"
+
+if ! python3 -c 'import json,sys; manifest_path,clone_name=sys.argv[1:3]; m=json.load(open(manifest_path, encoding="utf-8")); kernels=m["kernels"]["metadata"]["kernels"]; target=next((k for k in kernels if k.get("name")==clone_name or k.get("symbol")==clone_name), None); args=target.get("args", []) if target else []; has_hidden=any(arg.get("name")=="hidden_omniprobe_ctx" for arg in args); grown=target is not None and int(target.get("kernarg_segment_size", 0)) > 16; sys.exit(0 if has_hidden and grown else 1)' \
+    "$REGEN_HIDDEN_CLONE_MANIFEST" "$HIDDEN_CLONE_KERNEL_NAME"; then
+    echo -e "  ${RED}✗ FAIL${NC} - Hidden-ABI clone metadata was not reflected in the rebuilt manifest"
+    echo "  Manifest saved to: $REGEN_HIDDEN_CLONE_MANIFEST"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+elif ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" "$HIP_LAUNCH_TEST" \
+    "$REGEN_HIDDEN_CLONE_CO" "$HIDDEN_CLONE_KERNEL_NAME" index \
+    --raw-kernarg-size "$HIDDEN_CLONE_KERNARG_SIZE" \
+    --hidden-ctx-offset "$HIDDEN_CLONE_CTX_OFFSET" > "$REGEN_HIDDEN_CLONE_OUT" 2>&1; then
+    echo -e "  ${GREEN}✓ PASS${NC} - Donor-free hidden-ABI clone launches successfully"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Donor-free hidden-ABI clone failed to launch"
+    echo "  Output saved to: $REGEN_HIDDEN_CLONE_OUT"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 

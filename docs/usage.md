@@ -299,6 +299,15 @@ into `--cache-location`. Otherwise it falls back to rewriting surrogate clone
 artifacts. Either way, the runtime consumes the cache through the normal
 `LOGDUR_KERNEL_CACHE` mechanism.
 
+`--hsaco-surrogate-mode` controls how Omniprobe builds those surrogate clone
+artifacts when no matching carrier is available:
+
+- `auto`: prefer legacy donor-slot rebinding when the active code object
+  already contains an eligible Omniprobe clone slot, otherwise fall back to
+  donor-free whole-object regeneration
+- `donor-slot`: require an eligible donor slot and fail closed otherwise
+- `donor-free`: force whole-code-object regeneration
+
 `--hsaco-rebuild-mode exact` optionally forces Omniprobe to first rebuild each
 resolved source code object through the explicit code-object rebuild path before
 carrier selection or surrogate rewriting. This is mainly a validation and

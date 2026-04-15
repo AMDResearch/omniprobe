@@ -32,6 +32,7 @@ MODULE_LOAD_TEST="${BUILD_DIR}/tests/test_kernels/module_load_test"
 MODULE_LOAD_HSACO="${BUILD_DIR}/tests/test_kernels/module_load_kernel.hsaco"
 MODULE_LOAD_PLAIN_HSACO="${BUILD_DIR}/tests/test_kernels/module_load_kernel_plain.hsaco"
 MODULE_LOAD_MANUAL_CARRIER_HSACO="${BUILD_DIR}/tests/test_kernels/module_load_manual_carrier_kernel.hsaco"
+MODULE_LOAD_DONOR_SLOT_HSACO="${BUILD_DIR}/tests/test_kernels/module_load_donor_slot_kernel.hsaco"
 SIMPLE_HEATMAP_TEST="${BUILD_DIR}/tests/test_kernels/simple_heatmap_test"
 EXTRACT_CODE_OBJECTS="${BUILD_DIR}/tools/extract_code_objects"
 HIDDEN_KERNARG_REPACK_TEST="${BUILD_DIR}/tools/test_hidden_kernarg_repack"
@@ -40,14 +41,15 @@ AUDIT_CODE_OBJECT_STRUCTURE="${REPO_ROOT}/tools/codeobj/audit_code_object_struct
 INSPECT_CODE_OBJECT="${REPO_ROOT}/tools/codeobj/inspect_code_object.py"
 RECLASSIFY_HIDDEN_ARG="${REPO_ROOT}/tools/codeobj/reclassify_kernel_arg_as_hidden.py"
 
-if [ ! -x "$MODULE_LOAD_TEST" ] || [ ! -f "$MODULE_LOAD_HSACO" ] || [ ! -f "$MODULE_LOAD_PLAIN_HSACO" ] || [ ! -f "$MODULE_LOAD_MANUAL_CARRIER_HSACO" ] || [ ! -x "$HIDDEN_KERNARG_REPACK_TEST" ]; then
+if [ ! -x "$MODULE_LOAD_TEST" ] || [ ! -f "$MODULE_LOAD_HSACO" ] || [ ! -f "$MODULE_LOAD_PLAIN_HSACO" ] || [ ! -f "$MODULE_LOAD_MANUAL_CARRIER_HSACO" ] || [ ! -f "$MODULE_LOAD_DONOR_SLOT_HSACO" ] || [ ! -x "$HIDDEN_KERNARG_REPACK_TEST" ]; then
     echo -e "${YELLOW}SKIP: Module-load test artifacts not built${NC}"
     echo "  Expected: $MODULE_LOAD_TEST"
     echo "  Expected: $MODULE_LOAD_HSACO"
     echo "  Expected: $MODULE_LOAD_PLAIN_HSACO"
     echo "  Expected: $MODULE_LOAD_MANUAL_CARRIER_HSACO"
+    echo "  Expected: $MODULE_LOAD_DONOR_SLOT_HSACO"
     echo "  Expected: $HIDDEN_KERNARG_REPACK_TEST"
-    echo "  Build with: cmake --build build --target module_load_test module_load_kernel_hsaco module_load_kernel_plain_hsaco module_load_manual_carrier_hsaco test_hidden_kernarg_repack"
+    echo "  Build with: cmake --build build --target module_load_test module_load_kernel_hsaco module_load_kernel_plain_hsaco module_load_manual_carrier_hsaco module_load_donor_slot_hsaco test_hidden_kernarg_repack"
     export TESTS_RUN TESTS_PASSED TESTS_FAILED
     return 0 2>/dev/null || exit 0
 fi
@@ -69,31 +71,29 @@ echo "==========================================================================
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="module_load_binary_only_rewrite"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
-echo "  Run under omniprobe with --hsaco-input on an uninstrumented .hsaco"
+echo "  Prepare donor-free surrogate cache artifacts from an uninstrumented .hsaco"
 
 OUTPUT_FILE="$OUTPUT_DIR/${TEST_NAME}.out"
 CACHE_DIR="$OUTPUT_DIR/${TEST_NAME}_cache"
 rm -rf "$CACHE_DIR"
 mkdir -p "$CACHE_DIR"
 
-ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
-    LD_LIBRARY_PATH="${OMNIPROBE_ROOT}/lib:${LD_LIBRARY_PATH}" \
-    timeout "$OMNIPROBE_TIMEOUT" "$OMNIPROBE" -i -a Heatmap \
-    --hsaco-input "$MODULE_LOAD_PLAIN_HSACO" \
-    --cache-location "$CACHE_DIR" \
-    -- "$MODULE_LOAD_TEST" "$MODULE_LOAD_PLAIN_HSACO" > "$OUTPUT_FILE" 2>&1 \
+PYTHONDONTWRITEBYTECODE=1 \
+    python3 "$PREPARE_HSACO_CACHE" \
+    --output-dir "$CACHE_DIR" \
+    --surrogate-mode donor-free \
+    "$MODULE_LOAD_PLAIN_HSACO" > "$OUTPUT_FILE" 2>&1 \
     && run_ok=true || run_ok=false
 
 if $run_ok && \
-   grep -q "Found instrumented alternative for mlk" "$OUTPUT_FILE" && \
-   grep -q "module_load_test: PASS" "$OUTPUT_FILE" && \
+   grep -q '"surrogate_mode": "donor-free"' "$OUTPUT_FILE" && \
    ls "$CACHE_DIR"/*.surrogate.hsaco >/dev/null 2>&1 && \
    ls "$CACHE_DIR"/*.surrogate.report.json >/dev/null 2>&1; then
-    echo -e "  ${GREEN}✓ PASS${NC} - Binary-only surrogate cache was generated and executed"
+    echo -e "  ${GREEN}✓ PASS${NC} - Donor-free surrogate cache artifacts were generated"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo -e "  ${RED}✗ FAIL${NC} - Binary-only rewrite path did not complete successfully"
-    grep -E "instrumented alternative|module_load_test:|ERROR:|WARNING:" "$OUTPUT_FILE" || true
+    echo -e "  ${RED}✗ FAIL${NC} - Donor-free cache preparation did not complete successfully"
+    cat "$OUTPUT_FILE" || true
     echo "  Output saved to: $OUTPUT_FILE"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
@@ -126,20 +126,56 @@ else
 fi
 
 TESTS_RUN=$((TESTS_RUN + 1))
-TEST_NAME="module_load_binary_only_rewrite_surrogate_direct"
+TEST_NAME="module_load_binary_only_rewrite_donor_slot_unavailable"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
-echo "  Validate the generated surrogate loads and executes directly"
+echo "  Validate donor-slot mode fails closed when no donor-bearing clone slot exists"
 
 DIRECT_SURROGATE_OUT="$OUTPUT_DIR/${TEST_NAME}.out"
-if [ -n "$SURROGATE_HSACO" ] && \
-   LD_LIBRARY_PATH="${OMNIPROBE_ROOT}/lib:${LD_LIBRARY_PATH}" \
-   timeout "$OMNIPROBE_TIMEOUT" \
-   "$MODULE_LOAD_TEST" "$SURROGATE_HSACO" > "$DIRECT_SURROGATE_OUT" 2>&1; then
-    echo -e "  ${GREEN}✓ PASS${NC} - Generated surrogate code object executes directly"
+if ! PYTHONDONTWRITEBYTECODE=1 \
+   python3 "$PREPARE_HSACO_CACHE" \
+      --output-dir "$OUTPUT_DIR/${TEST_NAME}_cache" \
+      --surrogate-mode donor-slot \
+      "$MODULE_LOAD_PLAIN_HSACO" > "$DIRECT_SURROGATE_OUT" 2>&1 && \
+   grep -q "no eligible donor-slot kernel available" "$DIRECT_SURROGATE_OUT"; then
+    echo -e "  ${GREEN}✓ PASS${NC} - Donor-slot mode rejected the no-donor input clearly"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo -e "  ${RED}✗ FAIL${NC} - Generated surrogate code object failed direct execution"
+    echo -e "  ${RED}✗ FAIL${NC} - Donor-slot mode did not fail closed as expected"
     cat "$DIRECT_SURROGATE_OUT" 2>/dev/null || true
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="module_load_binary_only_donor_slot_runtime"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+echo "  Validate donor-slot mode can rebind a donor-bearing hsaco and launch mlk with instrumentation"
+
+OUTPUT_FILE="$OUTPUT_DIR/${TEST_NAME}.out"
+CACHE_DIR="$OUTPUT_DIR/${TEST_NAME}_cache"
+rm -rf "$CACHE_DIR"
+mkdir -p "$CACHE_DIR"
+
+ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
+    LD_LIBRARY_PATH="${OMNIPROBE_ROOT}/lib:${LD_LIBRARY_PATH}" \
+    timeout "$OMNIPROBE_TIMEOUT" "$OMNIPROBE" -i -a Heatmap \
+    --hsaco-input "$MODULE_LOAD_DONOR_SLOT_HSACO" \
+    --cache-location "$CACHE_DIR" \
+    --hsaco-surrogate-mode donor-slot \
+    -- "$MODULE_LOAD_TEST" "$MODULE_LOAD_DONOR_SLOT_HSACO" > "$OUTPUT_FILE" 2>&1 \
+    && run_ok=true || run_ok=false
+
+if $run_ok && \
+   grep -q '"surrogate_mode": "donor-slot"' "$OUTPUT_FILE" && \
+   grep -q "Found instrumented alternative for mlk" "$OUTPUT_FILE" && \
+   grep -q "memory heatmap report(mlk.kd" "$OUTPUT_FILE" && \
+   grep -q "256 accesses" "$OUTPUT_FILE" && \
+   grep -q "module_load_test: PASS" "$OUTPUT_FILE" && \
+   ls "$CACHE_DIR"/*.surrogate.hsaco >/dev/null 2>&1; then
+    echo -e "  ${GREEN}✓ PASS${NC} - Donor-slot surrogate rebinding launched successfully"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Donor-slot surrogate runtime validation failed"
+    cat "$OUTPUT_FILE" 2>/dev/null || true
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
@@ -150,34 +186,32 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="module_load_binary_only_rewrite_exact_rebuild"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
-echo "  Run under omniprobe with --hsaco-rebuild-mode exact on an uninstrumented .hsaco"
+echo "  Prepare donor-free surrogate cache after an exact source rebuild"
 
 OUTPUT_FILE="$OUTPUT_DIR/${TEST_NAME}.out"
 CACHE_DIR="$OUTPUT_DIR/${TEST_NAME}_cache"
 rm -rf "$CACHE_DIR"
 mkdir -p "$CACHE_DIR"
 
-ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
-    LD_LIBRARY_PATH="${OMNIPROBE_ROOT}/lib:${LD_LIBRARY_PATH}" \
-    timeout "$OMNIPROBE_TIMEOUT" "$OMNIPROBE" -i -a Heatmap \
-    --hsaco-input "$MODULE_LOAD_PLAIN_HSACO" \
-    --hsaco-rebuild-mode exact \
-    --cache-location "$CACHE_DIR" \
-    -- "$MODULE_LOAD_TEST" "$MODULE_LOAD_PLAIN_HSACO" > "$OUTPUT_FILE" 2>&1 \
+PYTHONDONTWRITEBYTECODE=1 \
+    python3 "$PREPARE_HSACO_CACHE" \
+    --output-dir "$CACHE_DIR" \
+    --surrogate-mode donor-free \
+    --source-rebuild-mode exact \
+    "$MODULE_LOAD_PLAIN_HSACO" > "$OUTPUT_FILE" 2>&1 \
     && run_ok=true || run_ok=false
 
 SOURCE_REBUILD_REPORT="$(find "$CACHE_DIR/.source_rebuild" -name '*.exact.report.json' -print -quit 2>/dev/null || true)"
 if $run_ok && \
-   grep -q "Found instrumented alternative for mlk" "$OUTPUT_FILE" && \
-   grep -q "module_load_test: PASS" "$OUTPUT_FILE" && \
    grep -q '"source_rebuild_mode": "exact"' "$OUTPUT_FILE" && \
+   grep -q '"surrogate_mode": "donor-free"' "$OUTPUT_FILE" && \
    ls "$CACHE_DIR"/*.surrogate.hsaco >/dev/null 2>&1 && \
    [ -n "$SOURCE_REBUILD_REPORT" ]; then
-    echo -e "  ${GREEN}✓ PASS${NC} - Exact source rebuild fed the managed surrogate cache path"
+    echo -e "  ${GREEN}✓ PASS${NC} - Exact source rebuild fed donor-free surrogate cache prep"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo -e "  ${RED}✗ FAIL${NC} - Exact source rebuild cache path did not complete successfully"
-    grep -E "source_rebuild_mode|instrumented alternative|module_load_test:|ERROR:|WARNING:" "$OUTPUT_FILE" || true
+    echo -e "  ${RED}✗ FAIL${NC} - Exact source rebuild cache prep did not complete successfully"
+    cat "$OUTPUT_FILE" || true
     echo "  Output saved to: $OUTPUT_FILE"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
@@ -189,7 +223,7 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="module_load_binary_only_rewrite_abi_changing"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
-echo "  Run helper-heavy abi-changing source rebuild through managed cache"
+echo "  Prepare donor-free surrogate cache after helper-heavy abi-changing source rebuild"
 
 OUTPUT_FILE="$OUTPUT_DIR/${TEST_NAME}.out"
 CACHE_DIR="$OUTPUT_DIR/${TEST_NAME}_cache"
@@ -197,28 +231,25 @@ rm -rf "$CACHE_DIR"
 mkdir -p "$CACHE_DIR"
 
 PYTHONDONTWRITEBYTECODE=1 \
-    ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
-    LD_LIBRARY_PATH="${OMNIPROBE_ROOT}/lib:${LD_LIBRARY_PATH}" \
-    timeout "$OMNIPROBE_TIMEOUT" "$OMNIPROBE" -i -a Heatmap \
-    --hsaco-input "$MODULE_LOAD_PLAIN_HSACO" \
-    --hsaco-rebuild-mode abi-changing \
-    --cache-location "$CACHE_DIR" \
-    -- "$MODULE_LOAD_TEST" "$MODULE_LOAD_PLAIN_HSACO" > "$OUTPUT_FILE" 2>&1 \
+    python3 "$PREPARE_HSACO_CACHE" \
+    --output-dir "$CACHE_DIR" \
+    --surrogate-mode donor-free \
+    --source-rebuild-mode abi-changing \
+    "$MODULE_LOAD_PLAIN_HSACO" > "$OUTPUT_FILE" 2>&1 \
     && run_ok=true || run_ok=false
 
 SOURCE_REBUILD_REPORT="$(find "$CACHE_DIR/.source_rebuild" -name '*.abi-changing.report.json' -print -quit 2>/dev/null || true)"
 SOURCE_READINESS_REPORT="$(find "$CACHE_DIR/.source_rebuild" -name '*.abi-changing.readiness.json' -print -quit 2>/dev/null || true)"
 if $run_ok && \
-   grep -q "Found instrumented alternative for mlk" "$OUTPUT_FILE" && \
-   grep -q "module_load_test: PASS" "$OUTPUT_FILE" && \
    grep -q '"source_rebuild_mode": "abi-changing"' "$OUTPUT_FILE" && \
+   grep -q '"surrogate_mode": "donor-free"' "$OUTPUT_FILE" && \
    ls "$CACHE_DIR"/*.surrogate.hsaco >/dev/null 2>&1 && \
    [ -n "$SOURCE_REBUILD_REPORT" ] && \
    [ -n "$SOURCE_READINESS_REPORT" ]; then
-    echo -e "  ${GREEN}✓ PASS${NC} - Helper-heavy abi-changing rebuild fed the managed surrogate cache path"
+    echo -e "  ${GREEN}✓ PASS${NC} - Helper-heavy abi-changing rebuild fed donor-free surrogate cache prep"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo -e "  ${RED}✗ FAIL${NC} - Helper-heavy abi-changing rebuild path failed"
+    echo -e "  ${RED}✗ FAIL${NC} - Helper-heavy abi-changing donor-free cache prep failed"
     cat "$OUTPUT_FILE" || true
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi

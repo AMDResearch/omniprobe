@@ -102,6 +102,7 @@ add_dependencies(block_filter_test copy_bitcode AMDGCNSubmitAddressMessages-rocm
 set(MODULE_LOAD_HSACO "${CMAKE_CURRENT_BINARY_DIR}/module_load_kernel.hsaco")
 set(MODULE_LOAD_PLAIN_HSACO "${CMAKE_CURRENT_BINARY_DIR}/module_load_kernel_plain.hsaco")
 set(MODULE_LOAD_MANUAL_CARRIER_HSACO "${CMAKE_CURRENT_BINARY_DIR}/module_load_manual_carrier_kernel.hsaco")
+set(MODULE_LOAD_DONOR_SLOT_HSACO "${CMAKE_CURRENT_BINARY_DIR}/module_load_donor_slot_kernel.hsaco")
 
 add_custom_command(
     OUTPUT ${MODULE_LOAD_PLAIN_HSACO}
@@ -158,6 +159,24 @@ add_custom_command(
     COMMENT "Compiling module_load_manual_carrier_kernel.hip → manual carrier .hsaco"
 )
 add_custom_target(module_load_manual_carrier_hsaco ALL DEPENDS ${MODULE_LOAD_MANUAL_CARRIER_HSACO})
+
+add_custom_command(
+    OUTPUT ${MODULE_LOAD_DONOR_SLOT_HSACO}
+    COMMAND hipcc
+        -x hip
+        --offload-device-only
+        --no-gpu-bundle-output
+        --offload-arch=${CMAKE_HIP_ARCHITECTURES}
+        -I${DH_COMMS_INCLUDE_DIR}
+        -Werror
+        -Wno-error=unused-parameter
+        -o ${MODULE_LOAD_DONOR_SLOT_HSACO}
+        ${CMAKE_CURRENT_SOURCE_DIR}/module_load_donor_slot_kernel.hip
+    DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/module_load_donor_slot_kernel.hip
+    COMMENT "Compiling module_load_donor_slot_kernel.hip → donor-slot .hsaco"
+)
+add_custom_target(module_load_donor_slot_hsaco ALL DEPENDS ${MODULE_LOAD_DONOR_SLOT_HSACO})
 
 # Host program: uses hipModuleLoad to load the .hsaco at runtime.
 # No -fgpu-rdc, no instrumentation plugin — this is a plain HIP host-only program.

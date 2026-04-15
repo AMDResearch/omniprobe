@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from code_object_model import CodeObjectModel
 from common import detect_llvm_tool, find_amdgpu_metadata_note
 from msgpack_codec import unpackb
 
@@ -551,7 +552,7 @@ def build_manifest(payload: dict, input_path: Path) -> dict:
             "payload_base64": base64.b64encode(exact_note["desc_bytes"]).decode("ascii"),
             "rendered_text_matches_exact": bool(rendered_metadata and exact_metadata == rendered_metadata),
         }
-    return manifest
+    return CodeObjectModel.from_manifest(manifest).to_manifest()
 
 
 def main() -> int:

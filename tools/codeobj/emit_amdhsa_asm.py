@@ -6,6 +6,8 @@ import json
 import re
 from pathlib import Path
 
+from code_object_model import CodeObjectModel
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -203,7 +205,8 @@ def detect_pc_relative_symbolic_ref(
     delta = ((imm_hi & 0xFFFFFFFF) << 32) | (imm_lo & 0xFFFFFFFF)
     if delta & (1 << 63):
         delta -= 1 << 64
-    target_address = (int(add_lo["address"]) + delta) & ((1 << 64) - 1)
+    target_base_address = int(add_lo.get("source_address", add_lo["address"]))
+    target_address = (target_base_address + delta) & ((1 << 64) - 1)
     symbol = symbols_by_value.get(target_address)
     if symbol is None:
         return None
@@ -248,7 +251,11 @@ def render_text(
 
     symbolic_refs = {}
     skipped_instruction_addresses = set()
-    if not exact_encoding:
+    use_symbolic_pc_relocs = (
+        not exact_encoding
+        or CodeObjectModel.is_omniprobe_clone_name(str(function.get("name", "")))
+    )
+    if use_symbolic_pc_relocs:
         symbolic_refs = {
             instruction["address"]: ref
             for index, instruction in enumerate(function["instructions"])
@@ -272,11 +279,20 @@ def render_text(
         if address in labels:
             destination.append(f"{labels[address]}:")
         if exact_encoding:
-            encoded_lines = render_encoded_instruction(instruction)
-            if encoded_lines:
-                destination.extend(encoded_lines)
+            symbolic_ref = symbolic_refs.get(address)
+            if symbolic_ref:
+                destination.append(
+                    f"  {instruction['mnemonic']} {symbolic_ref['low_operand_text']}"
+                )
+                destination.append(
+                    f"  s_addc_u32 {symbolic_ref['high_operand_text']}"
+                )
             else:
-                destination.append(render_instruction(function, instruction, labels))
+                encoded_lines = render_encoded_instruction(instruction)
+                if encoded_lines:
+                    destination.extend(encoded_lines)
+                else:
+                    destination.append(render_instruction(function, instruction, labels))
         else:
             symbolic_ref = symbolic_refs.get(address)
             if symbolic_ref:
@@ -346,7 +362,19 @@ def descriptor_symbol_map(manifest: dict) -> dict[str, dict]:
     return records
 
 
+def clone_descriptor_regen_names(manifest: dict) -> set[str]:
+    regen: set[str] = set()
+    for intent in manifest.get("clone_intents", []):
+        if not isinstance(intent, dict):
+            continue
+        descriptor_name = intent.get("clone_descriptor")
+        if isinstance(descriptor_name, str) and descriptor_name:
+            regen.add(descriptor_name)
+    return regen
+
+
 def select_functions(ir: dict, manifest: dict, explicit_name: str | None) -> list[dict]:
+    model = CodeObjectModel.from_manifest(manifest)
     kernel_names = list_manifest_kernel_names(manifest)
     helper_names = list_manifest_helper_names(manifest)
     manifest_names = kernel_names | helper_names
@@ -358,6 +386,7 @@ def select_functions(ir: dict, manifest: dict, explicit_name: str | None) -> lis
     }
     candidates.sort(
         key=lambda fn: (
+            1 if model.is_omniprobe_clone_name(str(fn.get("name", ""))) else 0,
             symbol_values.get(fn.get("name"), int(fn.get("start_address", 0))),
             fn.get("name", ""),
         )
@@ -370,6 +399,23 @@ def select_functions(ir: dict, manifest: dict, explicit_name: str | None) -> lis
             raise SystemExit(f"function {explicit_name!r} not found; available kernels: {available}")
         helpers = [fn for fn in candidates if fn.get("name") in helper_names]
         return helpers + [kernel]
+
+    primary_kernel_names = set(model.primary_kernel_names())
+    if len(primary_kernel_names) == 1:
+        primary_kernel = next(
+            (fn for fn in candidates if fn.get("name") in primary_kernel_names),
+            None,
+        )
+        if primary_kernel is not None:
+            helpers = [fn for fn in candidates if fn.get("name") in helper_names]
+            clone_family = model.kernel_family_name(primary_kernel["name"])
+            family_members = {
+                fn.get("name")
+                for fn in candidates
+                if model.kernel_family_name(str(fn.get("name", ""))) == clone_family
+            }
+            ordered_family = [fn for fn in candidates if fn.get("name") in family_members]
+            return helpers + ordered_family
 
     if not any(fn.get("name") in kernel_names for fn in candidates):
         raise SystemExit("no kernel functions found in IR/manifest intersection")
@@ -719,6 +765,7 @@ def main() -> int:
     functions = select_functions(ir, manifest, args.function)
     function_symbols = function_symbol_map(manifest)
     descriptor_symbols = descriptor_symbol_map(manifest)
+    descriptor_regen_names = clone_descriptor_regen_names(manifest)
     symbols_by_value = build_symbols_by_value(manifest)
     text_section = find_section(manifest, ".text")
     text_alignment = int(text_section.get("alignment", 4) or 4) if text_section else 4
@@ -775,7 +822,8 @@ def main() -> int:
                     descriptor,
                     kernel_metadata,
                     descriptor_symbol,
-                    args.preserve_descriptor_bytes,
+                    args.preserve_descriptor_bytes
+                    and descriptor.get("name") not in descriptor_regen_names,
                 )
             )
             if args.function and function["name"] == args.function:

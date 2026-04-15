@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import struct
+from copy import deepcopy
 from pathlib import Path
 
 import emit_hidden_abi_metadata as metadata_emitter
-from common import get_hidden_abi_instrumented_name
+from common import get_instrumented_name
+from msgpack_codec import packb
 from plan_hidden_abi import build_kernel_plan, select_kernels
 import rewrite_metadata_note as note_rewriter
 
@@ -293,6 +296,88 @@ def patch_dynsym_name(data: bytearray, symbol: dict, new_name_offset: int) -> No
     )
 
 
+def overwrite_c_string(blob: bytearray, offset: int, capacity: int, value: bytes) -> None:
+    if len(value) > capacity:
+        raise ValueError("replacement string does not fit in existing slot")
+    blob[offset : offset + len(value)] = value
+    if len(value) < capacity:
+        blob[offset + len(value) : offset + capacity] = b"\x00" * (capacity - len(value))
+
+
+def c_string_capacity(blob: bytes, offset: int) -> int:
+    end = blob.find(b"\x00", offset)
+    if end == -1:
+        raise SystemExit("string table entry is not NUL-terminated")
+    return end - offset + 1
+
+
+def try_reuse_existing_name_slots(
+    data: bytearray,
+    section_map: dict[str, dict],
+    donor_function_symbol: dict,
+    donor_descriptor_symbol: dict,
+    donor_function_symtab: dict | None,
+    donor_descriptor_symtab: dict | None,
+    clone_name: str,
+    clone_descriptor: str,
+) -> bool:
+    dynstr_section, dynstr_bytes = read_dynstr(data, section_map)
+    dynstr_blob = bytearray(dynstr_bytes)
+    dyn_function_capacity = c_string_capacity(dynstr_bytes, donor_function_symbol["st_name"])
+    dyn_descriptor_capacity = c_string_capacity(dynstr_bytes, donor_descriptor_symbol["st_name"])
+
+    strtab_blob = None
+    sym_function_capacity = None
+    sym_descriptor_capacity = None
+    if donor_function_symtab is not None or donor_descriptor_symtab is not None:
+        _strtab_section, strtab_bytes = read_strtab(data, section_map)
+        strtab_blob = bytearray(strtab_bytes)
+        if donor_function_symtab is not None:
+            sym_function_capacity = c_string_capacity(strtab_bytes, donor_function_symtab["name_offset"])
+        if donor_descriptor_symtab is not None:
+            sym_descriptor_capacity = c_string_capacity(strtab_bytes, donor_descriptor_symtab["name_offset"])
+
+    clone_descriptor_bytes = clone_descriptor.encode("utf-8") + b"\x00"
+    clone_name_bytes = clone_name.encode("utf-8") + b"\x00"
+    if len(clone_name_bytes) > dyn_function_capacity or len(clone_descriptor_bytes) > dyn_descriptor_capacity:
+        return False
+    if (
+        donor_function_symtab is not None
+        and sym_function_capacity is not None
+        and len(clone_name_bytes) > sym_function_capacity
+    ):
+        return False
+    if donor_descriptor_symtab is not None and sym_descriptor_capacity is not None and len(clone_descriptor_bytes) > sym_descriptor_capacity:
+        return False
+
+    overwrite_c_string(dynstr_blob, donor_function_symbol["st_name"], dyn_function_capacity, clone_name_bytes)
+    overwrite_c_string(dynstr_blob, donor_descriptor_symbol["st_name"], dyn_descriptor_capacity, clone_descriptor_bytes)
+    data[dynstr_section["offset"] : dynstr_section["offset"] + dynstr_section["size"]] = dynstr_blob
+
+    if (
+        donor_function_symtab is not None
+        and donor_descriptor_symtab is not None
+        and strtab_blob is not None
+        and sym_function_capacity is not None
+        and sym_descriptor_capacity is not None
+    ):
+        overwrite_c_string(
+            strtab_blob,
+            donor_function_symtab["name_offset"],
+            sym_function_capacity,
+            clone_name_bytes,
+        )
+        overwrite_c_string(
+            strtab_blob,
+            donor_descriptor_symtab["name_offset"],
+            sym_descriptor_capacity,
+            clone_descriptor_bytes,
+        )
+        strtab_section = section_map[".strtab"]
+        data[strtab_section["offset"] : strtab_section["offset"] + strtab_section["size"]] = strtab_blob
+    return True
+
+
 def load_dynsym_entries(data: bytearray, section_map: dict[str, dict]) -> list[dict]:
     dynsym = section_map[".dynsym"]
     _dynstr_section, dynstr_bytes = read_dynstr(data, section_map)
@@ -331,6 +416,7 @@ def enrich_dynsym_entries(data: bytearray, section_map: dict[str, dict], manifes
                 **names_to_symbols[name],
                 "entry_offset": entry["entry_offset"],
                 "index": entry["index"],
+                "st_name": entry["st_name"],
             }
     return enriched
 
@@ -352,13 +438,139 @@ def load_symtab_entries(data: bytearray, section_map: dict[str, dict]) -> dict[s
                 "index": index,
                 "entry_offset": entry_offset,
                 "name": name,
+                "name_offset": st_name,
             }
     return entries
 
 
-def patch_descriptor_kernarg_size(data: bytearray, descriptor_symbol: dict, new_kernarg_size: int) -> None:
-    descriptor_offset = descriptor_symbol["value"]
-    write_u32(data, descriptor_offset + 8, new_kernarg_size)
+def build_legacy_replacement_metadata_payload(
+    manifest: dict,
+    *,
+    source_kernel: dict,
+    replace_kernel: dict,
+    original_note_text: str | None = None,
+) -> bytes:
+    metadata_obj = manifest.get("kernels", {}).get("metadata", {}).get("object")
+    if isinstance(metadata_obj, dict):
+        original_kernels = metadata_obj.get("amdhsa.kernels")
+        if not isinstance(original_kernels, list):
+            raise SystemExit("metadata object is missing amdhsa.kernels")
+
+        replace_identity = (replace_kernel.get("name"), replace_kernel.get("symbol"))
+        clone_name = get_instrumented_name(str(source_kernel.get("name") or source_kernel.get("symbol")))
+        clone_descriptor = f"{clone_name}.kd"
+
+        output = deepcopy(metadata_obj)
+        output_kernels: list[object] = []
+        for kernel_obj in original_kernels:
+            if not isinstance(kernel_obj, dict):
+                output_kernels.append(deepcopy(kernel_obj))
+                continue
+
+            identity = (kernel_obj.get(".name"), kernel_obj.get(".symbol"))
+            if identity != replace_identity:
+                output_kernels.append(deepcopy(kernel_obj))
+                continue
+
+            rebound = deepcopy(kernel_obj)
+            rebound[".name"] = clone_name
+            rebound[".symbol"] = clone_descriptor
+            output_kernels.append(rebound)
+
+        output["amdhsa.kernels"] = output_kernels
+        return packb(output)
+
+    raw_metadata = original_note_text
+    if not isinstance(raw_metadata, str) or not raw_metadata:
+        metadata_block = manifest.get("kernels", {}).get("metadata", {})
+        raw_metadata = metadata_block.get("raw")
+        if not isinstance(raw_metadata, str) or not raw_metadata:
+            raw_metadata = metadata_block.get("rendered")
+    if isinstance(raw_metadata, str) and raw_metadata:
+        return build_legacy_replacement_metadata_document(
+            raw_metadata,
+            source_kernel=source_kernel,
+            replace_kernel=replace_kernel,
+        ).encode("utf-8")
+
+    raise SystemExit("manifest does not contain usable metadata for donor-slot replacement")
+
+
+def replace_scalar_value(line: str, field_name: str, new_value: str) -> str:
+    marker = f".{field_name}:"
+    if marker not in line:
+        return line
+    prefix, suffix = line.split(marker, 1)
+    leading = suffix[: len(suffix) - len(suffix.lstrip(" "))]
+    return f"{prefix}{marker}{leading}{new_value}"
+
+
+def build_legacy_replacement_metadata_document(
+    raw_metadata: str,
+    *,
+    source_kernel: dict,
+    replace_kernel: dict,
+) -> str:
+    prefix, kernel_blocks, suffix = metadata_emitter.raw_kernel_blocks(raw_metadata)
+    replace_identity = (
+        replace_kernel.get("name"),
+        replace_kernel.get("symbol"),
+    )
+    clone_name = get_instrumented_name(str(source_kernel.get("name") or source_kernel.get("symbol")))
+    clone_descriptor = f"{clone_name}.kd"
+
+    output_lines = list(prefix)
+    for block in kernel_blocks:
+        if metadata_emitter.kernel_identity(block) != replace_identity:
+            output_lines.extend(block)
+            continue
+        mutated: list[str] = []
+        for line in block:
+            if ".name:" in line:
+                mutated.append(replace_scalar_value(line, "name", clone_name))
+            elif ".symbol:" in line:
+                mutated.append(replace_scalar_value(line, "symbol", clone_descriptor))
+            else:
+                mutated.append(line)
+        output_lines.extend(mutated)
+    output_lines.extend(suffix)
+    return "\n".join(output_lines).rstrip() + "\n"
+
+
+def original_note_desc_size(data: bytearray, section_map: dict[str, dict]) -> int | None:
+    note_section = section_map.get(".note")
+    if not note_section:
+        return None
+    section_offset = note_section["offset"]
+    section_size = note_section["size"]
+    section_bytes = bytes(data[section_offset : section_offset + section_size])
+    try:
+        _note_start, _note_end, _note_type, _name_bytes, desc_bytes = note_rewriter.find_amdgpu_note(
+            section_bytes
+        )
+    except Exception:
+        return None
+    return len(desc_bytes)
+
+
+def extract_original_note_text(data: bytearray, section_map: dict[str, dict]) -> str | None:
+    note_section = section_map.get(".note")
+    if not note_section:
+        return None
+    section_offset = note_section["offset"]
+    section_size = note_section["size"]
+    section_bytes = bytes(data[section_offset : section_offset + section_size])
+    try:
+        _note_start, _note_end, _note_type, _name_bytes, desc_bytes = note_rewriter.find_amdgpu_note(
+            section_bytes
+        )
+    except Exception:
+        return None
+    try:
+        decoded = desc_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    return decoded if decoded.lstrip().startswith("---") else None
 
 
 def elf_hash(name: str) -> int:
@@ -483,34 +695,25 @@ def main() -> int:
 
     source_kernel = select_kernels(manifest, args.source_kernel)[0]
     donor_kernel = select_kernels(manifest, args.donor_kernel)[0]
+    data, sections, section_map = note_rewriter.load_sections(input_path)
+    original_note_text = extract_original_note_text(data, section_map)
+    original_desc_size = original_note_desc_size(data, section_map)
     plan = build_kernel_plan(source_kernel, args.pointer_size, args.alignment)
 
-    metadata_payload = metadata_emitter.build_metadata_payload_with_replacement(
+    metadata_payload = build_legacy_replacement_metadata_payload(
         manifest,
         source_kernel=source_kernel,
         replace_kernel=donor_kernel,
-        pointer_size=args.pointer_size,
-        alignment=args.alignment,
-        output_format="msgpack",
+        original_note_text=original_note_text,
     )
-
-    data, sections, section_map = note_rewriter.load_sections(input_path)
-    clone_name = plan["hidden_abi_clone_name"]
+    if (
+        original_note_text is None
+        and original_desc_size is not None
+        and len(metadata_payload) < original_desc_size
+    ):
+        metadata_payload = metadata_payload + (b"\x00" * (original_desc_size - len(metadata_payload)))
+    clone_name = plan["legacy_explicit_clone_name"]
     clone_descriptor = f"{clone_name}.kd"
-
-    name_offsets = append_dynstr_strings(
-        data,
-        sections,
-        section_map,
-        [clone_name.encode() + b"\x00", clone_descriptor.encode() + b"\x00"],
-    )
-    symtab_name_offsets = append_trailing_strtab_strings(
-        data,
-        sections,
-        section_map,
-        [clone_name.encode() + b"\x00", clone_descriptor.encode() + b"\x00"],
-    )
-    patch_dynamic_strsz(data, section_map, section_map[".dynstr"]["size"])
 
     dynsym_entries = enrich_dynsym_entries(data, section_map, manifest)
     symtab_entries = load_symtab_entries(data, section_map)
@@ -521,13 +724,44 @@ def main() -> int:
     donor_function_symtab = symtab_entries.get(donor_kernel["name"])
     donor_descriptor_symtab = symtab_entries.get(donor_kernel["symbol"])
 
-    patch_dynsym_name(data, donor_function_symbol, name_offsets[clone_name.encode() + b"\x00"])
-    patch_dynsym_name(data, donor_descriptor_symbol, name_offsets[clone_descriptor.encode() + b"\x00"])
-    if donor_function_symtab is not None:
-        patch_dynsym_name(data, donor_function_symtab, symtab_name_offsets[clone_name.encode() + b"\x00"])
-    if donor_descriptor_symtab is not None:
-        patch_dynsym_name(data, donor_descriptor_symtab, symtab_name_offsets[clone_descriptor.encode() + b"\x00"])
-    patch_descriptor_kernarg_size(data, donor_descriptor_symbol, plan["instrumented_kernarg_length"])
+    reused_name_slots = try_reuse_existing_name_slots(
+        data,
+        section_map,
+        donor_function_symbol,
+        donor_descriptor_symbol,
+        donor_function_symtab,
+        donor_descriptor_symtab,
+        clone_name,
+        clone_descriptor,
+    )
+    if not reused_name_slots:
+        name_offsets = append_dynstr_strings(
+            data,
+            sections,
+            section_map,
+            [clone_name.encode() + b"\x00", clone_descriptor.encode() + b"\x00"],
+        )
+        symtab_name_offsets = append_trailing_strtab_strings(
+            data,
+            sections,
+            section_map,
+            [clone_name.encode() + b"\x00", clone_descriptor.encode() + b"\x00"],
+        )
+        patch_dynamic_strsz(data, section_map, section_map[".dynstr"]["size"])
+        patch_dynsym_name(data, donor_function_symbol, name_offsets[clone_name.encode() + b"\x00"])
+        patch_dynsym_name(data, donor_descriptor_symbol, name_offsets[clone_descriptor.encode() + b"\x00"])
+        if donor_function_symtab is not None:
+            patch_dynsym_name(
+                data,
+                donor_function_symtab,
+                symtab_name_offsets[clone_name.encode() + b"\x00"],
+            )
+        if donor_descriptor_symtab is not None:
+            patch_dynsym_name(
+                data,
+                donor_descriptor_symtab,
+                symtab_name_offsets[clone_descriptor.encode() + b"\x00"],
+            )
     dynsym_entries = load_dynsym_entries(data, section_map)
     rebuild_sysv_hash(data, section_map, dynsym_entries)
     rebuild_gnu_hash(data, section_map, dynsym_entries)
@@ -555,12 +789,13 @@ def main() -> int:
             "donor_symbol": donor_kernel.get("symbol"),
             "clone_kernel": clone_name,
             "clone_descriptor": clone_descriptor,
-            "instrumented_kernarg_length": plan["instrumented_kernarg_length"],
+            "instrumented_kernarg_length": int(donor_kernel.get("kernarg_segment_size", 0) or 0),
             "source_kernarg_length": plan["source_kernarg_length"],
             "source_explicit_args_length": plan["source_explicit_args_length"],
             "source_hidden_args_length": plan["source_hidden_args_length"],
             "pointer_size": args.pointer_size,
             "alignment": args.alignment,
+            "abi_layout": "legacy-explicit-suffix",
         }
         report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(output_path)

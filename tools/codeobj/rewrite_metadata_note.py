@@ -320,13 +320,84 @@ def replace_metadata_note(
     replacement_section = section_bytes[:note_start] + new_note + section_bytes[note_end:]
     growth_needed = len(replacement_section) - section_size
 
-    if growth_needed <= 0:
-        replacement = bytearray(section_bytes)
-        replacement[: len(replacement_section)] = replacement_section
-        replacement[len(replacement_section) :] = b"\x00" * (
-            len(replacement) - len(replacement_section)
+    if growth_needed == 0:
+        data[section_offset : section_offset + section_size] = replacement_section
+        return data, sections, section_map
+
+    if growth_needed < 0:
+        shrink_amount = -growth_needed
+        note_cluster = contiguous_note_cluster(sections, note_section)
+        root_note_end_addr = note_section["addr"] + note_section["size"]
+        delete_offset = section_offset + len(replacement_section)
+        moved_alloc_section_indices = {
+            section["index"]
+            for section in sections
+            if section["index"] != note_section["index"]
+            and (section["flags"] & SHF_ALLOC)
+            and section["addr"] >= root_note_end_addr
+        }
+
+        data[section_offset : section_offset + len(replacement_section)] = replacement_section
+        del data[delete_offset : delete_offset + shrink_amount]
+
+        header_fields = parse_elf_header(data)
+        if header_fields[5] >= delete_offset:
+            header_fields[5] -= shrink_amount
+        if header_fields[6] >= delete_offset:
+            header_fields[6] -= shrink_amount
+        write_elf_header(data, header_fields)
+
+        programs = load_program_headers(data)
+        for program in programs:
+            file_end = program["offset"] + program["filesz"]
+            mem_end = program["vaddr"] + program["memsz"]
+            if program["header_offset"] >= delete_offset:
+                program["header_offset"] -= shrink_amount
+            if program["offset"] > delete_offset:
+                program["offset"] -= shrink_amount
+                if program["vaddr"] >= root_note_end_addr:
+                    program["vaddr"] -= shrink_amount
+                    program["paddr"] -= shrink_amount
+            elif program["offset"] <= delete_offset < file_end:
+                program["filesz"] -= shrink_amount
+                if program["vaddr"] <= root_note_end_addr < mem_end:
+                    program["memsz"] -= shrink_amount
+            write_program_header(data, program)
+
+        for section in sections:
+            if section["header_offset"] >= delete_offset:
+                section["header_offset"] -= shrink_amount
+            if section["index"] == note_section["index"]:
+                section["size"] = len(replacement_section)
+            elif section in note_cluster:
+                section["offset"] -= shrink_amount
+                section["addr"] -= shrink_amount
+            elif section["offset"] >= delete_offset:
+                section["offset"] -= shrink_amount
+            if (section["flags"] & SHF_ALLOC) and section["index"] in moved_alloc_section_indices:
+                section["addr"] -= shrink_amount
+
+        shift_symbol_table_values(
+            data,
+            section_map.get(".dynsym"),
+            moved_alloc_section_indices,
+            -shrink_amount,
         )
-        data[section_offset : section_offset + section_size] = replacement
+        shift_symbol_table_values(
+            data,
+            section_map.get(".symtab"),
+            moved_alloc_section_indices,
+            -shrink_amount,
+        )
+        shift_dynamic_pointer_values(
+            data,
+            section_map.get(".dynamic"),
+            -shrink_amount,
+            root_note_end_addr,
+        )
+
+        for section in sections:
+            write_section_header(data, section)
         return data, sections, section_map
 
     if not allow_grow:

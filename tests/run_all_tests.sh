@@ -84,16 +84,19 @@ run_suite "Probe lifecycle smoke" "${SCRIPT_DIR}/run_probe_lifecycle_smoke_tests
 # Suite 5: Library filter chain (has its own build step)
 run_suite "Library filter chain" "${SCRIPT_DIR}/library_filter_chain/run_test.sh"
 
-# Suite 6: hipBLASLt instrumentation (requires INSTRUMENTED_HIPBLASLT_LIB_DIR)
+# Suite 6: Code-object round-trip and donor-free regeneration scaffold
+run_suite "Code-object round-trip" "${SCRIPT_DIR}/run_codeobj_roundtrip_tests.sh"
+
+# Suite 7: hipBLASLt instrumentation (requires INSTRUMENTED_HIPBLASLT_LIB_DIR)
 run_suite "hipBLASLt instrumentation" "${SCRIPT_DIR}/hipblaslt/run_test.sh"
 
-# Suite 7: rocBLAS integration (requires INSTRUMENTED_ROCBLAS_LIB_DIR)
+# Suite 8: rocBLAS integration (requires INSTRUMENTED_ROCBLAS_LIB_DIR)
 run_suite "rocBLAS integration" "${SCRIPT_DIR}/rocblas_filter/run_test.sh"
 
-# Suite 8: rocBLAS + hipBLASLt combined (requires INSTRUMENTED_ROCBLAS_LIB_DIR + INSTRUMENTED_HIPBLASLT_LIB_DIR)
+# Suite 9: rocBLAS + hipBLASLt combined (requires INSTRUMENTED_ROCBLAS_LIB_DIR + INSTRUMENTED_HIPBLASLT_LIB_DIR)
 run_suite "rocBLAS + hipBLASLt combined" "${SCRIPT_DIR}/rocblas_hipblaslt/run_test.sh"
 
-# Suite 9: Triton integration (requires TRITON_DIR)
+# Suite 10: Triton integration (requires TRITON_DIR)
 run_suite "Triton integration" "${SCRIPT_DIR}/triton/run_test.sh"
 
 # Summary

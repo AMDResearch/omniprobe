@@ -66,13 +66,15 @@ def clone_kernel_record(kernel: dict, plan: dict) -> dict:
     clone["kernarg_segment_size"] = plan["instrumented_kernarg_length"]
 
     args = [deepcopy(arg) for arg in clone.get("args", []) if arg]
-    args.append(
-        {
-            "offset": plan["hidden_omniprobe_ctx"]["offset"],
-            "size": plan["hidden_omniprobe_ctx"]["size"],
-            "value_kind": OMNIPROBE_HIDDEN_ARG,
-        }
-    )
+    hidden_arg = {
+        "name": OMNIPROBE_HIDDEN_ARG,
+        "offset": plan["hidden_omniprobe_ctx"]["offset"],
+        "size": plan["hidden_omniprobe_ctx"]["size"],
+        "value_kind": plan["hidden_omniprobe_ctx"]["value_kind"],
+    }
+    if "address_space" in plan["hidden_omniprobe_ctx"]:
+        hidden_arg["address_space"] = plan["hidden_omniprobe_ctx"]["address_space"]
+    args.append(hidden_arg)
     args.sort(key=lambda arg: (int(arg.get("offset", 0)), str(arg.get("value_kind", ""))))
     clone["args"] = args
     return clone
@@ -88,15 +90,15 @@ def mutate_kernel_record_in_place(kernel: dict, plan: dict) -> dict:
         or arg.get("value_kind") == OMNIPROBE_HIDDEN_ARG
         for arg in args
     ):
-        args.append(
-            {
-                "name": OMNIPROBE_HIDDEN_ARG,
-                "offset": plan["hidden_omniprobe_ctx"]["offset"],
-                "size": plan["hidden_omniprobe_ctx"]["size"],
-                "value_kind": OMNIPROBE_HIDDEN_ARG,
-                "address_space": plan["hidden_omniprobe_ctx"]["address_space"],
-            }
-        )
+        hidden_arg = {
+            "name": OMNIPROBE_HIDDEN_ARG,
+            "offset": plan["hidden_omniprobe_ctx"]["offset"],
+            "size": plan["hidden_omniprobe_ctx"]["size"],
+            "value_kind": plan["hidden_omniprobe_ctx"]["value_kind"],
+        }
+        if "address_space" in plan["hidden_omniprobe_ctx"]:
+            hidden_arg["address_space"] = plan["hidden_omniprobe_ctx"]["address_space"]
+        args.append(hidden_arg)
     args.sort(key=lambda arg: (int(arg.get("offset", 0)), str(arg.get("value_kind", ""))))
     mutated["args"] = args
     return mutated
@@ -177,7 +179,27 @@ def build_metadata_document(manifest: dict, selected_kernels: list[dict], clones
     target = manifest.get("kernels", {}).get("metadata", {}).get("target")
     if target:
         kernel_lines.append(f"amdhsa.target: {yaml_scalar(target)}")
+    metadata_obj = manifest.get("kernels", {}).get("metadata", {}).get("object")
+    version = metadata_obj.get("amdhsa.version") if isinstance(metadata_obj, dict) else None
+    if isinstance(version, list) and version:
+        kernel_lines.append("amdhsa.version:")
+        for item in version:
+            kernel_lines.append(f"  - {yaml_scalar(item)}")
     return "\n".join(kernel_lines) + "\n"
+
+
+def dedupe_kernel_records(kernels: list[dict]) -> list[dict]:
+    seen: set[tuple[object, object]] = set()
+    result: list[dict] = []
+    for kernel in kernels:
+        if not isinstance(kernel, dict):
+            continue
+        identity = (kernel.get("name"), kernel.get("symbol"))
+        if identity in seen:
+            continue
+        seen.add(identity)
+        result.append(kernel)
+    return result
 
 
 def clone_arg_object(plan: dict) -> dict:
@@ -632,7 +654,7 @@ def mutate_kernel_block_in_place(block_lines: list[str], plan: dict) -> list[str
         f"{arg_prefix}  .address_space:  {hidden_arg['address_space']}",
         f"{arg_prefix}  .offset:         {hidden_arg['offset']}",
         f"{arg_prefix}  .size:           {hidden_arg['size']}",
-        f"{arg_prefix}  .value_kind:     {OMNIPROBE_HIDDEN_ARG}",
+        f"{arg_prefix}  .value_kind:     {hidden_arg['value_kind']}",
     ]
     lines[insert_index:insert_index] = clone_arg_lines
     return lines

@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from code_object_model import CodeObjectModel
 from common import detect_llvm_tool
 
 
@@ -84,12 +85,12 @@ def load_json(path: Path) -> dict:
 def function_name_for_mode(manifest: dict, explicit_name: str | None) -> str | None:
     if explicit_name:
         return explicit_name
-    kernels = [
-        kernel.get("name")
-        for kernel in manifest.get("kernels", {}).get("metadata", {}).get("kernels", [])
-        if kernel.get("name")
-    ]
-    return kernels[0] if len(kernels) == 1 else None
+    model = CodeObjectModel.from_manifest(manifest)
+    primary_kernels = model.primary_kernel_names()
+    if len(primary_kernels) == 1:
+        return primary_kernels[0]
+    kernel_names = model.kernel_names()
+    return kernel_names[0] if len(kernel_names) == 1 else None
 
 
 def run_json_command(command: list[str]) -> dict:

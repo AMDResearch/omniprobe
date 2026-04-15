@@ -5,6 +5,12 @@ instrumentation path.
 
 Current scope:
 
+- `code_object_model.py`
+  - defines the normalized in-repo code-object model shared by inspection,
+    future regeneration, and orchestration tools
+  - preserves the current manifest shape while giving later tools a first-class
+    model for kernels, descriptors, metadata, support sections, and future
+    clone intents
 - `extract_bundle.py`
   - extracts AMDGPU ELF code objects from clang offload bundles
 - `inspect_code_object.py`
@@ -71,8 +77,12 @@ Current scope:
 - `prepare_hsaco_cache.py`
   - orchestrates manifest generation for standalone AMDGPU code objects and for
     host binaries/shared libraries containing bundled AMDGPU code objects
-  - prefers existing real clone carriers when available, and otherwise falls
-    back to hidden-ABI surrogate rewrite
+  - prefers existing real clone carriers when available
+  - supports explicit surrogate policies when a real carrier is not available:
+    `donor-slot` for donor-bearing legacy inputs and `donor-free` for
+    whole-code-object regeneration
+  - `auto` prefers donor-slot when an eligible donor clone slot already exists
+    in the active code object and otherwise falls back to donor-free
   - can optionally run an explicit source rebuild step before cache generation;
     current cache-prep support is `--source-rebuild-mode exact` and a gated
     `abi-changing` path backed by descriptor-count evidence from the input
@@ -116,6 +126,12 @@ Current scope:
   - useful for proving that source hidden args are preserved and
     `hidden_omniprobe_ctx` lands at the clone-owned slot before device-side
     helper injection is introduced
+- `regenerate_code_object.py`
+  - first donor-free whole-object regeneration scaffold
+  - currently scopes to single-kernel no-op regeneration and orchestrates the
+    existing inspect/disasm/rebuild primitives behind one normalized-model
+    entrypoint
+  - intended to grow into the primary non-donor binary-only rebuild frontend
 
 These tools are intentionally build-light. They establish an in-repo frontend
 for code-object inspection and hidden-ABI planning while the full binary

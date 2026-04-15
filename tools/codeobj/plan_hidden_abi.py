@@ -92,8 +92,18 @@ def build_kernel_plan(kernel: dict, pointer_size: int, alignment: int) -> dict:
     hidden_end = max((arg["offset"] + arg["size"] for arg in hidden_args), default=explicit_args_length)
     source_hidden_length = max(kernarg_size - explicit_args_length, 0)
 
-    insertion_offset = align_up(max(kernarg_size, hidden_end), alignment)
-    new_kernarg_size = insertion_offset + pointer_size
+    insertion_offset = align_up(hidden_end, alignment)
+    if insertion_offset + pointer_size <= kernarg_size:
+        new_kernarg_size = kernarg_size
+        placement_note = (
+            "Hidden-ABI clone reuses tail slack in the existing kernarg segment."
+        )
+    else:
+        insertion_offset = align_up(max(kernarg_size, hidden_end), alignment)
+        new_kernarg_size = insertion_offset + pointer_size
+        placement_note = (
+            "Hidden-ABI clone grows the kernarg segment because no tail slack was available."
+        )
 
     kernel_name = kernel.get("name") or kernel.get("symbol")
     if kernel_name is None:
@@ -110,8 +120,8 @@ def build_kernel_plan(kernel: dict, pointer_size: int, alignment: int) -> dict:
         "source_hidden_args": hidden_args,
         "hidden_omniprobe_ctx": {
             "name": OMNIPROBE_HIDDEN_ARG,
-            "address_space": "generic",
-            "value_kind": "global_buffer",
+            "value_kind": OMNIPROBE_HIDDEN_ARG,
+            "address_space": "global",
             "offset": insertion_offset,
             "size": pointer_size,
         },
@@ -119,6 +129,7 @@ def build_kernel_plan(kernel: dict, pointer_size: int, alignment: int) -> dict:
         "notes": [
             "Hidden-ABI clones should retain original hidden args and append hidden_omniprobe_ctx.",
             "If original hidden args are present, runtime must remap by metadata rather than contiguous copy.",
+            placement_note,
         ],
     }
 

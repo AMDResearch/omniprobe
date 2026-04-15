@@ -19,8 +19,6 @@ from common import (
     get_instrumented_name,
     sanitize_bundle_id,
 )
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -83,6 +81,18 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Optionally rebuild each resolved source code object before carrier/surrogate "
             "selection. Currently only 'exact' is implemented in cache preparation."
+        ),
+    )
+    parser.add_argument(
+        "--surrogate-mode",
+        default="auto",
+        choices=("auto", "donor-slot", "donor-free"),
+        help=(
+            "How to synthesize surrogate clone artifacts when no matching carrier is "
+            "available. 'donor-slot' requires an existing Omniprobe-style donor clone "
+            "slot inside the active code object. 'donor-free' uses whole-object "
+            "regeneration. 'auto' prefers donor-slot when an eligible donor exists and "
+            "otherwise falls back to donor-free."
         ),
     )
     return parser.parse_args()
@@ -153,6 +163,10 @@ def kernel_records(manifest: dict) -> list[dict]:
     return [kernel for kernel in kernels if isinstance(kernel, dict)]
 
 
+def instrumented_kernel_records(manifest: dict) -> list[dict]:
+    return [kernel for kernel in kernel_records(manifest) if is_instrumented_kernel(kernel)]
+
+
 def is_instrumented_kernel(kernel: dict) -> bool:
     for field in (kernel.get("name"), kernel.get("symbol")):
         if field and str(field).startswith(OMNIPROBE_PREFIX):
@@ -173,16 +187,6 @@ def select_sources(kernels: list[dict], kernel_filter: str) -> list[dict]:
         if regex.search(name) or regex.search(symbol):
             selected.append(kernel)
     return selected
-
-
-def pick_donor(kernels: list[dict], source: dict) -> dict | None:
-    source_symbol = source.get("symbol")
-    source_name = source.get("name")
-    for kernel in kernels:
-        if kernel.get("symbol") == source_symbol and kernel.get("name") == source_name:
-            continue
-        return kernel
-    return None
 
 
 def detect_extract_tool(explicit: str | None) -> Path | None:
@@ -316,6 +320,69 @@ def manifest_contains_source_kernel(manifest: dict, kernel: dict) -> bool:
 def manifest_has_existing_clone(manifest: dict, kernel: dict) -> bool:
     symbols = manifest_symbol_names(manifest)
     return any(candidate in symbols for candidate in clone_name_candidates(kernel))
+
+
+def non_hidden_args(kernel: dict) -> list[dict]:
+    args = kernel.get("args", [])
+    non_hidden: list[dict] = []
+    for arg in args:
+        if arg.get("name") == "hidden_omniprobe_ctx":
+            continue
+        value_kind = str(arg.get("value_kind", ""))
+        if value_kind.startswith("hidden_"):
+            continue
+        non_hidden.append(arg)
+    return non_hidden
+
+
+def arg_abi_signature(arg: dict) -> tuple[int, int, str, str, str]:
+    return (
+        int(arg.get("offset", 0) or 0),
+        int(arg.get("size", 0) or 0),
+        str(arg.get("value_kind", "") or ""),
+        str(arg.get("address_space", "") or ""),
+        str(arg.get("type_name", "") or ""),
+    )
+
+
+def donor_slot_is_abi_compatible(
+    source_kernel: dict,
+    donor_kernel: dict,
+) -> bool:
+    source_args = non_hidden_args(source_kernel)
+    donor_args = non_hidden_args(donor_kernel)
+    if len(donor_args) != len(source_args) + 1:
+        return False
+
+    return [arg_abi_signature(arg) for arg in donor_args[: len(source_args)]] == [
+        arg_abi_signature(arg) for arg in source_args
+    ]
+
+
+def donor_slot_candidate(
+    manifest: dict,
+    source_kernel: dict,
+) -> dict | None:
+    source_candidates = clone_name_candidates(source_kernel)
+    source_family_values = {
+        str(field)
+        for field in (source_kernel.get("name"), source_kernel.get("symbol"))
+        if field
+    }
+    for kernel in instrumented_kernel_records(manifest):
+        values = {
+            str(field)
+            for field in (kernel.get("name"), kernel.get("symbol"))
+            if field
+        }
+        if values & source_candidates:
+            continue
+        if values & source_family_values:
+            continue
+        if not donor_slot_is_abi_compatible(source_kernel, kernel):
+            continue
+        return kernel
+    return None
 
 
 def find_matching_carrier(
@@ -452,7 +519,8 @@ def main() -> int:
     inspect_tool = tool_dir / "inspect_code_object.py"
     disasm_tool = tool_dir / "disasm_to_ir.py"
     rebuild_tool = tool_dir / "rebuild_code_object.py"
-    rewrite_tool = tool_dir / "rebind_surrogate_kernel.py"
+    regenerate_tool = tool_dir / "regenerate_code_object.py"
+    rebind_tool = tool_dir / "rebind_surrogate_kernel.py"
     extract_tool = detect_extract_tool(args.extract_tool)
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -544,43 +612,74 @@ def main() -> int:
                 )
                 continue
 
-            donor = pick_donor(kernels, source)
-            if donor is None:
-                item_summary["skipped"].append(
-                    f"no donor kernel available for {source.get('symbol') or source.get('name')}"
-                )
-                had_error = True
-                continue
-
             source_tag = sanitize_bundle_id(str(source.get("symbol") or source.get("name") or "kernel"))
             output_path = output_dir / f"{record.cache_tag}.{source_tag}.surrogate.hsaco"
             report_path = output_dir / f"{record.cache_tag}.{source_tag}.surrogate.report.json"
+            selected_surrogate_mode = args.surrogate_mode
+            donor_kernel = None
+            if selected_surrogate_mode in ("auto", "donor-slot"):
+                donor_kernel = donor_slot_candidate(active_manifest, source)
+                if selected_surrogate_mode == "auto" and donor_kernel is None:
+                    selected_surrogate_mode = "donor-free"
+
+            if selected_surrogate_mode == "donor-slot":
+                if donor_kernel is None:
+                    item_summary["skipped"].append(
+                        "no eligible donor-slot kernel available for "
+                        f"{source.get('symbol') or source.get('name')}"
+                    )
+                    had_error = True
+                    continue
+                run_python(
+                    rebind_tool,
+                    str(active_record.code_object_path),
+                    str(active_manifest_path),
+                    "--source-kernel",
+                    kernel_selector_value(source),
+                    "--donor-kernel",
+                    kernel_selector_value(donor_kernel),
+                    "--output",
+                    str(output_path),
+                    "--report-output",
+                    str(report_path),
+                )
+                item_summary["outputs"].append(
+                    {
+                        "mode": "surrogate",
+                        "surrogate_mode": "donor-slot",
+                        "rebuild_mode": "abi-changing",
+                        "descriptor_policy": "donor-slot-rebind",
+                        "source_kernel": source.get("name"),
+                        "source_symbol": source.get("symbol"),
+                        "donor_kernel": donor_kernel.get("name"),
+                        "donor_symbol": donor_kernel.get("symbol"),
+                        "output": str(output_path),
+                        "report": str(report_path),
+                    }
+                )
+                continue
+
             run_python(
-                rewrite_tool,
+                regenerate_tool,
                 str(active_record.code_object_path),
+                "--manifest",
                 str(active_manifest_path),
-                "--source-kernel",
+                "--kernel",
                 kernel_selector_value(source),
-                "--donor-kernel",
-                kernel_selector_value(donor),
                 "--output",
                 str(output_path),
                 "--report-output",
                 str(report_path),
-                "--pointer-size",
-                str(args.pointer_size),
-                "--alignment",
-                str(args.alignment),
+                "--add-hidden-abi-clone",
             )
             item_summary["outputs"].append(
                 {
                     "mode": "surrogate",
+                    "surrogate_mode": "donor-free",
                     "rebuild_mode": "abi-changing",
-                    "descriptor_policy": "metadata-and-descriptor-patch",
+                    "descriptor_policy": "whole-object-regeneration+metadata-note-rewrite",
                     "source_kernel": source.get("name"),
                     "source_symbol": source.get("symbol"),
-                    "donor_kernel": donor.get("name"),
-                    "donor_symbol": donor.get("symbol"),
                     "output": str(output_path),
                     "report": str(report_path),
                 }
