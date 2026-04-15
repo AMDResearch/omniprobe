@@ -229,12 +229,15 @@ def render_text(
     emit_section_header: bool,
     section_alignment_power: int,
     gap_before: int,
+    function_alignment_power: int | None = None,
 ) -> list[str]:
     lines = [".text"]
     if emit_section_header:
         lines.append(f".p2align {section_alignment_power}")
     if gap_before > 0:
         lines.append(f"  .zero {gap_before}")
+    if function_alignment_power is not None:
+        lines.append(f".p2align {function_alignment_power}")
     lines.extend(emit_binding(function["name"], symbol))
     lines.extend(emit_visibility(function["name"], symbol))
     lines.extend([f".type {function['name']},@function", f"{function['name']}:"])
@@ -791,6 +794,15 @@ def main() -> int:
                 gap_before = start_address - section_start
         elif previous_end_address is not None and start_address > previous_end_address:
             gap_before = start_address - previous_end_address
+        function_alignment_power = None
+        if (
+            function["name"] in list_manifest_kernel_names(manifest)
+            and CodeObjectModel.is_omniprobe_clone_name(str(function.get("name", "")))
+        ):
+            # Fresh donor-free kernels are appended after the original text layout,
+            # so their source addresses no longer imply a valid entry alignment.
+            # Preserve the minimum kernel entry alignment ROCm emits for source kernels.
+            function_alignment_power = max(text_alignment_power, 8)
         lines.extend(
             render_text(
                 function,
@@ -800,6 +812,7 @@ def main() -> int:
                 emit_section_header=index == 0,
                 section_alignment_power=text_alignment_power,
                 gap_before=gap_before,
+                function_alignment_power=function_alignment_power,
             )
         )
         if args.exact_encoding:

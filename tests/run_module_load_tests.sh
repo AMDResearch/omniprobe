@@ -35,21 +35,23 @@ MODULE_LOAD_MANUAL_CARRIER_HSACO="${BUILD_DIR}/tests/test_kernels/module_load_ma
 MODULE_LOAD_DONOR_SLOT_HSACO="${BUILD_DIR}/tests/test_kernels/module_load_donor_slot_kernel.hsaco"
 SIMPLE_HEATMAP_TEST="${BUILD_DIR}/tests/test_kernels/simple_heatmap_test"
 EXTRACT_CODE_OBJECTS="${BUILD_DIR}/tools/extract_code_objects"
+HIP_LAUNCH_TEST="${BUILD_DIR}/tools/test_hip_module_launch"
 HIDDEN_KERNARG_REPACK_TEST="${BUILD_DIR}/tools/test_hidden_kernarg_repack"
 PREPARE_HSACO_CACHE="${REPO_ROOT}/tools/codeobj/prepare_hsaco_cache.py"
 AUDIT_CODE_OBJECT_STRUCTURE="${REPO_ROOT}/tools/codeobj/audit_code_object_structure.py"
 INSPECT_CODE_OBJECT="${REPO_ROOT}/tools/codeobj/inspect_code_object.py"
 RECLASSIFY_HIDDEN_ARG="${REPO_ROOT}/tools/codeobj/reclassify_kernel_arg_as_hidden.py"
 
-if [ ! -x "$MODULE_LOAD_TEST" ] || [ ! -f "$MODULE_LOAD_HSACO" ] || [ ! -f "$MODULE_LOAD_PLAIN_HSACO" ] || [ ! -f "$MODULE_LOAD_MANUAL_CARRIER_HSACO" ] || [ ! -f "$MODULE_LOAD_DONOR_SLOT_HSACO" ] || [ ! -x "$HIDDEN_KERNARG_REPACK_TEST" ]; then
+if [ ! -x "$MODULE_LOAD_TEST" ] || [ ! -f "$MODULE_LOAD_HSACO" ] || [ ! -f "$MODULE_LOAD_PLAIN_HSACO" ] || [ ! -f "$MODULE_LOAD_MANUAL_CARRIER_HSACO" ] || [ ! -f "$MODULE_LOAD_DONOR_SLOT_HSACO" ] || [ ! -x "$HIP_LAUNCH_TEST" ] || [ ! -x "$HIDDEN_KERNARG_REPACK_TEST" ]; then
     echo -e "${YELLOW}SKIP: Module-load test artifacts not built${NC}"
     echo "  Expected: $MODULE_LOAD_TEST"
     echo "  Expected: $MODULE_LOAD_HSACO"
     echo "  Expected: $MODULE_LOAD_PLAIN_HSACO"
     echo "  Expected: $MODULE_LOAD_MANUAL_CARRIER_HSACO"
     echo "  Expected: $MODULE_LOAD_DONOR_SLOT_HSACO"
+    echo "  Expected: $HIP_LAUNCH_TEST"
     echo "  Expected: $HIDDEN_KERNARG_REPACK_TEST"
-    echo "  Build with: cmake --build build --target module_load_test module_load_kernel_hsaco module_load_kernel_plain_hsaco module_load_manual_carrier_hsaco module_load_donor_slot_hsaco test_hidden_kernarg_repack"
+    echo "  Build with: cmake --build build --target module_load_test module_load_kernel_hsaco module_load_kernel_plain_hsaco module_load_manual_carrier_hsaco module_load_donor_slot_hsaco test_hip_module_launch test_hidden_kernarg_repack"
     export TESTS_RUN TESTS_PASSED TESTS_FAILED
     return 0 2>/dev/null || exit 0
 fi
@@ -207,6 +209,40 @@ PY
 else
     echo -e "  ${RED}✗ FAIL${NC} - Donor-free clone descriptor fidelity check failed"
     cat "$FIDELITY_OUT" 2>/dev/null || true
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+################################################################################
+# Test: donor-free surrogate clone body launchability
+################################################################################
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="module_load_binary_only_rewrite_clone_launch"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+echo "  Validate donor-free surrogate clone body launches directly"
+
+CLONE_LAUNCH_OUT="$OUTPUT_DIR/${TEST_NAME}.out"
+SURROGATE_REPORT="${SURROGATE_HSACO%.hsaco}.report.json"
+CLONE_KERNEL_NAME=""
+CLONE_KERNARG_SIZE=""
+CLONE_CTX_OFFSET=""
+if [ -n "$SURROGATE_REPORT" ] && [ -f "$SURROGATE_REPORT" ]; then
+    CLONE_KERNEL_NAME="$(python3 -c 'import json,sys; report=json.load(open(sys.argv[1], encoding="utf-8")); print(report["clone_result"]["clone_kernel"])' "$SURROGATE_REPORT")"
+    CLONE_KERNARG_SIZE="$(python3 -c 'import json,sys; report=json.load(open(sys.argv[1], encoding="utf-8")); print(report["clone_result"]["instrumented_kernarg_length"])' "$SURROGATE_REPORT")"
+    CLONE_CTX_OFFSET="$(python3 -c 'import json,sys; report=json.load(open(sys.argv[1], encoding="utf-8")); print(report["clone_result"]["hidden_omniprobe_ctx"]["offset"])' "$SURROGATE_REPORT")"
+fi
+
+if [ -n "$SURROGATE_HSACO" ] && [ -f "$SURROGATE_REPORT" ] && \
+   [ -n "$CLONE_KERNEL_NAME" ] && [ -n "$CLONE_KERNARG_SIZE" ] && [ -n "$CLONE_CTX_OFFSET" ] && \
+   ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" "$HIP_LAUNCH_TEST" \
+      "$SURROGATE_HSACO" "$CLONE_KERNEL_NAME" index \
+      --raw-kernarg-size "$CLONE_KERNARG_SIZE" \
+      --hidden-ctx-offset "$CLONE_CTX_OFFSET" > "$CLONE_LAUNCH_OUT" 2>&1; then
+    echo -e "  ${GREEN}✓ PASS${NC} - Donor-free surrogate clone launched successfully"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Donor-free surrogate clone failed to launch"
+    cat "$CLONE_LAUNCH_OUT" 2>/dev/null || true
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
