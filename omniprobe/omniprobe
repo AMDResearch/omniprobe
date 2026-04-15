@@ -30,8 +30,12 @@ import shutil
 import glob
 import subprocess
 import logging
+import tempfile
 from pathlib import Path
-from pyfiglet import figlet_format
+try:
+    from pyfiglet import figlet_format
+except ModuleNotFoundError:
+    figlet_format = None
 
 sys.stdout.reconfigure(line_buffering=True)
 
@@ -69,7 +73,7 @@ def finalize_json_output(location, handlers):
 
 # Generate ASCII art for the word "omniprobe"
 name  = "Omniprobe"
-ascii_art = figlet_format(name, font="standard")  # Default font
+ascii_art = figlet_format(name, font="standard") if figlet_format else name
 print(ascii_art)
 
 
@@ -227,6 +231,7 @@ def get_local_isa():
 
 # Derive all paths from script location — works for both build and install trees
 root_dir = get_root_dir()
+source_root_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 lib_dir = os.path.join(root_dir, "lib")
 plugin_dir = os.path.join(root_dir, "lib", "plugins")
 handler_lib_dir = lib_dir
@@ -293,11 +298,59 @@ def is_triton_cache_dir(path):
     except OSError:
         return False
 
+
+def prepare_hsaco_cache(parms):
+    if not parms.hsaco_inputs:
+        return parms.cache_location
+
+    cache_dir = parms.cache_location
+    if not cache_dir:
+        cache_dir = tempfile.mkdtemp(prefix="omniprobe-hsaco-cache-")
+        print(f"Using managed hsaco cache: {cache_dir}")
+
+    cache_path = os.path.abspath(cache_dir)
+    os.makedirs(cache_path, exist_ok=True)
+
+    tool = os.path.join(source_root_dir, "tools", "codeobj", "prepare_hsaco_cache.py")
+    cmd = [sys.executable, tool, "--output-dir", cache_path]
+    if parms.kernels:
+        cmd.extend(["--kernel-filter", parms.kernels])
+    if parms.hsaco_rebuild_mode:
+        cmd.extend(["--source-rebuild-mode", parms.hsaco_rebuild_mode])
+    for carrier in parms.carrier_inputs:
+        cmd.extend(["--carrier-input", os.path.abspath(carrier)])
+    for hsaco in parms.hsaco_inputs:
+        path = os.path.abspath(hsaco)
+        if not os.path.exists(path):
+            print(f"ERROR: hsaco input '{hsaco}' not found.")
+            sys.exit(1)
+        if not is_elf_file(path):
+            print(f"ERROR: hsaco input '{hsaco}' is not an ELF file.")
+            sys.exit(1)
+        cmd.append(path)
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.stdout.strip():
+        print(result.stdout.strip())
+    if result.returncode != 0:
+        if result.stderr.strip():
+            print(result.stderr.strip())
+        print("ERROR: failed to prepare hsaco surrogate cache.")
+        sys.exit(result.returncode)
+    return cache_path
+
 def setup_env(parms):
     env_dump = {}
     global op_run_env
     global triton_llvm
     env = os.environ
+
+    if parms.hsaco_inputs and not parms.instrumented:
+        print("ERROR: --hsaco-input requires -i/--instrumented.")
+        sys.exit(1)
+    if parms.carrier_inputs and not parms.hsaco_inputs:
+        print("ERROR: --carrier-input requires --hsaco-input.")
+        sys.exit(1)
 
     if len(parms.log_format):
         parms.log_format = parms.log_format.lower();
@@ -335,25 +388,29 @@ def setup_env(parms):
         env['LOGDUR_LOG_LOCATION'] = parms.log_location
         env_dump['LOGDUR_LOG_LOCATION'] = parms.log_location
 
+    managed_hsaco_cache = bool(parms.hsaco_inputs)
+    cache_location = prepare_hsaco_cache(parms) if managed_hsaco_cache else parms.cache_location
+
     assume_triton = False
-    if len(parms.cache_location):
-        assume_triton = True
-        if os.path.exists(parms.cache_location) and os.path.isdir(parms.cache_location):
-            if not is_triton_cache_dir(parms.cache_location):
-                print(f"WARNING: Cache location {parms.cache_location} exists but appears to be empty or not a Triton cache directory. Instrumented kernels may not be found there.")
-            env['LOGDUR_KERNEL_CACHE'] = parms.cache_location
-            env_dump['LOGDUR_KERNEL_CACHE'] = parms.cache_location
-        elif not os.path.exists(parms.cache_location):
+    if len(cache_location):
+        assume_triton = not managed_hsaco_cache
+        if os.path.exists(cache_location) and os.path.isdir(cache_location):
+            if assume_triton and not is_triton_cache_dir(cache_location):
+                print(f"WARNING: Cache location {cache_location} exists but appears to be empty or not a Triton cache directory. Instrumented kernels may not be found there.")
+            env['LOGDUR_KERNEL_CACHE'] = cache_location
+            env_dump['LOGDUR_KERNEL_CACHE'] = cache_location
+        elif not os.path.exists(cache_location):
             try:
-                os.makedirs(parms.cache_location)
-                env['LOGDUR_KERNEL_CACHE'] = parms.cache_location
-                env_dump['LOGDUR_KERNEL_CACHE'] = parms.cache_location
-                print(f"WARNING: {parms.cache_location} was created but Triton may not use this location for its code object cache. Be sure that {parms.cache_location} is really the right location")
+                os.makedirs(cache_location)
+                env['LOGDUR_KERNEL_CACHE'] = cache_location
+                env_dump['LOGDUR_KERNEL_CACHE'] = cache_location
+                if assume_triton:
+                    print(f"WARNING: {cache_location} was created but Triton may not use this location for its code object cache. Be sure that {cache_location} is really the right location")
             except OSError as e:
-                print(f"WARNING: Cache location {parms.cache_location} could not be created. Will use only instrumented kernels found in the application binary.")
+                print(f"WARNING: Cache location {cache_location} could not be created. Will use only instrumented kernels found in the application binary.")
                 print(e)
         else:
-            print(f"WARNING: Cache location {parms.cache_location} either doesn't exist, can't be created, or it isn't a directory. Will only use instrumented kernels found in the application binary.")
+            print(f"WARNING: Cache location {cache_location} either doesn't exist, can't be created, or it isn't a directory. Will only use instrumented kernels found in the application binary.")
 
     if len(parms.dispatches):
         env['LOGDUR_DISPATCHES'] = parms.dispatches
@@ -371,7 +428,10 @@ def setup_env(parms):
             else:
                 sys.exit(1)
         else:
-            print("No Triton cache location provided; assuming HIP run.")
+            if managed_hsaco_cache:
+                print("Managed hsaco cache prepared; assuming binary code-object run.")
+            else:
+                print("No Triton cache location provided; assuming HIP run.")
             if validate_hip_config():
                 for key in hip_config:
                     env[key] = hip_config[key]
@@ -589,6 +649,54 @@ def add_general_group(parser):
         required=False,
         default="",
         help="\tThe location of the file system cache for instrumented kernels. For Triton this is typically found at $HOME/.triton/cache"
+    )
+
+    general_group.add_argument(
+        "--hsaco-input",
+        type=str,
+        metavar="FILE",
+        dest="hsaco_inputs",
+        required=False,
+        action="append",
+        default=[],
+        help=(
+            "\tStandalone AMDGPU code object or host binary/shared library containing\n"
+            "\tbundled AMDGPU code objects. May be specified multiple times. Omniprobe\n"
+            "\tprepares clone-capable cache artifacts into --cache-location (or a managed\n"
+            "\ttemporary cache when omitted)."
+        ),
+    )
+
+    general_group.add_argument(
+        "--carrier-input",
+        type=str,
+        metavar="FILE",
+        dest="carrier_inputs",
+        required=False,
+        action="append",
+        default=[],
+        help=(
+            "\tOptional instrumented carrier code object or host binary. Matching kernels\n"
+            "\tare satisfied by copying the carrier object into the managed cache before\n"
+            "\tfalling back to donor-slot surrogate rewriting."
+        ),
+    )
+
+    general_group.add_argument(
+        "--hsaco-rebuild-mode",
+        type=str,
+        metavar="MODE",
+        dest="hsaco_rebuild_mode",
+        required=False,
+        default="",
+        choices=["exact", "abi-changing"],
+        help=(
+            "\tOptionally rebuild each --hsaco-input code object before preparing the\n"
+            "\tmanaged cache. 'exact' normalizes and validates the source object through\n"
+            "\tOmniprobe's rebuild path. 'abi-changing' rebuilds with regenerated\n"
+            "\tdescriptors and currently depends on descriptor-count evidence in the\n"
+            "\tinput manifest."
+        ),
     )
     
     general_group.add_argument (

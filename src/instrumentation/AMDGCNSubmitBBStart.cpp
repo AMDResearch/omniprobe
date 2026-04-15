@@ -115,7 +115,12 @@ bool AMDGCNSubmitBBStart::runOnModule(Module &M) {
     Function *NF = cloneKernelWithExtraArg(I, M, VMap);
 
     // Get the ptr we just added to the kernel arguments
-    Value *bufferPtr = &*NF->arg_end() - 1;
+    Value *bufferPtr = getInstrumentationBufferArg(NF);
+    if (!bufferPtr) {
+      errs() << "Failed to locate instrumentation buffer argument for "
+             << NF->getName() << "\n";
+      continue;
+    }
     uint32_t LocationCounter = 0;
     for (Function::iterator BB = NF->begin(); BB != NF->end(); BB++) {
       auto I = BB->begin();

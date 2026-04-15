@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
 
     // Look up the kernel function.
     hipFunction_t kernel;
-    CHECK_HIP(hipModuleGetFunction(&kernel, module, "module_load_kernel"));
+    CHECK_HIP(hipModuleGetFunction(&kernel, module, "mlk"));
 
     // Allocate device memory.
     constexpr size_t blocksize = 64;

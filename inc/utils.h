@@ -75,6 +75,7 @@ THE SOFTWARE.
 
 #define INSTRUMENTATION_BUFFER void *
 #define OMNIPROBE_PREFIX "__amd_crk_"
+#define OMNIPROBE_HIDDEN_ARG "hidden_omniprobe_ctx"
 
 
 #define RH_PAGE_SIZE 0x1000
@@ -158,6 +159,7 @@ typedef struct arg_descriptor {
     size_t source_kernarg_length;
     size_t clone_hidden_args_length;
     std::vector<hidden_arg_layout> hidden_args;
+    std::vector<hidden_arg_layout> source_hidden_args;
 
     const hidden_arg_layout *findHiddenArg(const std::string &value_kind) const
     {
@@ -166,6 +168,20 @@ typedef struct arg_descriptor {
                                    return arg.value_kind == value_kind;
                                });
         return it == hidden_args.end() ? nullptr : &*it;
+    }
+
+    const hidden_arg_layout *findSourceHiddenArg(const std::string &value_kind) const
+    {
+        auto it = std::find_if(source_hidden_args.begin(), source_hidden_args.end(),
+                               [&](const hidden_arg_layout &arg) {
+                                   return arg.value_kind == value_kind;
+                               });
+        return it == source_hidden_args.end() ? nullptr : &*it;
+    }
+
+    const hidden_arg_layout *findOmniprobeHiddenArg() const
+    {
+        return findHiddenArg(OMNIPROBE_HIDDEN_ARG);
     }
 }arg_descriptor_t;
 
@@ -194,6 +210,7 @@ public:
     bool addFile(const std::string& name, hsa_agent_t agent, const std::string& strFilter);
     bool getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descriptor_t& desc, bool instrumented);
     bool getCodeObjectRef(hsa_agent_t agent, const std::string& name, CodeObjectRef& ref);
+    bool getCodeObjectRef(hsa_agent_t agent, const std::string& name, CodeObjectRef& ref, bool instrumented);
     uint8_t getArgumentAlignment(uint64_t kernel_object);
     const amd_kernel_code_t* getKernelCode(uint64_t kernel_object);
     void registerRuntimeKernel(const std::string& name, hsa_executable_symbol_t symbol,
@@ -285,6 +302,10 @@ unsigned int getLogDurConfig(std::map<std::string, std::string>& config);
 void clipInstrumentedKernelName(std::string& str);
 void clipKernelName(std::string& str);
 std::string getInstrumentedName(const std::string& func_decl);
+std::string getHiddenAbiInstrumentedName(const std::string& func_decl);
+std::vector<std::string> getInstrumentedNameCandidates(const std::string& func_decl);
+void overlaySourceArgDescriptorLayout(arg_descriptor_t& target, const arg_descriptor_t& source_desc);
+void repackInstrumentedKernArgs(void *dst, void *src, void *comms, const arg_descriptor_t& desc);
 bool isFileNewer(const std::chrono::system_clock::time_point& timestamp, const std::string& fileName);
 std::string getExecutablePath();
 

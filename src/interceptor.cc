@@ -673,54 +673,7 @@ void hsaInterceptor::fixupKernArgs(void *dst, void *src, void *comms, arg_descri
     // std::cout << "  group_segment_size: " << desc.group_segment_size << std::endl;
     // std::cout << "  clone_hidden_args_length: " << desc.clone_hidden_args_length << std::endl;
 
-    assert(dst);
-    assert(src);
-    memset(dst, 0, desc.kernarg_length);
-    const size_t source_explicit_args_length =
-        desc.source_explicit_args_length ? desc.source_explicit_args_length
-                                         : desc.explicit_args_length - sizeof(void *);
-    const size_t source_hidden_args_length =
-        desc.source_hidden_args_length ? desc.source_hidden_args_length
-                                       : desc.clone_hidden_args_length;
-    // The descriptor here is a descriptor of the instrumented kernel, so
-    // the parameter list of the non-instrumented original is always short one void*
-    // relative to the desriptor supplied to this method
-    // We want to copy all of the source kernargs except for it's original explicit arguments
-    memcpy(dst, src, desc.explicit_args_length - sizeof(void *));
-    // Compute where we want to copy hidden args. Right after the last explicit argument.
-    void *hidden_args_dst = &(((char *)dst)[desc.explicit_args_length]);
-    // We copy from the non-instrumented clone from the location after the last explicit arg in the src.
-    // It has 1 fewer arguments than the instrumented clone (i.e. no dh_comms *)
-    //void *hidden_args_src = &(((void **)src)[desc.explicit_args_count - 1]);
-    void *hidden_args_src = &(((char *)src)[source_explicit_args_length]);
-    // In Triton, for some reason we sometimes get non-instrumented kernsl with no hidden arguments.
-    // Keep the source hidden-region layout explicit so later hidden-argument ABI work can stop
-    // inferring the original layout from the clone's inserted explicit pointer.
-    if (source_hidden_args_length)
-    {
-        // assert that we aren't going to copy a larger kernarg segment into a smaller one
-        assert(source_hidden_args_length <= desc.kernarg_length - desc.explicit_args_length);
-        memcpy(hidden_args_dst, hidden_args_src, source_hidden_args_length);
-    }
-    /* The weird thing here is that, apparently, kernel arguments are 4-byteb aligned
-     * regardless of the actual argument size. This really bit me working on this code
-     * because the metadata on kernel objects that is retrievable from comgr shows argument lengths
-     * and at first I was using the argument length to repack the kernel arguments with the
-     * newly inserted void * created by the instrumentation code. But after staring
-     * at hex dumps, I realized that all of the kernel arguments (at least the explicit arguments,
-     * I'm not sure about the hidden arguments) are 4-byte aligned regardless of the inherent argument
-     * size. I don't know how portable this is between code object versions. I'm assuming it is some
-     * aspect of code object first combined with the expecations of the GPU firmware.
-     * */
-    //void **comms_loc = &(((void **)dst)[desc.explicit_args_count  - 1]);
-    // This computation using explicit_args_length is more adaptable to changes in the way the compiler
-    // and runtime pack kernel arguments. For example 2 four-byte args might be packed into a single
-    // 64 bit slot and the individual parms might not be 64-bit aligned. For any kernel where that
-    // turns out to be the case, this address calculation with be resilient whether the args
-    // are packed or not.
-    void **comms_loc = (void **)&(((char *)dst)[desc.explicit_args_length  - sizeof(void *)]);
-    *comms_loc = comms;
-    // dumpKernArgs(dst, src, desc);
+    repackInstrumentedKernArgs(dst, src, comms, desc);
 }
 
 /*
@@ -770,8 +723,7 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                         std::cerr << "Found instrumented alternative for " << it->second.name_ << std::endl;
                         CodeObjectRef origRef, instRef;
                         bool hasOrig = kernel_cache_.getCodeObjectRef(queues_[queue], it->second.name_, origRef);
-                        std::string instName = getInstrumentedName(it->second.name_);
-                        bool hasInst = kernel_cache_.getCodeObjectRef(queues_[queue], instName, instRef);
+                        bool hasInst = kernel_cache_.getCodeObjectRef(queues_[queue], it->second.name_, instRef, true);
                         if (hasOrig && hasInst && origRef.source_file == instRef.source_file)
                             std::cerr << "  kernel location: " << origRef.source_file << std::endl;
                         else
@@ -804,11 +756,16 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
 
                             kernelDB::kernelDB *kdb = kdbs_[queues_[queue]].get();
 
-                            // On-demand: scan the code object for this kernel if not already scanned
-                            if (kdb && !kdb->hasKernel(it->second.name_))
+                            // On-demand: scan both the original and instrumented code objects.
+                            // For binary-only rewritten hsacos the clone may live in a distinct
+                            // surrogate file, and kernelDB needs that code object for clone-side
+                            // symbol and PC resolution.
+                            if (kdb)
                             {
                                 CodeObjectRef coRef;
                                 if (kernel_cache_.getCodeObjectRef(queues_[queue], it->second.name_, coRef))
+                                    kdb->scanCodeObject(coRef.co_file);
+                                if (kernel_cache_.getCodeObjectRef(queues_[queue], it->second.name_, coRef, true))
                                     kdb->scanCodeObject(coRef.co_file);
                             }
 

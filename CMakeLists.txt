@@ -201,6 +201,88 @@ add_custom_target(build_tree_symlinks ALL
     COMMENT "Creating build/bin/omniprobe and build/config symlinks"
 )
 
+# The build-tree omniprobe wrapper assumes these runtime libraries are already
+# present under build/lib. Make the symlink target depend on them so targeted
+# builds that request build_tree_symlinks still produce a runnable wrapper.
+add_dependencies(build_tree_symlinks
+    ${INTERCEPTOR_TARGET}
+    defaultMessageHandlers64
+    LogMessages64
+    BasicBlocks64
+    MemAnalysis64
+)
+
+find_library(ELF_LIB elf REQUIRED)
+find_library(DWARF_LIB dwarf REQUIRED)
+
+add_executable(extract_code_objects tools/codeobj/extract_code_objects.cpp)
+set_target_properties(extract_code_objects PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tools
+)
+target_include_directories(extract_code_objects PRIVATE
+    ${KERNELDB_INCLUDE_DIR}
+    ${ROCM_ROOT_DIR}/include
+    ${HSA_RUNTIME_INC_PATH}
+)
+target_link_libraries(extract_code_objects PRIVATE
+    kernelDB64
+    ${HSA_RUNTIME_LIB}
+    ${COMGR_LIB}
+    ${DWARF_LIB}
+    ${ELF_LIB}
+)
+
+add_executable(test_hip_module_launch tools/codeobj/test_hip_module_launch.cpp)
+set_target_properties(test_hip_module_launch PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tools
+)
+target_link_libraries(test_hip_module_launch PRIVATE amdhip64)
+
+add_executable(test_hip_module_dh_comms tools/codeobj/test_hip_module_dh_comms.cpp)
+set_target_properties(test_hip_module_dh_comms PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tools
+)
+target_include_directories(test_hip_module_dh_comms PRIVATE
+    ${ROOT_DIR}
+    ${LIB_DIR}
+    ${DH_COMMS_INCLUDE_DIR}
+)
+target_link_libraries(test_hip_module_dh_comms PRIVATE
+    amdhip64
+    dh_comms
+)
+
+add_executable(
+    test_hidden_kernarg_repack
+    tools/codeobj/test_hidden_kernarg_repack.cpp
+    src/utils.cc
+    src/library_filter.cc
+)
+set_target_properties(test_hidden_kernarg_repack PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tools
+)
+target_include_directories(test_hidden_kernarg_repack PRIVATE
+    ${ROOT_DIR}
+    ${LIB_DIR}
+    ${KERNELDB_INCLUDE_DIR}
+    ${DH_COMMS_INCLUDE_DIR}
+    ${ROCM_ROOT_DIR}/include
+    ${HSA_RUNTIME_INC_PATH}
+    ${Python_INCLUDE_DIRS}
+)
+target_link_libraries(
+    test_hidden_kernarg_repack
+    PRIVATE
+    c
+    stdc++
+    ${HSA_RUNTIME_LIB}
+    dh_comms
+    kernelDB64
+    amd_comgr
+    elf
+    rocprofiler-sdk::rocprofiler-sdk
+)
+
 # Build tests
 option(INTERCEPTOR_BUILD_TESTING "Build test examples" OFF)
 if(INTERCEPTOR_BUILD_TESTING)
@@ -226,8 +308,10 @@ message("CPack-install-prefix: ${CPACK_PACKAGING_INSTALL_PREFIX}")
 
 # Install omniprobe into <prefix>/omniprobe/
 install(TARGETS ${INTERCEPTOR_TARGET} LIBRARY DESTINATION omniprobe/lib)
+install(TARGETS extract_code_objects RUNTIME DESTINATION omniprobe/tools)
 install(PROGRAMS ${ROOT_DIR}/omniprobe/omniprobe DESTINATION omniprobe/bin)
 install(DIRECTORY ${ROOT_DIR}/omniprobe/config DESTINATION omniprobe FILES_MATCHING PATTERN "*")
+install(DIRECTORY ${ROOT_DIR}/tools DESTINATION omniprobe FILES_MATCHING PATTERN "*.py" PATTERN "*.md")
 install(FILES ${ROOT_DIR}/LICENSE DESTINATION omniprobe/share/omniprobe)
 
 # Plugin install rules are inside add_instrumentation_plugins()

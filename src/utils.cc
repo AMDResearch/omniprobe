@@ -143,6 +143,107 @@ std::string getInstrumentedName(const std::string& func_decl) {
     return result;
 }
 
+std::string getHiddenAbiInstrumentedName(const std::string& func_decl) {
+    std::string result = func_decl;
+    size_t pos = result.find_last_of(')');
+    if (pos != std::string::npos) {
+        pos = result.find_first_of(" ");
+        size_t ret_type = result.find_first_of("(");
+        if (pos > ret_type)
+            pos = -1;
+        result.insert(pos + 1, OMNIPROBE_PREFIX);
+    } else {
+        result = std::string(OMNIPROBE_PREFIX) + result;
+    }
+
+    return result;
+}
+
+std::vector<std::string> getInstrumentedNameCandidates(const std::string& func_decl) {
+    std::vector<std::string> candidates;
+    candidates.push_back(getInstrumentedName(func_decl));
+
+    std::string hidden_abi_name = getHiddenAbiInstrumentedName(func_decl);
+    if (hidden_abi_name != candidates.front())
+        candidates.push_back(hidden_abi_name);
+
+    return candidates;
+}
+
+void overlaySourceArgDescriptorLayout(arg_descriptor_t& target, const arg_descriptor_t& source_desc)
+{
+    target.source_explicit_args_length = source_desc.explicit_args_length;
+    target.source_hidden_args_length = source_desc.hidden_args_length;
+    target.source_kernarg_length = source_desc.kernarg_length;
+    target.source_hidden_args = source_desc.hidden_args;
+    if (!target.clone_hidden_args_length)
+        target.clone_hidden_args_length = target.hidden_args_length;
+}
+
+void repackInstrumentedKernArgs(void *dst, void *src, void *comms, const arg_descriptor_t& desc)
+{
+    assert(dst);
+    assert(src);
+    memset(dst, 0, desc.kernarg_length);
+    const auto *omniprobe_hidden_arg = desc.findOmniprobeHiddenArg();
+    const bool uses_hidden_omniprobe_arg = omniprobe_hidden_arg != nullptr;
+    const size_t legacy_inserted_explicit_arg_size =
+        uses_hidden_omniprobe_arg ? 0 : sizeof(void *);
+    const size_t source_explicit_args_length =
+        desc.source_explicit_args_length ? desc.source_explicit_args_length
+                                         : desc.explicit_args_length - legacy_inserted_explicit_arg_size;
+    const size_t source_hidden_args_length =
+        desc.source_hidden_args_length ? desc.source_hidden_args_length
+                                       : desc.clone_hidden_args_length;
+    const size_t source_kernarg_length =
+        desc.source_kernarg_length ? desc.source_kernarg_length
+                                   : source_explicit_args_length + source_hidden_args_length;
+
+    memcpy(dst, src, std::min(source_explicit_args_length, desc.explicit_args_length));
+
+    size_t matched_hidden_args = 0;
+    if (!desc.source_hidden_args.empty() && !desc.hidden_args.empty())
+    {
+        for (const auto &source_hidden_arg : desc.source_hidden_args)
+        {
+            const auto *clone_hidden_arg = desc.findHiddenArg(source_hidden_arg.value_kind);
+            if (!clone_hidden_arg)
+                continue;
+
+            const size_t copy_size = std::min(source_hidden_arg.size, clone_hidden_arg->size);
+            assert(source_hidden_arg.offset + copy_size <= source_kernarg_length);
+            assert(clone_hidden_arg->offset + copy_size <= desc.kernarg_length);
+            memcpy(&(((char *)dst)[clone_hidden_arg->offset]),
+                   &(((char *)src)[source_hidden_arg.offset]),
+                   copy_size);
+            matched_hidden_args++;
+        }
+    }
+
+    if (source_hidden_args_length &&
+        (desc.source_hidden_args.empty() ||
+         matched_hidden_args != desc.source_hidden_args.size()) &&
+        !uses_hidden_omniprobe_arg)
+    {
+        void *hidden_args_dst = &(((char *)dst)[desc.explicit_args_length]);
+        void *hidden_args_src = &(((char *)src)[source_explicit_args_length]);
+        assert(source_hidden_args_length <= desc.kernarg_length - desc.explicit_args_length);
+        memcpy(hidden_args_dst, hidden_args_src, source_hidden_args_length);
+    }
+
+    void **comms_loc = nullptr;
+    if (uses_hidden_omniprobe_arg)
+    {
+        assert(omniprobe_hidden_arg->size >= sizeof(void *));
+        comms_loc = reinterpret_cast<void **>(&(((char *)dst)[omniprobe_hidden_arg->offset]));
+    }
+    else
+    {
+        comms_loc = (void **)&(((char *)dst)[desc.explicit_args_length  - sizeof(void *)]);
+    }
+    *comms_loc = comms;
+}
+
 signalPool::signalPool(int initialSize/* = 8 */)
 {
 }
@@ -427,7 +528,6 @@ bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descrip
         bool have_source_desc = false;
         if (it != arg_map_.end())
         {
-            std::string strName;
             if (instrumented)
             {
                 auto itclone = it->second.find(name);
@@ -436,23 +536,23 @@ bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descrip
                     source_desc = itclone->second;
                     have_source_desc = true;
                 }
-
-                strName = getInstrumentedName(name);
             }
-            else
-                strName = name;
-            auto dit = it->second.find(strName);
-            if (dit != it->second.end())
+
+            std::vector<std::string> candidate_names =
+                instrumented ? getInstrumentedNameCandidates(name)
+                             : std::vector<std::string>{name};
+            for (const auto& strName : candidate_names)
             {
-                desc = dit->second;
-                if (have_source_desc)
+                auto dit = it->second.find(strName);
+                if (dit != it->second.end())
                 {
-                    desc.source_explicit_args_length = source_desc.explicit_args_length;
-                    desc.source_hidden_args_length = source_desc.hidden_args_length;
-                    desc.source_kernarg_length = source_desc.kernarg_length;
-                    desc.clone_hidden_args_length = source_desc.hidden_args_length;
+                    desc = dit->second;
+                    if (have_source_desc)
+                        overlaySourceArgDescriptorLayout(desc, source_desc);
+                    else if (desc.source_hidden_args.empty())
+                        desc.source_hidden_args = desc.hidden_args;
+                    return true;
                 }
-                return true;
             }
         }
     }
@@ -467,7 +567,6 @@ bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descrip
         bool have_source_desc = false;
         if (it != arg_map_.end())
         {
-            std::string strName;
             if (instrumented)
             {
                 auto itclone = it->second.find(name);
@@ -476,22 +575,23 @@ bool coCache::getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descrip
                     source_desc = itclone->second;
                     have_source_desc = true;
                 }
-                strName = getInstrumentedName(name);
             }
-            else
-                strName = name;
-            auto dit = it->second.find(strName);
-            if (dit != it->second.end())
+
+            std::vector<std::string> candidate_names =
+                instrumented ? getInstrumentedNameCandidates(name)
+                             : std::vector<std::string>{name};
+            for (const auto& strName : candidate_names)
             {
-                desc = dit->second;
-                if (have_source_desc)
+                auto dit = it->second.find(strName);
+                if (dit != it->second.end())
                 {
-                    desc.source_explicit_args_length = source_desc.explicit_args_length;
-                    desc.source_hidden_args_length = source_desc.hidden_args_length;
-                    desc.source_kernarg_length = source_desc.kernarg_length;
-                    desc.clone_hidden_args_length = source_desc.hidden_args_length;
+                    desc = dit->second;
+                    if (have_source_desc)
+                        overlaySourceArgDescriptorLayout(desc, source_desc);
+                    else if (desc.source_hidden_args.empty())
+                        desc.source_hidden_args = desc.hidden_args;
+                    return true;
                 }
-                return true;
             }
         }
     }
@@ -508,6 +608,28 @@ bool coCache::getCodeObjectRef(hsa_agent_t agent, const std::string& name, CodeO
         if (it2 != it->second.end())
         {
             ref = it2->second;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool coCache::getCodeObjectRef(hsa_agent_t agent, const std::string& name, CodeObjectRef& ref, bool instrumented)
+{
+    if (!instrumented)
+        return getCodeObjectRef(agent, name, ref);
+
+    lock_guard<std::mutex> lock(mutex_);
+    auto it = kernel_co_map_.find(agent);
+    if (it == kernel_co_map_.end())
+        return false;
+
+    for (const auto& candidate_name : getInstrumentedNameCandidates(name))
+    {
+        auto ref_it = it->second.find(candidate_name);
+        if (ref_it != it->second.end())
+        {
+            ref = ref_it->second;
             return true;
         }
     }
@@ -766,7 +888,12 @@ uint64_t coCache::findInstrumentedAlternative(hsa_executable_symbol_t symbol, co
     }
     if (!result)
     {
-        result = findAlternative(symbol, getInstrumentedName(std::string(name)), queue_agent);
+        for (const auto& candidate_name : getInstrumentedNameCandidates(std::string(name)))
+        {
+            result = findAlternative(symbol, candidate_name, queue_agent);
+            if (result)
+                break;
+        }
         if (result)
         {
             lock_guard<std::mutex> lock(mutex);
@@ -1130,9 +1257,21 @@ void KernelArgHelper::computeKernargData(amd_comgr_metadata_node_t exec_map)
                         size_t arg_size = std::stoul(get_metadata_string(parm_size));
                         size_t arg_offset = std::stoul(get_metadata_string(parm_offset));
                         std::string parm_name = get_metadata_string(parm_type);
+                        amd_comgr_status_t name_status;
+                        amd_comgr_metadata_node_t parm_decl_name;
+                        std::string parm_decl_name_value;
+                        name_status = amd_comgr_metadata_lookup(parm_map, ".name", &parm_decl_name);
+                        if (name_status == AMD_COMGR_STATUS_SUCCESS)
+                            parm_decl_name_value = get_metadata_string(parm_decl_name);
                         //std::cout << "Name, Offset, Size\n";
                         //std::cout << parm_name << "," << arg_offset << "," << arg_size << std::endl;
-                        if (parm_name.rfind("hidden_",0) == 0)
+                        if (parm_decl_name_value == OMNIPROBE_HIDDEN_ARG)
+                        {
+                            desc.hidden_args.push_back({OMNIPROBE_HIDDEN_ARG, arg_offset, arg_size});
+                            desc.hidden_args_length = std::max(desc.hidden_args_length,
+                                                               arg_offset + arg_size);
+                        }
+                        else if (parm_name.rfind("hidden_",0) == 0)
                         {
                             desc.hidden_args.push_back({parm_name, arg_offset, arg_size});
                             desc.hidden_args_length = std::max(desc.hidden_args_length,
@@ -1151,6 +1290,8 @@ void KernelArgHelper::computeKernargData(amd_comgr_metadata_node_t exec_map)
             desc.source_explicit_args_length = desc.explicit_args_length;
             desc.source_hidden_args_length = desc.hidden_args_length;
             desc.source_kernarg_length = desc.kernarg_length;
+            desc.clone_hidden_args_length = desc.hidden_args_length;
+            desc.source_hidden_args = desc.hidden_args;
             kernels_[strName] = desc;
         }
     }

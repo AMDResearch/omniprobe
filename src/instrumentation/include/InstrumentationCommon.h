@@ -64,6 +64,10 @@ llvm::Function *cloneKernelWithExtraArg(llvm::Function *OrigKernel,
                                         llvm::Module &M,
                                         llvm::ValueToValueMapTy &VMap);
 
+// Return the trailing instrumentation buffer argument that was appended by
+// cloneKernelWithExtraArg().
+llvm::Argument *getInstrumentationBufferArg(llvm::Function *Kernel);
+
 // Represents a single scope entry: a file pattern with optional line ranges.
 struct ScopeEntry {
   std::string file_pattern;

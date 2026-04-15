@@ -277,6 +277,55 @@ reads the cached kernel bitcode, instruments it, and writes instrumented
 variants back to the cache. Triton then loads the instrumented versions on the
 next run.
 
+## Binary code-object instrumentation
+
+### Managed hsaco cache (`--hsaco-input`)
+
+```bash
+omniprobe -i -a Heatmap \
+    --hsaco-input ./host_app_or_kernel.hsaco \
+    --cache-location ./omniprobe-hsaco-cache \
+    -- ./host_app ./kernel.hsaco
+```
+
+Use `--hsaco-input` for binary-only GPU code that cannot be rebuilt with
+Omniprobe's LLVM pass. Inputs may be standalone `.hsaco` files or ordinary ELF
+executables/shared libraries that contain bundled AMDGPU code objects.
+Omniprobe extracts bundled code objects automatically.
+
+When an input (or an optional `--carrier-input`) already contains matching
+instrumented clone kernels, Omniprobe copies that real instrumented code object
+into `--cache-location`. Otherwise it falls back to rewriting surrogate clone
+artifacts. Either way, the runtime consumes the cache through the normal
+`LOGDUR_KERNEL_CACHE` mechanism.
+
+`--hsaco-rebuild-mode exact` optionally forces Omniprobe to first rebuild each
+resolved source code object through the explicit code-object rebuild path before
+carrier selection or surrogate rewriting. This is mainly a validation and
+normalization path for the binary-only backend, not a different instrumentation
+ABI. The current managed-cache flow supports `exact` rebuilds here.
+
+`--hsaco-rebuild-mode abi-changing` now exposes the same pre-cache rebuild stage
+under descriptor regeneration. Omniprobe currently uses the original
+descriptor's resource-count evidence to drive that no-op rebuild path, and it
+fails closed if the input manifest does not provide the required descriptor
+granulation fields.
+
+For the current managed-cache no-op source-rebuild flow, Omniprobe preserves the
+original raw descriptor bytes even under `abi-changing` and records that
+descriptor policy in the rebuild report. This avoids target-specific descriptor
+drift from LLVM's assembler while the broader ABI-changing instrumentation path
+is still being brought up.
+
+When `--hsaco-input` is present, `--cache-location` is treated as an Omniprobe
+managed code-object cache, not as a Triton cache. If `--cache-location` is
+omitted, Omniprobe creates a temporary cache directory automatically.
+
+`--carrier-input` may be used to point Omniprobe at an already instrumented
+code object or binary. This is useful when you have a compile-time instrumented
+carrier build and want the binary-only cache path to prefer real instrumented
+`.text` over donor-slot surrogates.
+
 ### Instrumentation scope (`--instrumentation-scope`)
 
 ```bash

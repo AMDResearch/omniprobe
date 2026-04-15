@@ -18,15 +18,28 @@ set(INST_PLUGIN "${CMAKE_BINARY_DIR}/lib/plugins/libAMDGCNSubmitAddressMessages-
 # compatibility with getBitcodePath() until it is updated to look in ../bitcode/.
 set(DH_COMMS_LIB_DIR "${CMAKE_BINARY_DIR}/external/dh_comms/lib")
 set(BITCODE_DIR "${CMAKE_BINARY_DIR}/lib/bitcode")
+set(DH_COMMS_BITCODE_FILES
+    ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna2_co5.bc
+    ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna3_co5.bc
+    ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna2_co6.bc
+    ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna3_co6.bc
+)
+
+foreach(DH_COMMS_ARCH IN LISTS CMAKE_HIP_ARCHITECTURES)
+    string(REGEX REPLACE ":.*$" "" DH_COMMS_ARCH_BASE "${DH_COMMS_ARCH}")
+    list(APPEND DH_COMMS_BITCODE_FILES
+        ${DH_COMMS_LIB_DIR}/dh_comms_dev_${DH_COMMS_ARCH_BASE}_co5.bc
+        ${DH_COMMS_LIB_DIR}/dh_comms_dev_${DH_COMMS_ARCH_BASE}_co6.bc
+    )
+endforeach()
+
+list(REMOVE_DUPLICATES DH_COMMS_BITCODE_FILES)
 
 # Copy all bitcode files to build/lib/bitcode/
 add_custom_target(copy_bitcode ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${BITCODE_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna2_co5.bc
-        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna3_co5.bc
-        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna2_co6.bc
-        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna3_co6.bc
+        ${DH_COMMS_BITCODE_FILES}
         ${BITCODE_DIR}/
     DEPENDS dh_comms_bc
     COMMENT "Copying bitcode files to build/lib/bitcode/"
@@ -87,6 +100,25 @@ add_dependencies(block_filter_test copy_bitcode AMDGCNSubmitAddressMessages-rocm
 # object rather than being embedded in the executable's .hip_fatbin section.
 
 set(MODULE_LOAD_HSACO "${CMAKE_CURRENT_BINARY_DIR}/module_load_kernel.hsaco")
+set(MODULE_LOAD_PLAIN_HSACO "${CMAKE_CURRENT_BINARY_DIR}/module_load_kernel_plain.hsaco")
+set(MODULE_LOAD_MANUAL_CARRIER_HSACO "${CMAKE_CURRENT_BINARY_DIR}/module_load_manual_carrier_kernel.hsaco")
+
+add_custom_command(
+    OUTPUT ${MODULE_LOAD_PLAIN_HSACO}
+    COMMAND ${CMAKE_HIP_COMPILER}
+        -x hip
+        --offload-device-only
+        --no-gpu-bundle-output
+        --offload-arch=${CMAKE_HIP_ARCHITECTURES}
+        -Werror
+        -Wno-error=unused-parameter
+        -o ${MODULE_LOAD_PLAIN_HSACO}
+        ${CMAKE_CURRENT_SOURCE_DIR}/module_load_kernel.hip
+    DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/module_load_kernel.hip
+    COMMENT "Compiling module_load_kernel.hip → plain .hsaco"
+)
+add_custom_target(module_load_kernel_plain_hsaco ALL DEPENDS ${MODULE_LOAD_PLAIN_HSACO})
 
 # Compile kernel.hip → .hsaco with instrumentation plugin
 add_custom_command(
@@ -109,10 +141,27 @@ add_custom_command(
 )
 add_custom_target(module_load_kernel_hsaco ALL DEPENDS ${MODULE_LOAD_HSACO})
 
+add_custom_command(
+    OUTPUT ${MODULE_LOAD_MANUAL_CARRIER_HSACO}
+    COMMAND hipcc
+        -x hip
+        --offload-device-only
+        --no-gpu-bundle-output
+        --offload-arch=${CMAKE_HIP_ARCHITECTURES}
+        -I${DH_COMMS_INCLUDE_DIR}
+        -Werror
+        -Wno-error=unused-parameter
+        -o ${MODULE_LOAD_MANUAL_CARRIER_HSACO}
+        ${CMAKE_CURRENT_SOURCE_DIR}/module_load_manual_carrier_kernel.hip
+    DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/module_load_manual_carrier_kernel.hip
+    COMMENT "Compiling module_load_manual_carrier_kernel.hip → manual carrier .hsaco"
+)
+add_custom_target(module_load_manual_carrier_hsaco ALL DEPENDS ${MODULE_LOAD_MANUAL_CARRIER_HSACO})
+
 # Host program: uses hipModuleLoad to load the .hsaco at runtime.
 # No -fgpu-rdc, no instrumentation plugin — this is a plain HIP host-only program.
 add_executable(module_load_test module_load_test.cpp)
 set_source_files_properties(module_load_test.cpp PROPERTIES LANGUAGE HIP)
 target_link_libraries(module_load_test PRIVATE amdhip64)
 add_dependencies(module_load_test module_load_kernel_hsaco)
-

@@ -43,6 +43,13 @@ using namespace llvm;
 namespace instrumentation {
 namespace common {
 
+static std::string normalizeArchName(std::string arch) {
+  const size_t feature_pos = arch.find(':');
+  if (feature_pos != std::string::npos)
+    arch.erase(feature_pos);
+  return arch;
+}
+
 std::string getBitcodePath(const llvm::Module &M) {
   Dl_info dl_info;
   if (dladdr(reinterpret_cast<void *>(&getBitcodePath), &dl_info) == 0) {
@@ -106,7 +113,19 @@ std::string getBitcodePath(const llvm::Module &M) {
     arch = "unknown";
   }
 
-  if (arch == "gfx940" || arch == "gfx941" || arch == "gfx942") {
+  std::string normalized_arch = normalizeArchName(arch);
+  std::string ExactBitcodePath =
+      BitcodeDir + "/dh_comms_dev_" + normalized_arch + CodeObjectVersion +
+      ".bc";
+  if (normalized_arch != "unknown" &&
+      llvm::sys::fs::exists(ExactBitcodePath)) {
+    llvm::errs() << "Using exact-arch device module " << ExactBitcodePath
+                 << "\n";
+    return ExactBitcodePath;
+  }
+
+  if (normalized_arch == "gfx940" || normalized_arch == "gfx941" ||
+      normalized_arch == "gfx942") {
     CDNAVersion = "_cdna3";
   } else {
     CDNAVersion = "_cdna2";
@@ -241,6 +260,13 @@ llvm::Function *cloneKernelWithExtraArg(llvm::Function *OrigKernel,
                     Returns);
 
   return F;
+}
+
+llvm::Argument *getInstrumentationBufferArg(llvm::Function *Kernel) {
+  if (!Kernel || Kernel->arg_empty())
+    return nullptr;
+
+  return Kernel->getArg(Kernel->arg_size() - 1);
 }
 
 // --- InstrumentationScope implementation ---
