@@ -19,11 +19,9 @@ check_omniprobe
 HIPCC="${HIPCC:-/opt/rocm/bin/hipcc}"
 HIP_ARCH="${HIP_ARCH:-gfx1030}"
 PLUGIN_SO="${BUILD_DIR}/lib/plugins/libAMDGCNSubmitAddressMessages-rocm.so"
-GENERATOR="${REPO_ROOT}/tools/probes/generate_probe_surrogates.py"
+PREPARE_BUNDLE="${REPO_ROOT}/tools/probes/prepare_probe_bundle.py"
 TEST_SOURCE="${REPO_ROOT}/tests/test_kernels/simple_heatmap_test.cpp"
 TEST_INCLUDE_DIR="${REPO_ROOT}/tests/test_kernels"
-DH_COMMS_INCLUDE_DIR="${REPO_ROOT}/external/dh_comms/include"
-PROBE_ABI_INCLUDE_DIR="${REPO_ROOT}/inc"
 
 if [ ! -x "$HIPCC" ] || [ ! -x "$PLUGIN_SO" ] || [ ! -x "$OMNIPROBE" ]; then
     echo -e "${YELLOW}SKIP: ROCm toolchain or Omniprobe plugin not available${NC}"
@@ -33,9 +31,9 @@ if [ ! -x "$HIPCC" ] || [ ! -x "$PLUGIN_SO" ] || [ ! -x "$OMNIPROBE" ]; then
     return 0 2>/dev/null || exit 0
 fi
 
-if [ ! -f "$GENERATOR" ] || [ ! -f "$TEST_SOURCE" ]; then
+if [ ! -f "$PREPARE_BUNDLE" ] || [ ! -f "$TEST_SOURCE" ]; then
     echo -e "${RED}ERROR: required probe smoke inputs are missing${NC}"
-    echo "  Generator: $GENERATOR"
+    echo "  Bundle tool: $PREPARE_BUNDLE"
     echo "  Test source: $TEST_SOURCE"
     exit 1
 fi
@@ -48,6 +46,7 @@ GENERATED_HIP="${WORK_DIR}/generated_surrogates.hip"
 GENERATED_MANIFEST="${WORK_DIR}/generated_surrogates.json"
 HELPER_SOURCE="${WORK_DIR}/smoke_helper.hip"
 HELPER_BC="${WORK_DIR}/smoke_helper.bc"
+PREPARE_LOG="${WORK_DIR}/prepare_bundle.json"
 TEST_BINARY="${WORK_DIR}/simple_surrogate_test"
 COMPILE_LOG="${WORK_DIR}/compile.log"
 RUNTIME_LOG="${WORK_DIR}/runtime.log"
@@ -56,7 +55,7 @@ cat > "$SPEC_FILE" <<'EOF'
 version: 1
 
 helpers:
-  source: probes/generated_helper.hip
+  source: smoke_helper.hip
   namespace: omniprobe_user
 
 defaults:
@@ -88,9 +87,6 @@ probes:
 EOF
 
 cat > "$HELPER_SOURCE" <<'EOF'
-#include <stdint.h>
-#include "generated_surrogates.hip"
-
 using namespace omniprobe::probe_abi_v1;
 
 extern "C" __device__ void load_probe(
@@ -104,17 +100,14 @@ extern "C" __device__ void load_probe(
 }
 EOF
 
-python3 "$GENERATOR" "$SPEC_FILE" \
-    --hip-output "$GENERATED_HIP" \
-    --manifest-output "$GENERATED_MANIFEST"
+python3 "$PREPARE_BUNDLE" "$SPEC_FILE" \
+    --output-dir "$WORK_DIR" \
+    --hipcc "$HIPCC" \
+    --arch "$HIP_ARCH" > "$PREPARE_LOG"
 
-"$HIPCC" -x hip --offload-device-only --offload-arch="${HIP_ARCH}" -fgpu-rdc \
-    -emit-llvm -c \
-    -I"$DH_COMMS_INCLUDE_DIR" \
-    -I"$PROBE_ABI_INCLUDE_DIR" \
-    -I"$WORK_DIR" \
-    -o "$HELPER_BC" \
-    "$HELPER_SOURCE"
+GENERATED_HIP="${WORK_DIR}/generated_probe_surrogates.hip"
+GENERATED_MANIFEST="${WORK_DIR}/generated_probe_manifest.json"
+HELPER_BC="${WORK_DIR}/generated_probe_helpers.bc"
 
 OMNIPROBE_PROBE_MANIFEST="$GENERATED_MANIFEST" \
 OMNIPROBE_PROBE_BITCODE="$HELPER_BC" \

@@ -48,6 +48,7 @@ assert payload["version"] == 1
 assert len(payload["probes"]) == 2
 assert payload["probes"][0]["inject"]["contract"] == "kernel_lifecycle_v1"
 assert payload["probes"][1]["payload"]["mode"] == "vector"
+assert payload["probes"][0]["capture"]["builtins"] == ["grid_dim", "block_dim"]
 PY
     then
         echo -e "  ${GREEN}✓ PASS${NC} - Valid v1 spec normalized successfully"
@@ -85,10 +86,16 @@ assert "__omniprobe_probe_kernel_timing_kernel_exit_surrogate" in names
 assert "__omniprobe_probe_global_loads_surrogate" in names
 contracts = {entry["surrogate"]: entry["contract"] for entry in surrogates}
 assert contracts["__omniprobe_probe_global_loads_surrogate"] == "memory_op_v1"
+entry = next(item for item in surrogates if item["probe_id"] == "kernel_timing")
+assert entry["helper_context"]["builtins"] == ["grid_dim", "block_dim"]
+assert entry["capture_layout"]["struct_fields"] == [{"name": "n"}]
+assert entry["capture_layout"]["event_fields"] == []
 PY
     then
         if grep -q "memory_op_event event" "$GENERATED_HIP_OUT" && \
-           grep -q "kernel_lifecycle_event event" "$GENERATED_HIP_OUT"; then
+           grep -q "kernel_lifecycle_event event" "$GENERATED_HIP_OUT" && \
+           ! grep -q "dim3_capture grid_dim" "$GENERATED_HIP_OUT" && \
+           ! grep -q "dim3_capture block_dim" "$GENERATED_HIP_OUT"; then
             echo -e "  ${GREEN}✓ PASS${NC} - Surrogate source and manifest generated as expected"
             TESTS_PASSED=$((TESTS_PASSED + 1))
         else

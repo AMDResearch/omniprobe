@@ -15,6 +15,14 @@ Current scope:
   - emits generated surrogate HIP/C++ scaffolding plus a JSON manifest
   - gives the LLVM and code-object frontends a stable generated call target for
     each probe instead of forcing them to encode user-helper signatures directly
+  - treats `capture.builtins` as helper-context requirements rather than
+    marshaled capture-struct fields, so execution-context values stay
+    helper-visible instead of becoming part of the stable capture ABI
+- `prepare_probe_bundle.py`
+  - packages the user-facing path around the existing manifest/bitcode hooks
+  - validates the v1 spec, generates surrogates, wraps the user helper source,
+    compiles helper bitcode, and emits a small env/report bundle that compile-
+    time Omniprobe instrumentation can consume directly
 
 Current parser constraints:
 

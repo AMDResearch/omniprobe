@@ -216,6 +216,16 @@ The implementation bias should therefore be:
 - optional freezing/marshaling only where a specific frontend or analysis truly
   requires it
 
+In the current generated-surrogate tooling, that policy is reflected directly in
+the manifest shape:
+
+- `capture_layout.struct_fields` describes values materialized into the generated
+  capture struct
+- `capture_layout.event_fields` describes dynamic per-site values carried in the
+  typed event contract
+- `helper_context.builtins` describes execution-context requirements that helper
+  code is expected to read directly
+
 The important constraint is that YAML chooses from a small number of stable
 contracts. It should not allow arbitrary per-probe ad hoc helper signatures,
 because that would make the binary frontend brittle and would prevent the LLVM

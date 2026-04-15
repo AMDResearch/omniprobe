@@ -47,15 +47,6 @@ EMISSION_MODE_EXPR = {
     "vector": "emission_mode::vector",
 }
 
-BUILTIN_FIELDS = {
-    "grid_dim": ("dim3_capture", "grid_dim"),
-    "block_dim": ("dim3_capture", "block_dim"),
-    "block_idx": ("dim3_capture", "block_idx"),
-    "thread_idx": ("dim3_capture", "thread_idx"),
-    "dispatch_id": ("uint64_t", "dispatch_id"),
-}
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -220,8 +211,7 @@ def render_capture_struct(site: dict[str, object]) -> str:
     capture = site["capture"]
 
     kernel_args = capture["kernel_args"]
-    builtins = capture["builtins"]
-    if not kernel_args and not builtins:
+    if not kernel_args:
         lines.append("  uint8_t reserved = 0;")
         lines.append("};")
         return "\n".join(lines)
@@ -229,9 +219,6 @@ def render_capture_struct(site: dict[str, object]) -> str:
     for arg in kernel_args:
         arg_name = sanitize_identifier(str(arg["name"]))
         lines.append(f"  {cpp_type_for_kernel_arg(arg)} {arg_name}{{}};")
-    for builtin in builtins:
-        field_type, field_name = BUILTIN_FIELDS[builtin]
-        lines.append(f"  {field_type} {field_name}{{}};")
     lines.append("};")
     return "\n".join(lines)
 
@@ -334,12 +321,6 @@ def render_source(spec: dict[str, object], sites: list[dict[str, object]], manif
         "",
         "using namespace omniprobe::probe_abi_v1;",
         "",
-        "struct dim3_capture {",
-        "  uint32_t x = 0;",
-        "  uint32_t y = 0;",
-        "  uint32_t z = 0;",
-        "};",
-        "",
     ]
     for index, entry in enumerate(manifest_entries):
         if index:
@@ -348,6 +329,12 @@ def render_source(spec: dict[str, object], sites: list[dict[str, object]], manif
         lines.append(f"// Probe: {entry['probe_id']}")
         lines.append(f"// Surrogate: {entry['surrogate']}")
         lines.append(f"// Contract: {entry['contract']}")
+        helper_context = entry["helper_context"]["builtins"]
+        if helper_context:
+            lines.append(
+                "// Helper-visible execution context: "
+                + ", ".join(helper_context)
+            )
     lines.append("")
     lines.append("\n\n".join(struct_blocks))
     lines.append("")
@@ -363,6 +350,14 @@ def flatten_manifest_entries(sites: list[dict[str, object]]) -> list[dict[str, o
     entries: list[dict[str, object]] = []
     for site in sites:
         _block, manifest = render_probe_block(site)
+        capture = site["capture"]
+        manifest["capture_layout"] = {
+            "struct_fields": capture["kernel_args"],
+            "event_fields": capture["instruction"],
+        }
+        manifest["helper_context"] = {
+            "builtins": capture["builtins"],
+        }
         entries.append(manifest)
     return entries
 

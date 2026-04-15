@@ -513,6 +513,12 @@ The practical consequence is that any YAML notion of `builtins` should be
 treated as a helper-context requirement rather than as a mandate to marshal
 those values into the generated capture struct.
 
+The current surrogate generator makes that separation explicit by emitting:
+
+- capture-struct layout metadata for marshaled kernel arguments
+- event-field metadata for probe-site dynamic values
+- helper-context metadata for builtin execution-context requirements
+
 ## Current Branch State
 
 At the time of writing, the branch has established the following:
