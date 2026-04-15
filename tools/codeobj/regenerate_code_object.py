@@ -502,6 +502,83 @@ def patch_output_metadata_note(output_path: Path, manifest: dict) -> None:
     output_path.write_bytes(data)
 
 
+def find_descriptor(manifest: dict, descriptor_name: str) -> dict:
+    for descriptor in manifest.get("kernels", {}).get("descriptors", []):
+        if descriptor.get("name") == descriptor_name:
+            return descriptor
+    raise SystemExit(f"descriptor {descriptor_name!r} not found in manifest")
+
+
+def find_symbol(records: list[dict], name: str) -> dict:
+    for record in records:
+        if record.get("name") == name:
+            return record
+    raise SystemExit(f"symbol {name!r} not found in manifest")
+
+
+def patch_output_clone_descriptors(
+    *,
+    output_path: Path,
+    manifest: dict,
+    args: argparse.Namespace,
+    tool_dir: Path,
+    temp_dir_path: Path,
+) -> None:
+    clone_intents = manifest.get("clone_intents", [])
+    if not isinstance(clone_intents, list) or not clone_intents:
+        return
+
+    inspect_tool = tool_dir / "inspect_code_object.py"
+    output_manifest_path = temp_dir_path / "output.manifest.json"
+    command = [
+        args.python,
+        str(inspect_tool),
+        str(output_path),
+        "--output",
+        str(output_manifest_path),
+    ]
+    if args.llvm_readelf:
+        command.extend(["--llvm-readelf", args.llvm_readelf])
+    run(command)
+
+    output_manifest = load_json(output_manifest_path)
+    output_descriptor_symbols = output_manifest.get("kernels", {}).get("descriptor_symbols", [])
+    output_function_symbols = output_manifest.get("kernels", {}).get("function_symbols", [])
+    data = bytearray(output_path.read_bytes())
+
+    for intent in clone_intents:
+        if not isinstance(intent, dict):
+            continue
+        clone_kernel = intent.get("clone_kernel")
+        clone_descriptor_name = intent.get("clone_descriptor")
+        if not isinstance(clone_kernel, str) or not isinstance(clone_descriptor_name, str):
+            continue
+
+        source_descriptor = find_descriptor(manifest, clone_descriptor_name)
+        output_descriptor = find_descriptor(output_manifest, clone_descriptor_name)
+        output_descriptor_symbol = find_symbol(output_descriptor_symbols, clone_descriptor_name)
+        output_function_symbol = find_symbol(output_function_symbols, clone_kernel)
+
+        descriptor_bytes = bytearray.fromhex(str(source_descriptor.get("bytes_hex", "")))
+        entry_offset = int(output_function_symbol.get("value", 0)) - int(
+            output_descriptor_symbol.get("value", 0)
+        )
+        struct.pack_into("<Q", descriptor_bytes, 16, entry_offset)
+
+        file_offset = int(output_descriptor.get("file_offset", -1))
+        if file_offset < 0:
+            raise SystemExit(f"output descriptor {clone_descriptor_name!r} is missing file_offset")
+        expected_size = int(output_descriptor.get("size", 0))
+        if expected_size and len(descriptor_bytes) != expected_size:
+            raise SystemExit(
+                f"descriptor size mismatch for {clone_descriptor_name!r}: "
+                f"{len(descriptor_bytes)} != {expected_size}"
+            )
+        data[file_offset : file_offset + len(descriptor_bytes)] = descriptor_bytes
+
+    output_path.write_bytes(data)
+
+
 def main() -> int:
     args = parse_args()
     input_path = Path(args.input).resolve()
@@ -615,6 +692,14 @@ def main() -> int:
         )
         if args.add_hidden_abi_clone:
             patch_output_metadata_note(output_path, load_json(working_manifest_path))
+        if clone_result is not None:
+            patch_output_clone_descriptors(
+                output_path=output_path,
+                manifest=load_json(working_manifest_path),
+                args=args,
+                tool_dir=tool_dir,
+                temp_dir_path=temp_dir_path,
+            )
 
         report = {
             "operation": "whole-object-regeneration-scaffold",

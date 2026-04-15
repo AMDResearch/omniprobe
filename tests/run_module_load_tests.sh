@@ -125,6 +125,91 @@ else
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+################################################################################
+# Test: donor-free clone descriptor fidelity preserves the source kernel's
+# launch-control fields while extending metadata with hidden_omniprobe_ctx
+################################################################################
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="module_load_binary_only_rewrite_clone_descriptor_fidelity"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+echo "  Validate donor-free clone descriptor control fields remain aligned with the source kernel"
+
+FIDELITY_OUT="$OUTPUT_DIR/${TEST_NAME}.out"
+
+if [ -n "$SURROGATE_HSACO" ] && \
+   PYTHONDONTWRITEBYTECODE=1 python3 "$INSPECT_CODE_OBJECT" "$MODULE_LOAD_PLAIN_HSACO" \
+      --output "$OUTPUT_DIR/${TEST_NAME}.source.manifest.json" >/dev/null 2>&1 && \
+   PYTHONDONTWRITEBYTECODE=1 python3 "$INSPECT_CODE_OBJECT" "$SURROGATE_HSACO" \
+      --output "$OUTPUT_DIR/${TEST_NAME}.surrogate.manifest.json" >/dev/null 2>&1 && \
+   python3 - "$OUTPUT_DIR/${TEST_NAME}.source.manifest.json" "$OUTPUT_DIR/${TEST_NAME}.surrogate.manifest.json" > "$FIDELITY_OUT" 2>&1 <<'PY'; then
+import json
+import sys
+from pathlib import Path
+
+source = json.loads(Path(sys.argv[1]).read_text())
+surrogate = json.loads(Path(sys.argv[2]).read_text())
+
+def find_kernel(manifest, name):
+    for kernel in manifest["kernels"]["metadata"]["kernels"]:
+        if kernel.get("name") == name:
+            return kernel
+    raise SystemExit(f"kernel {name!r} not found")
+
+def find_descriptor(manifest, name):
+    for descriptor in manifest["kernels"]["descriptors"]:
+        if descriptor.get("name") == name:
+            return descriptor
+    raise SystemExit(f"descriptor {name!r} not found")
+
+source_kernel = find_kernel(source, "mlk")
+clone_kernel = find_kernel(surrogate, "__amd_crk_mlk")
+source_descriptor = find_descriptor(source, "mlk.kd")
+clone_descriptor = find_descriptor(surrogate, "__amd_crk_mlk.kd")
+
+if clone_descriptor["compute_pgm_rsrc1"]["raw_value"] != source_descriptor["compute_pgm_rsrc1"]["raw_value"]:
+    raise SystemExit(
+        "compute_pgm_rsrc1 drifted: "
+        f"{clone_descriptor['compute_pgm_rsrc1']['raw_value']} != "
+        f"{source_descriptor['compute_pgm_rsrc1']['raw_value']}"
+    )
+if clone_descriptor["compute_pgm_rsrc2"]["raw_value"] != source_descriptor["compute_pgm_rsrc2"]["raw_value"]:
+    raise SystemExit(
+        "compute_pgm_rsrc2 drifted: "
+        f"{clone_descriptor['compute_pgm_rsrc2']['raw_value']} != "
+        f"{source_descriptor['compute_pgm_rsrc2']['raw_value']}"
+    )
+if clone_descriptor["kernel_code_properties"]["raw_value"] != source_descriptor["kernel_code_properties"]["raw_value"]:
+    raise SystemExit(
+        "kernel_code_properties drifted: "
+        f"{clone_descriptor['kernel_code_properties']['raw_value']} != "
+        f"{source_descriptor['kernel_code_properties']['raw_value']}"
+    )
+
+source_args = [
+    (arg.get("offset"), arg.get("size"), arg.get("value_kind"), arg.get("name"))
+    for arg in source_kernel["args"]
+]
+clone_args = [
+    (arg.get("offset"), arg.get("size"), arg.get("value_kind"), arg.get("name"))
+    for arg in clone_kernel["args"]
+]
+expected_clone_args = source_args + [(224, 8, "hidden_omniprobe_ctx", "hidden_omniprobe_ctx")]
+if clone_args != expected_clone_args:
+    raise SystemExit(
+        "clone metadata args did not preserve the source hidden-arg tail as expected"
+    )
+
+print("descriptor-control-fields-preserved")
+PY
+    echo -e "  ${GREEN}✓ PASS${NC} - Donor-free clone descriptor preserved source launch-control fields"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Donor-free clone descriptor fidelity check failed"
+    cat "$FIDELITY_OUT" 2>/dev/null || true
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="module_load_binary_only_rewrite_donor_slot_unavailable"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
