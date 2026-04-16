@@ -1,0 +1,28 @@
+version: 1
+
+helpers:
+  source: helpers/call_trace.hip
+  namespace: omniprobe_user
+
+defaults:
+  emission: scalar
+  lane_headers: false
+  state: none
+
+probes:
+  - id: call_trace
+    target:
+      kernels: ["simple_kernel"]
+      match:
+        kind: function_name
+        values: ["helper_target"]
+    inject:
+      when: [call_before, call_after]
+      helper: call_trace_probe
+      contract: call_v1
+    payload:
+      mode: scalar
+      message: custom
+    capture:
+      instruction: [callee]
+      builtins: [dispatch_id]

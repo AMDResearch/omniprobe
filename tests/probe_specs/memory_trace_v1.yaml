@@ -1,0 +1,33 @@
+version: 1
+
+helpers:
+  source: helpers/memory_trace.hip
+  namespace: omniprobe_user
+
+defaults:
+  emission: vector
+  lane_headers: true
+  state: none
+
+probes:
+  - id: memory_trace
+    target:
+      kernels: ["simple_kernel"]
+      match:
+        kind: isa_mnemonic
+        values: [global_load, flat_load, global_store, flat_store]
+    inject:
+      when: memory_op
+      helper: memory_trace_probe
+      contract: memory_op_v1
+    payload:
+      mode: vector
+      message: address
+    capture:
+      instruction: [address, bytes, addr_space, access_kind]
+      kernel_args:
+        - name: data
+          type: u64
+        - name: size
+          type: u64
+      builtins: [block_idx, thread_idx]

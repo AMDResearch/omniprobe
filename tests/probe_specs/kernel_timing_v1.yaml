@@ -1,0 +1,29 @@
+version: 1
+
+helpers:
+  source: helpers/kernel_timing.hip
+  namespace: omniprobe_user
+
+defaults:
+  emission: scalar
+  lane_headers: false
+  state: none
+
+probes:
+  - id: kernel_timing
+    target:
+      kernels: ["simple_kernel"]
+    inject:
+      when: [kernel_entry, kernel_exit]
+      helper: kernel_timing_probe
+      contract: kernel_lifecycle_v1
+    payload:
+      mode: scalar
+      message: time_interval
+    capture:
+      builtins: [grid_dim, block_dim, block_idx, thread_idx, dispatch_id]
+      kernel_args:
+        - name: data
+          type: u64
+        - name: size
+          type: u64

@@ -75,28 +75,37 @@ run_suite "Handler tests" "${SCRIPT_DIR}/run_handler_tests.sh"
 # Suite 2: Probe spec validation
 run_suite "Probe spec validation" "${SCRIPT_DIR}/run_probe_spec_tests.sh"
 
-# Suite 3: Probe surrogate smoke test
+# Suite 3: Probe helper examples
+run_suite "Probe helper examples" "${SCRIPT_DIR}/run_probe_helper_example_tests.sh"
+
+# Suite 4: Probe surrogate smoke test
 run_suite "Probe surrogate smoke" "${SCRIPT_DIR}/run_probe_surrogate_smoke_tests.sh"
 
-# Suite 4: Probe lifecycle smoke test
+# Suite 5: Probe lifecycle smoke test
 run_suite "Probe lifecycle smoke" "${SCRIPT_DIR}/run_probe_lifecycle_smoke_tests.sh"
 
-# Suite 5: Library filter chain (has its own build step)
+# Suite 6: Library filter chain (has its own build step)
 run_suite "Library filter chain" "${SCRIPT_DIR}/library_filter_chain/run_test.sh"
 
-# Suite 6: Code-object round-trip and donor-free regeneration scaffold
+# Suite 7: External code-object donor-free regeneration
+run_suite "External code-object regeneration" "${SCRIPT_DIR}/run_codeobj_external_regen_tests.sh"
+
+# Suite 8: Code-object round-trip and donor-free regeneration scaffold
 run_suite "Code-object round-trip" "${SCRIPT_DIR}/run_codeobj_roundtrip_tests.sh"
 
-# Suite 7: hipBLASLt instrumentation (requires INSTRUMENTED_HIPBLASLT_LIB_DIR)
+# Suite 9: rocPRIM donor-free breadth
+run_suite "rocPRIM donor-free breadth" "${SCRIPT_DIR}/run_codeobj_rocprim_breadth_tests.sh"
+
+# Suite 10: hipBLASLt instrumentation (requires INSTRUMENTED_HIPBLASLT_LIB_DIR)
 run_suite "hipBLASLt instrumentation" "${SCRIPT_DIR}/hipblaslt/run_test.sh"
 
-# Suite 8: rocBLAS integration (requires INSTRUMENTED_ROCBLAS_LIB_DIR)
+# Suite 11: rocBLAS integration (requires INSTRUMENTED_ROCBLAS_LIB_DIR)
 run_suite "rocBLAS integration" "${SCRIPT_DIR}/rocblas_filter/run_test.sh"
 
-# Suite 9: rocBLAS + hipBLASLt combined (requires INSTRUMENTED_ROCBLAS_LIB_DIR + INSTRUMENTED_HIPBLASLT_LIB_DIR)
+# Suite 12: rocBLAS + hipBLASLt combined (requires INSTRUMENTED_ROCBLAS_LIB_DIR + INSTRUMENTED_HIPBLASLT_LIB_DIR)
 run_suite "rocBLAS + hipBLASLt combined" "${SCRIPT_DIR}/rocblas_hipblaslt/run_test.sh"
 
-# Suite 10: Triton integration (requires TRITON_DIR)
+# Suite 13: Triton integration (requires TRITON_DIR)
 run_suite "Triton integration" "${SCRIPT_DIR}/triton/run_test.sh"
 
 # Summary

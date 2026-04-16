@@ -1,0 +1,27 @@
+version: 1
+
+helpers:
+  source: helpers/basic_block_timing.hip
+  namespace: omniprobe_user
+
+defaults:
+  emission: scalar
+  lane_headers: false
+  state: none
+
+probes:
+  - id: basic_block_timing
+    target:
+      kernels: ["simple_kernel"]
+    inject:
+      when: basic_block
+      helper: basic_block_timing_probe
+      contract: basic_block_v1
+    payload:
+      mode: scalar
+      message: time_interval
+    capture:
+      builtins: [block_idx, thread_idx, dispatch_id]
+      kernel_args:
+        - name: size
+          type: u64
