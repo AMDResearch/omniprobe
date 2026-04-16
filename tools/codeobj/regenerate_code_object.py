@@ -910,29 +910,35 @@ def main() -> int:
                     ),
                     None,
                 )
-                instrumentation = (
-                    (injected_function or {}).get("instrumentation", {}).get("lifecycle_exit_stub", {})
+                instrumentation_map = (injected_function or {}).get("instrumentation", {})
+                instrumentation = instrumentation_map.get("lifecycle_entry_stub") or instrumentation_map.get(
+                    "lifecycle_exit_stub", {}
                 )
-                saved_total_sgprs = int(instrumentation.get("total_sgprs", 0) or 0)
+                total_probe_sgprs = int(instrumentation.get("total_sgprs", 0) or 0)
+                lifecycle_when = str(instrumentation.get("when", "") or "")
                 for intent in manifest_payload.get("clone_intents", []):
                     if not isinstance(intent, dict):
                         continue
                     if intent.get("clone_kernel") == clone_result["clone_kernel"]:
-                        intent["mode"] = "hidden-abi-lifecycle-exit-clone"
+                        intent["mode"] = (
+                            f"hidden-abi-lifecycle-{lifecycle_when}-clone"
+                            if lifecycle_when
+                            else "hidden-abi-lifecycle-clone"
+                        )
                         intent["nonleaf_private_segment_growth"] = 16
-                        if saved_total_sgprs:
-                            intent["saved_probe_sgprs"] = saved_total_sgprs
+                        if total_probe_sgprs:
+                            intent["probe_total_sgprs"] = total_probe_sgprs
                         break
                 apply_binary_probe_nonleaf_policy(
                     manifest_payload,
                     clone_kernel=str(clone_result["clone_kernel"]),
                     private_segment_growth=16,
                 )
-                if saved_total_sgprs:
+                if total_probe_sgprs:
                     apply_binary_probe_saved_sgpr_policy(
                         manifest_payload,
                         clone_kernel=str(clone_result["clone_kernel"]),
-                        total_sgprs=saved_total_sgprs,
+                        total_sgprs=total_probe_sgprs,
                     )
                 if asm_manifest_path != working_manifest_path and asm_manifest_path.exists():
                     asm_manifest_payload_updated = load_json(asm_manifest_path)
@@ -942,11 +948,11 @@ def main() -> int:
                         private_segment_growth=16,
                         refresh_rendered_metadata=False,
                     )
-                    if saved_total_sgprs:
+                    if total_probe_sgprs:
                         apply_binary_probe_saved_sgpr_policy(
                             asm_manifest_payload_updated,
                             clone_kernel=str(clone_result["clone_kernel"]),
-                            total_sgprs=saved_total_sgprs,
+                            total_sgprs=total_probe_sgprs,
                             refresh_rendered_metadata=False,
                         )
                     asm_manifest_path.write_text(

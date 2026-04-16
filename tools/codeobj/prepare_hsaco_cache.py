@@ -103,7 +103,8 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Optional Omniprobe v1 probe YAML spec. The current binary-only "
             "integration can rewrite donor-free hidden-ABI clones for supported "
-            "lifecycle-exit probe sites and otherwise fails closed with a plan/report."
+            "kernel_entry or kernel_exit lifecycle probe sites and otherwise fails "
+            "closed with a plan/report."
         ),
     )
     parser.add_argument(
@@ -639,18 +640,24 @@ def probe_kernel_rewrite_eligibility(kernel_plan: dict) -> tuple[bool, list[str]
         reasons.append("probe plan did not select any sites for this kernel")
         return False, reasons
 
+    planned_whens: set[str] = set()
     for site in planned_sites:
         if not isinstance(site, dict):
             reasons.append("probe plan contains an invalid site record")
             continue
         contract = str(site.get("contract", ""))
         when = str(site.get("when", ""))
+        planned_whens.add(when)
         if contract != "kernel_lifecycle_v1":
             reasons.append(f"contract {contract!r} is not yet supported by binary rewrite")
-        if when != "kernel_exit":
+        if when not in {"kernel_entry", "kernel_exit"}:
             reasons.append(
-                f"binary rewrite currently supports only kernel_exit lifecycle sites, not {when!r}"
+                f"binary rewrite currently supports only kernel_entry or kernel_exit lifecycle sites, not {when!r}"
             )
+    if len(planned_whens) > 1:
+        reasons.append(
+            "binary rewrite currently supports a single lifecycle insertion point per kernel; split kernel_entry and kernel_exit into separate probes"
+        )
     return len(reasons) == 0, reasons
 
 

@@ -69,6 +69,74 @@ What is missing is the bridge between those two subsystems:
 - regenerating descriptors/metadata from the rewritten clone rather than merely
   cloning or preserving them
 
+## Current Runtime Blocker
+
+Binary-only lifecycle helpers can already:
+
+- receive `hidden_omniprobe_ctx`
+- recover the hidden pointer value correctly
+- dereference ordinary device pointers passed through that hidden slot
+- recover and dereference the `dh_comms_descriptor` itself
+
+The current blocker is narrower and more important than a generic hidden-arg
+failure:
+
+- helpers that only touch captured kernel arguments and plain pointers work
+- helpers that use `blockIdx.x` / `gridDim.x` from binary-only injected device
+  code fault at runtime
+- `__active_lane_id()` by itself works
+- `dh_comms` helper entry points fail because `dh_comms` device code depends on
+  kernel launch builtins, notably through `get_sub_buffer_idx()`, which uses
+  `blockIdx` and `gridDim`
+
+The key implication is that the current binary-only helper ABI is sufficient
+for plain pointer/state access, but it does not provide a safe way for injected
+device functions to rely on kernel builtins that the compiler normally lowers
+for kernel bodies.
+
+More precisely, local toolchain inspection shows that binary-only device helper
+code using those builtins lowers to helper-side intrinsics such as:
+
+- `llvm.amdgcn.workgroup.id.x()`
+- `llvm.amdgcn.implicitarg.ptr()`
+
+On the current gfx1030 toolchain those appear in helper ISA as dependence on
+fixed incoming SGPR state, notably:
+
+- workgroup id in `s12`
+- implicitarg pointer in `s[8:9]`
+
+The current injected call path does not reconstruct or guarantee those helper
+live-ins before transferring control to the linked device helper. As a result,
+plain helper code works, but helper code that touches `blockIdx` / `gridDim`
+observes corrupted machine state and faults.
+
+### What This Means for `dh_comms`
+
+The present `dh_comms` device API assumes it is being compiled into a normal
+kernel context where launch builtins are available. That assumption holds for
+the pass-plugin path and for source-built manual carriers, but it does not hold
+for the current binary-only helper-call path.
+
+As a result, "call existing `dh_comms` device helpers directly from a
+binary-only injected thunk" is not a viable foundation for the general binary
+instrumentation path.
+
+### Required Direction
+
+The binary-only path needs one of two strategies:
+
+1. A binary-only transport shim that does not depend on kernel builtins inside
+   injected helper code, with required execution context passed explicitly in
+   the helper contract.
+2. A deeper ABI/runtime mechanism that reconstructs enough kernel implicit
+   state for helper code to use launch builtins safely.
+
+The first option is the practical direction for V1. It keeps the binary-only
+path explicit and testable, and it matches the existing probe-contract work:
+capture or synthesize the required execution context in the injector, then pass
+ it to a helper/surrogate layer that does not assume kernel-body-only builtins.
+
 ## Design Principles
 
 ### 1. One User Spec, Two Frontends
@@ -400,6 +468,27 @@ values derived from wave VGPR state. Supporting those helpers in the binary-only
 `kernel_exit` path requires an additional preservation mechanism for per-lane
 context, most likely via private memory, LDS, or a dedicated carrier-side
 context packet.
+
+Follow-on entry-path work established a second concrete result:
+
+- a non-`kernel_exit` insertion point can work if the injected entry thunk is
+  anchored after the leading scalar-load prologue rather than at absolute
+  instruction zero
+- entry-only helpers that perform ordinary side effects execute correctly from
+  that post-prologue slot
+- those entry-only helpers also observe a non-null
+  `hidden_omniprobe_ctx`/`runtime_ctx->dh` pointer at runtime, so the hidden
+  context transport itself is functional
+
+However, entry-time `dh_comms` submission remains a separate blocker:
+
+- both vector address submission and scalar time-interval submission still fault
+  from the current early-entry anchor
+- the same fault reproduces under a direct hidden-raw launcher, so it is not
+  specific to Omniprobe's cache preparation or dispatch rewrite path
+- the remaining gap is therefore not "entry helper calls in general", but the
+  specific preconditions that `dh_comms`' device submission helpers require
+  before they can execute safely from an early lifecycle-entry site
 
 ### Files
 
