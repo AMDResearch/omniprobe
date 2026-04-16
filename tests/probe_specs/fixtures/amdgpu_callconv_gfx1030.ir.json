@@ -1,0 +1,75 @@
+{
+  "arch": "gfx1030",
+  "functions": [
+    {
+      "name": "simple_kernel",
+      "instructions": [
+        {
+          "address": 6176,
+          "mnemonic": "s_add_u32",
+          "operands": ["s6", "s6", "s9"]
+        },
+        {
+          "address": 6180,
+          "mnemonic": "s_mov_b32",
+          "operands": ["s32", "0"]
+        },
+        {
+          "address": 6208,
+          "mnemonic": "s_load_dwordx8",
+          "operands": ["s[4:11]", "s[4:5]", "null"]
+        },
+        {
+          "address": 6216,
+          "mnemonic": "s_memtime",
+          "operands": ["s[12:13]"]
+        },
+        {
+          "address": 6240,
+          "mnemonic": "s_getpc_b64",
+          "operands": ["s[14:15]"]
+        },
+        {
+          "address": 6264,
+          "mnemonic": "v_mov_b32_e32",
+          "operands": ["v4", "s12"]
+        },
+        {
+          "address": 6268,
+          "mnemonic": "v_mov_b32_e32",
+          "operands": ["v0", "s8"]
+        },
+        {
+          "address": 6272,
+          "mnemonic": "v_mov_b32_e32",
+          "operands": ["v1", "s9"]
+        },
+        {
+          "address": 6276,
+          "mnemonic": "v_mov_b32_e32",
+          "operands": ["v2", "s10"]
+        },
+        {
+          "address": 6280,
+          "mnemonic": "v_mov_b32_e32",
+          "operands": ["v3", "s11"]
+        },
+        {
+          "address": 6284,
+          "mnemonic": "v_mov_b32_e32",
+          "operands": ["v5", "s13"]
+        },
+        {
+          "address": 6288,
+          "mnemonic": "s_swappc_b64",
+          "operands": ["s[30:31]", "s[14:15]"]
+        },
+        {
+          "address": 6292,
+          "mnemonic": "s_endpgm",
+          "operands": []
+        }
+      ]
+    }
+  ]
+}

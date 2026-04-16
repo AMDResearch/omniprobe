@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from amdgpu_calling_convention import analyze_kernel_calling_convention
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Analyze the observed AMDGPU calling-convention shape for a kernel "
+            "using Omniprobe's instruction IR and descriptor facts."
+        )
+    )
+    parser.add_argument("ir", help="Instruction-level IR JSON")
+    parser.add_argument(
+        "--manifest",
+        default=None,
+        help="Optional code-object manifest JSON for descriptor facts",
+    )
+    parser.add_argument(
+        "--function",
+        required=True,
+        help="Function name to analyze",
+    )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Optional JSON output path",
+    )
+    return parser.parse_args()
+
+
+def load_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def find_function(ir: dict, function_name: str) -> dict:
+    function = next(
+        (entry for entry in ir.get("functions", []) if entry.get("name") == function_name),
+        None,
+    )
+    if function is None:
+        raise SystemExit(f"function {function_name!r} not found in IR")
+    return function
+
+
+def find_descriptor(manifest: dict | None, function_name: str) -> dict | None:
+    if not isinstance(manifest, dict):
+        return None
+    descriptors = manifest.get("kernels", {}).get("descriptors", [])
+    for descriptor in descriptors:
+        if descriptor.get("kernel_name") == function_name or descriptor.get("name") == f"{function_name}.kd":
+            return descriptor
+    return None
+
+
+def main() -> int:
+    args = parse_args()
+    ir_path = Path(args.ir).resolve()
+    ir = load_json(ir_path)
+    manifest = load_json(Path(args.manifest).resolve()) if args.manifest else None
+    function = find_function(ir, args.function)
+    descriptor = find_descriptor(manifest, args.function)
+    result = {
+        "arch": ir.get("arch"),
+        **analyze_kernel_calling_convention(function=function, descriptor=descriptor),
+    }
+    payload = json.dumps(result, indent=2) + "\n"
+    if args.output:
+        Path(args.output).resolve().write_text(payload, encoding="utf-8")
+    sys.stdout.write(payload)
+    return 0 if result["supported_for_lifecycle_exit_stub"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -111,6 +111,31 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Path to ld.lld for rebuild",
     )
+    parser.add_argument(
+        "--probe-plan",
+        default=None,
+        help="Optional binary probe plan JSON for clone-body mutation",
+    )
+    parser.add_argument(
+        "--thunk-manifest",
+        default=None,
+        help="Optional thunk manifest JSON emitted by generate_binary_probe_thunks.py",
+    )
+    parser.add_argument(
+        "--probe-support-object",
+        default=None,
+        help="Optional precompiled binary probe support object to link into the rebuilt code object",
+    )
+    parser.add_argument(
+        "--hipcc",
+        default=None,
+        help="Path to hipcc used when compiling binary probe support objects",
+    )
+    parser.add_argument(
+        "--clang-offload-bundler",
+        default=None,
+        help="Path to clang-offload-bundler used when compiling binary probe support objects",
+    )
     return parser.parse_args()
 
 
@@ -195,6 +220,128 @@ def patch_descriptor_bytes_hex(bytes_hex: str, kernarg_size: int) -> str:
     return payload.hex()
 
 
+def round_up(value: int, alignment: int) -> int:
+    if alignment <= 0:
+        return value
+    return ((value + alignment - 1) // alignment) * alignment
+
+
+def granulated_sgpr_count(total_sgprs: int) -> int:
+    return max(0, (round_up(max(1, total_sgprs), 8) // 8) - 1)
+
+
+def update_descriptor_sgpr_footprint(descriptor: dict, total_sgprs: int) -> None:
+    rsrc1 = descriptor.setdefault("compute_pgm_rsrc1", {})
+    granulated = granulated_sgpr_count(total_sgprs)
+    raw_value = int(rsrc1.get("raw_value", 0) or 0)
+    raw_value &= ~(0xF << 6)
+    raw_value |= (granulated & 0xF) << 6
+    rsrc1["raw_value"] = raw_value
+    rsrc1["granulated_wavefront_sgpr_count"] = granulated
+
+
+def apply_binary_probe_saved_sgpr_policy(
+    manifest: dict,
+    *,
+    clone_kernel: str,
+    total_sgprs: int,
+    refresh_rendered_metadata: bool = True,
+) -> None:
+    descriptors = manifest.get("kernels", {}).get("descriptors", [])
+    clone_descriptor = next(
+        (entry for entry in descriptors if entry.get("kernel_name") == clone_kernel),
+        None,
+    )
+    if clone_descriptor is None:
+        raise SystemExit(f"clone descriptor for {clone_kernel!r} not found")
+
+    update_descriptor_sgpr_footprint(clone_descriptor, total_sgprs)
+
+    metadata = manifest.get("kernels", {}).get("metadata", {})
+    for kernel_record in metadata.get("kernels", []):
+        if not isinstance(kernel_record, dict):
+            continue
+        if kernel_record.get("name") != clone_kernel:
+            continue
+        kernel_record["sgpr_count"] = total_sgprs
+        break
+
+    metadata_obj = metadata.get("object")
+    if isinstance(metadata_obj, dict):
+        for kernel_obj in metadata_obj.get("amdhsa.kernels", []):
+            if not isinstance(kernel_obj, dict):
+                continue
+            if kernel_obj.get(".name") != clone_kernel:
+                continue
+            kernel_obj[".sgpr_count"] = total_sgprs
+            break
+
+    rendered = metadata.get("rendered") or metadata.get("raw")
+    if refresh_rendered_metadata and rendered:
+        metadata["rendered"] = build_metadata_document(
+            manifest,
+            selected_kernels=[],
+            clones_only=False,
+            pointer_size=8,
+            alignment=8,
+        )
+        metadata["raw"] = metadata["rendered"]
+
+
+def apply_binary_probe_nonleaf_policy(
+    manifest: dict,
+    *,
+    clone_kernel: str,
+    private_segment_growth: int = 16,
+    refresh_rendered_metadata: bool = True,
+) -> None:
+    descriptors = manifest.get("kernels", {}).get("descriptors", [])
+    clone_descriptor = next(
+        (entry for entry in descriptors if entry.get("kernel_name") == clone_kernel),
+        None,
+    )
+    if clone_descriptor is None:
+        raise SystemExit(f"clone descriptor for {clone_kernel!r} not found")
+
+    current_private = int(clone_descriptor.get("private_segment_fixed_size", 0) or 0)
+    clone_descriptor["private_segment_fixed_size"] = current_private + private_segment_growth
+    properties = clone_descriptor.setdefault("kernel_code_properties", {})
+    properties["uses_dynamic_stack"] = 1
+    raw_value = properties.get("raw_value")
+    if isinstance(raw_value, int):
+        properties["raw_value"] = raw_value | 0x800
+
+    metadata = manifest.get("kernels", {}).get("metadata", {})
+    for kernel_record in metadata.get("kernels", []):
+        if not isinstance(kernel_record, dict):
+            continue
+        if kernel_record.get("name") != clone_kernel:
+            continue
+        kernel_record["private_segment_fixed_size"] = current_private + private_segment_growth
+        break
+
+    metadata_obj = metadata.get("object")
+    if isinstance(metadata_obj, dict):
+        for kernel_obj in metadata_obj.get("amdhsa.kernels", []):
+            if not isinstance(kernel_obj, dict):
+                continue
+            if kernel_obj.get(".name") != clone_kernel:
+                continue
+            kernel_obj[".private_segment_fixed_size"] = current_private + private_segment_growth
+            break
+
+    rendered = metadata.get("rendered") or metadata.get("raw")
+    if refresh_rendered_metadata and rendered:
+        metadata["rendered"] = build_metadata_document(
+            manifest,
+            selected_kernels=[],
+            clones_only=False,
+            pointer_size=8,
+            alignment=8,
+        )
+        metadata["raw"] = metadata["rendered"]
+
+
 def add_hidden_abi_clone_intent(manifest: dict, ir: dict, model: CodeObjectModel, kernel_name: str) -> dict:
     kernel = model.metadata_by_kernel_name(kernel_name)
     if kernel is None:
@@ -274,6 +421,7 @@ def add_hidden_abi_clone_intent(manifest: dict, ir: dict, model: CodeObjectModel
             "source_kernarg_length": plan["source_kernarg_length"],
             "instrumented_kernarg_length": plan["instrumented_kernarg_length"],
             "hidden_omniprobe_ctx": deepcopy(plan["hidden_omniprobe_ctx"]),
+            "descriptor_patch_policy": "preserve-source-bytes",
         }
     )
     return {
@@ -451,6 +599,7 @@ def rebuild(
     obj_path: Path,
     rebuild_report_path: Path,
     kernel_name: str | None,
+    extra_objects: list[Path],
     args: argparse.Namespace,
     tool_dir: Path,
 ) -> None:
@@ -473,10 +622,38 @@ def rebuild(
     ]
     if kernel_name:
         command.extend(["--function", kernel_name])
+    for extra_object in extra_objects:
+        command.extend(["--extra-object", str(extra_object)])
     if args.llvm_mc:
         command.extend(["--llvm-mc", args.llvm_mc])
     if args.ld_lld:
         command.extend(["--ld-lld", args.ld_lld])
+    run(command)
+
+
+def compile_probe_support_object(
+    *,
+    thunk_manifest_path: Path,
+    arch: str,
+    output_path: Path,
+    args: argparse.Namespace,
+    tool_dir: Path,
+) -> None:
+    compile_tool = tool_dir / "compile_binary_probe_support.py"
+    command = [
+        args.python,
+        str(compile_tool),
+        "--thunk-manifest",
+        str(thunk_manifest_path),
+        "--output",
+        str(output_path),
+        "--arch",
+        arch,
+    ]
+    if args.hipcc:
+        command.extend(["--hipcc", args.hipcc])
+    if args.clang_offload_bundler:
+        command.extend(["--clang-offload-bundler", args.clang_offload_bundler])
     run(command)
 
 
@@ -514,6 +691,46 @@ def find_symbol(records: list[dict], name: str) -> dict:
         if record.get("name") == name:
             return record
     raise SystemExit(f"symbol {name!r} not found in manifest")
+
+
+def materialize_descriptor_bytes(descriptor: dict, entry_offset: int) -> bytes:
+    raw_hex = str(descriptor.get("bytes_hex", ""))
+    payload = bytearray.fromhex(raw_hex) if raw_hex else bytearray(64)
+    expected_size = int(descriptor.get("size", 64) or 64)
+    if len(payload) < expected_size:
+        payload.extend(b"\x00" * (expected_size - len(payload)))
+    elif len(payload) > expected_size:
+        payload = payload[:expected_size]
+
+    struct.pack_into("<I", payload, 0, int(descriptor.get("group_segment_fixed_size", 0) or 0))
+    struct.pack_into("<I", payload, 4, int(descriptor.get("private_segment_fixed_size", 0) or 0))
+    struct.pack_into("<I", payload, 8, int(descriptor.get("kernarg_size", 0) or 0))
+    struct.pack_into("<q", payload, 16, int(entry_offset))
+    struct.pack_into(
+        "<I",
+        payload,
+        44,
+        int(descriptor.get("compute_pgm_rsrc3", {}).get("raw_value", 0) or 0),
+    )
+    struct.pack_into(
+        "<I",
+        payload,
+        48,
+        int(descriptor.get("compute_pgm_rsrc1", {}).get("raw_value", 0) or 0),
+    )
+    struct.pack_into(
+        "<I",
+        payload,
+        52,
+        int(descriptor.get("compute_pgm_rsrc2", {}).get("raw_value", 0) or 0),
+    )
+    struct.pack_into(
+        "<I",
+        payload,
+        56,
+        int(descriptor.get("kernel_code_properties", {}).get("raw_value", 0) or 0),
+    )
+    return bytes(payload)
 
 
 def patch_output_clone_descriptors(
@@ -559,7 +776,9 @@ def patch_output_clone_descriptors(
         output_descriptor_symbol = find_symbol(output_descriptor_symbols, clone_descriptor_name)
         output_function_symbol = find_symbol(output_function_symbols, clone_kernel)
 
-        descriptor_bytes = bytearray.fromhex(str(source_descriptor.get("bytes_hex", "")))
+        descriptor_bytes = bytearray(
+            materialize_descriptor_bytes(source_descriptor, entry_offset=0)
+        )
         entry_offset = int(output_function_symbol.get("value", 0)) - int(
             output_descriptor_symbol.get("value", 0)
         )
@@ -615,6 +834,7 @@ def main() -> int:
         model = CodeObjectModel.from_manifest(load_json(working_manifest_path))
         kernel_name, primary_kernel_count = choose_kernel(model, args.kernel)
         clone_result = None
+        extra_link_objects: list[Path] = []
 
         ir_path = temp_dir_path / "input.ir.json"
         asm_path = temp_dir_path / "output.s"
@@ -661,6 +881,98 @@ def main() -> int:
                 json.dumps(ir_payload, indent=2) + "\n",
                 encoding="utf-8",
             )
+            if bool(args.probe_plan) != bool(args.thunk_manifest):
+                raise SystemExit("--probe-plan and --thunk-manifest must be provided together")
+            if args.probe_plan and args.thunk_manifest:
+                inject_tool = tool_dir / "inject_probe_calls.py"
+                inject_command = [
+                    args.python,
+                    str(inject_tool),
+                    str(ir_path),
+                    "--plan",
+                    str(Path(args.probe_plan).resolve()),
+                    "--thunk-manifest",
+                    str(Path(args.thunk_manifest).resolve()),
+                    "--manifest",
+                    str(working_manifest_path),
+                    "--function",
+                    str(clone_result["clone_kernel"]),
+                    "--output",
+                    str(ir_path),
+                ]
+                run(inject_command)
+                injected_ir_payload = load_json(ir_path)
+                injected_function = next(
+                    (
+                        entry
+                        for entry in injected_ir_payload.get("functions", [])
+                        if entry.get("name") == clone_result["clone_kernel"]
+                    ),
+                    None,
+                )
+                instrumentation = (
+                    (injected_function or {}).get("instrumentation", {}).get("lifecycle_exit_stub", {})
+                )
+                saved_total_sgprs = int(instrumentation.get("total_sgprs", 0) or 0)
+                for intent in manifest_payload.get("clone_intents", []):
+                    if not isinstance(intent, dict):
+                        continue
+                    if intent.get("clone_kernel") == clone_result["clone_kernel"]:
+                        intent["mode"] = "hidden-abi-lifecycle-exit-clone"
+                        intent["nonleaf_private_segment_growth"] = 16
+                        if saved_total_sgprs:
+                            intent["saved_probe_sgprs"] = saved_total_sgprs
+                        break
+                apply_binary_probe_nonleaf_policy(
+                    manifest_payload,
+                    clone_kernel=str(clone_result["clone_kernel"]),
+                    private_segment_growth=16,
+                )
+                if saved_total_sgprs:
+                    apply_binary_probe_saved_sgpr_policy(
+                        manifest_payload,
+                        clone_kernel=str(clone_result["clone_kernel"]),
+                        total_sgprs=saved_total_sgprs,
+                    )
+                if asm_manifest_path != working_manifest_path and asm_manifest_path.exists():
+                    asm_manifest_payload_updated = load_json(asm_manifest_path)
+                    apply_binary_probe_nonleaf_policy(
+                        asm_manifest_payload_updated,
+                        clone_kernel=str(clone_result["clone_kernel"]),
+                        private_segment_growth=16,
+                        refresh_rendered_metadata=False,
+                    )
+                    if saved_total_sgprs:
+                        apply_binary_probe_saved_sgpr_policy(
+                            asm_manifest_payload_updated,
+                            clone_kernel=str(clone_result["clone_kernel"]),
+                            total_sgprs=saved_total_sgprs,
+                            refresh_rendered_metadata=False,
+                        )
+                    asm_manifest_path.write_text(
+                        json.dumps(asm_manifest_payload_updated, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+                working_manifest_path.write_text(
+                    json.dumps(manifest_payload, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                if args.probe_support_object:
+                    extra_link_objects.append(Path(args.probe_support_object).resolve())
+                else:
+                    ir_payload_for_arch = load_json(ir_path)
+                    arch = ir_payload_for_arch.get("arch")
+                    if not isinstance(arch, str) or not arch:
+                        raise SystemExit("IR arch is required to compile binary probe support")
+                    support_object_path = temp_dir_path / "binary_probe_support.o"
+                    compile_probe_support_object(
+                        thunk_manifest_path=Path(args.thunk_manifest).resolve(),
+                        arch=arch,
+                        output_path=support_object_path,
+                        args=args,
+                        tool_dir=tool_dir,
+                    )
+                    extra_link_objects.append(support_object_path)
         elif args.add_noop_clone:
             manifest_payload = load_json(working_manifest_path)
             ir_payload = load_json(ir_path)
@@ -687,6 +999,7 @@ def main() -> int:
             obj_path=obj_path,
             rebuild_report_path=rebuild_report_path,
             kernel_name=rebuild_function_name,
+            extra_objects=extra_link_objects,
             args=args,
             tool_dir=tool_dir,
         )
@@ -720,6 +1033,8 @@ def main() -> int:
         }
         if clone_result is not None:
             report["clone_result"] = clone_result
+        if extra_link_objects:
+            report["extra_link_objects"] = [str(path) for path in extra_link_objects]
         if report_path is not None:
             report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(output_path)

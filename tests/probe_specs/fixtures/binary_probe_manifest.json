@@ -1,0 +1,61 @@
+{
+  "kernels": {
+    "metadata": {
+      "target": "amdgcn-amd-amdhsa--gfx90a",
+      "kernels": [
+        {
+          "name": "simple_kernel",
+          "symbol": "_Z13simple_kernelPim",
+          "kernarg_segment_size": 16,
+          "args": [
+            {
+              "name": "data",
+              "offset": 0,
+              "size": 8,
+              "value_kind": "global_buffer",
+              "address_space": "global",
+              "type_name": "void*"
+            },
+            {
+              "name": "size",
+              "offset": 8,
+              "size": 8,
+              "value_kind": "by_value",
+              "type_name": "size_t"
+            }
+          ]
+        },
+        {
+          "name": "vector_add",
+          "symbol": "_Z10vector_addPfPKfi",
+          "kernarg_segment_size": 24,
+          "args": [
+            {
+              "name": "output",
+              "offset": 0,
+              "size": 8,
+              "value_kind": "global_buffer",
+              "address_space": "global",
+              "type_name": "float*"
+            },
+            {
+              "name": "input",
+              "offset": 8,
+              "size": 8,
+              "value_kind": "global_buffer",
+              "address_space": "global",
+              "type_name": "const float*"
+            },
+            {
+              "name": "n",
+              "offset": 16,
+              "size": 4,
+              "value_kind": "by_value",
+              "type_name": "int"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

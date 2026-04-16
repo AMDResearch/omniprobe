@@ -1,0 +1,27 @@
+{
+  "kernels": {
+    "descriptors": [
+      {
+        "kernel_name": "simple_kernel",
+        "name": "simple_kernel.kd",
+        "compute_pgm_rsrc1": {
+          "granulated_workitem_vgpr_count": 3,
+          "granulated_wavefront_sgpr_count": 4
+        },
+        "kernel_code_properties": {
+          "enable_sgpr_kernarg_segment_ptr": 1
+        }
+      }
+    ],
+    "metadata": {
+      "kernels": [
+        {
+          "name": "simple_kernel",
+          "symbol": "simple_kernel.kd",
+          "sgpr_count": 36,
+          "vgpr_count": 32
+        }
+      ]
+    }
+  }
+}

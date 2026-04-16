@@ -53,6 +53,12 @@ def parse_args() -> argparse.Namespace:
         help="Optional JSON report path describing the chosen rebuild policy",
     )
     parser.add_argument(
+        "--extra-object",
+        action="append",
+        default=[],
+        help="Additional AMDGPU device object to link into the rebuilt code object",
+    )
+    parser.add_argument(
         "--preserve-descriptor-bytes",
         action="store_true",
         help=(
@@ -132,6 +138,7 @@ def main() -> int:
     exact_encoding = True
     preserve_descriptor_bytes = False
     descriptor_safety_report: dict | None = None
+    linked_obj_path: Path | None = None
 
     if args.mode == "exact":
         preserve_descriptor_bytes = True
@@ -198,13 +205,27 @@ def main() -> int:
         ],
         check=True,
     )
+    if args.extra_object:
+        linked_obj_path = obj_path.with_suffix(obj_path.suffix + ".linked.o")
+        subprocess.run(
+            [
+                ld_lld,
+                "-r",
+                "-o",
+                str(linked_obj_path),
+                str(obj_path),
+                *[str(Path(entry).resolve()) for entry in args.extra_object],
+            ],
+            check=True,
+        )
+    final_link_input = linked_obj_path if linked_obj_path is not None else obj_path
     subprocess.run(
         [
             ld_lld,
             "-shared",
             "-o",
             str(output_path),
-            str(obj_path),
+            str(final_link_input),
         ],
         check=True,
     )
@@ -217,11 +238,14 @@ def main() -> int:
         "output_code_object": str(output_path),
         "output_asm": str(asm_path),
         "output_object": str(obj_path),
+        "linked_object": str(linked_obj_path) if linked_obj_path is not None else None,
+        "extra_objects": [str(Path(entry).resolve()) for entry in args.extra_object],
         "exact_encoding": exact_encoding,
         "preserve_descriptor_bytes": preserve_descriptor_bytes,
         "descriptor_policy": descriptor_policy,
         "descriptor_safety_report": descriptor_safety_report,
         "arch": arch,
+        "link_mode": "relocatable-then-shared" if linked_obj_path is not None else "direct-shared",
     }
     if report_path is not None:
         report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

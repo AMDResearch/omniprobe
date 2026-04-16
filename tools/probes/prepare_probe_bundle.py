@@ -44,6 +44,15 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Additional include directory for helper compilation",
     )
+    parser.add_argument(
+        "--skip-compile",
+        action="store_true",
+        help=(
+            "Generate surrogate/helper wrapper artifacts without compiling helper "
+            "bitcode. Useful for planning-only frontends such as the current "
+            "binary-only probe planner."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -193,13 +202,16 @@ def main() -> int:
     surrogate_path, manifest_path, helper_wrapper_path, env_path = write_bundle_outputs(
         spec_path, spec, output_dir
     )
-    helper_bc, compile_log = compile_helper_bitcode(
-        hipcc=args.hipcc,
-        arch=str(args.arch) if args.arch else "",
-        helper_wrapper=helper_wrapper_path,
-        output_dir=output_dir,
-        extra_includes=list(args.extra_include),
-    )
+    helper_bc: Path | None = None
+    compile_log: Path | None = None
+    if not args.skip_compile:
+        helper_bc, compile_log = compile_helper_bitcode(
+            hipcc=args.hipcc,
+            arch=str(args.arch) if args.arch else "",
+            helper_wrapper=helper_wrapper_path,
+            output_dir=output_dir,
+            extra_includes=list(args.extra_include),
+        )
 
     bundle_report = {
         "version": spec["version"],
@@ -208,12 +220,13 @@ def main() -> int:
         "surrogate_source": str(surrogate_path),
         "manifest": str(manifest_path),
         "helper_wrapper": str(helper_wrapper_path),
-        "helper_bitcode": str(helper_bc),
-        "compile_log": str(compile_log),
+        "helper_bitcode": str(helper_bc) if helper_bc is not None else None,
+        "compile_log": str(compile_log) if compile_log is not None else None,
         "env_script": str(env_path),
+        "compile_skipped": bool(args.skip_compile),
         "environment": {
             "OMNIPROBE_PROBE_MANIFEST": str(manifest_path),
-            "OMNIPROBE_PROBE_BITCODE": str(helper_bc),
+            "OMNIPROBE_PROBE_BITCODE": str(helper_bc) if helper_bc is not None else "",
         },
     }
     (output_dir / "generated_probe_bundle.json").write_text(

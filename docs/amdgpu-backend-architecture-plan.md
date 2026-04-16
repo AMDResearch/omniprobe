@@ -266,6 +266,60 @@ Examples of per-arch backend facts:
 Those should be represented as backend feature queries, not scattered ad hoc
 assumptions.
 
+## Observed Device-Call ABI Across RDNA and CDNA
+
+To ground the backend split in actual compiler behavior, a minimal HIP sample
+with a three-argument device-function call was compiled on `trippy` for:
+
+- `gfx1030`
+- `gfx90a`
+- `gfx942`
+
+The sample was intentionally simple:
+
+- kernel loads explicit arguments from kernarg
+- kernel captures a 64-bit timestamp
+- kernel calls a noinline device helper with:
+  - `const runtime_ctx *`
+  - `const void *kernarg_base`
+  - `uint64_t timestamp`
+
+The observed lowering differed in SGPR allocation and prologue shape, but the
+high-level call ABI pattern was shared:
+
+1. the callee address is materialized with `s_getpc_b64` plus a PC-relative
+   `s_add_u32` / `s_addc_u32` pair
+2. the call itself uses `s_swappc_b64`
+3. the three logical arguments are marshaled into `v0:v5`
+   - arg0 in `v0:v1`
+   - arg1 in `v2:v3`
+   - arg2 in `v4:v5`
+
+The important differences were:
+
+- `gfx1030` used a different prologue and explicit flat-scratch setup
+- `gfx90a` placed the observed kernarg base in `s[4:5]` and the call target in
+  `s[14:15]`
+- `gfx942` placed the observed kernarg base in `s[0:1]` and the call target in
+  `s[10:11]`
+- timestamp and loaded argument SGPR pairs were shifted accordingly
+
+The backend consequence is straightforward:
+
+- Omniprobe may treat the `v0:v5` lifecycle-call marshalling shape as a common
+  observed invariant for this probe style
+- Omniprobe must not hardcode one exact SGPR numbering recipe from a single
+  architecture
+- kernarg-base discovery, temporary SGPR selection, and call-target
+  materialization must live behind AMDGPU backend helpers
+
+The repository now contains fixture-based inference tests that encode these
+observations for `gfx1030`, `gfx90a`, and `gfx942`, along with a small analysis
+tool:
+
+- `tools/codeobj/amdgpu_calling_convention.py`
+- `tools/codeobj/analyze_amdgpu_calling_convention.py`
+- `tests/run_amdgpu_calling_convention_tests.sh`
 ## Practical Rewrite Policy
 
 The recommended policy bias is conservative:
