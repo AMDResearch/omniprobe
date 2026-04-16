@@ -1,0 +1,44 @@
+{
+  "kernels": {
+    "descriptors": [
+      {
+        "kernel_name": "entry_abi_kernel",
+        "name": "entry_abi_kernel.kd",
+        "compute_pgm_rsrc1": {
+          "granulated_workitem_vgpr_count": 0,
+          "granulated_wavefront_sgpr_count": 2
+        },
+        "compute_pgm_rsrc2": {
+          "user_sgpr_count": 2,
+          "enable_private_segment": 1,
+          "enable_sgpr_workgroup_id_x": 1,
+          "enable_sgpr_workgroup_id_y": 1,
+          "enable_sgpr_workgroup_id_z": 1,
+          "enable_sgpr_workgroup_info": 0,
+          "enable_vgpr_workitem_id": 2
+        },
+        "kernel_code_properties": {
+          "enable_sgpr_kernarg_segment_ptr": 1,
+          "enable_sgpr_flat_scratch_init": 0,
+          "enable_wavefront_size32": 0
+        },
+        "private_segment_fixed_size": 528,
+        "kernarg_size": 272
+      }
+    ],
+    "metadata": {
+      "target": "amdgcn-amd-amdhsa--gfx942",
+      "kernels": [
+        {
+          "name": "entry_abi_kernel",
+          "symbol": "entry_abi_kernel.kd",
+          "sgpr_count": 22,
+          "vgpr_count": 6,
+          "wavefront_size": 64,
+          "private_segment_fixed_size": 528,
+          "kernarg_segment_size": 272
+        }
+      ]
+    }
+  }
+}

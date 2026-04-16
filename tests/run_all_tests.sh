@@ -81,52 +81,55 @@ run_suite "Binary probe planning" "${SCRIPT_DIR}/run_binary_probe_planning_tests
 # Suite 4: AMDGPU calling convention inference
 run_suite "AMDGPU calling convention" "${SCRIPT_DIR}/run_amdgpu_calling_convention_tests.sh"
 
-# Suite 5: Binary probe injector
+# Suite 5: AMDGPU entry ABI inference
+run_suite "AMDGPU entry ABI" "${SCRIPT_DIR}/run_amdgpu_entry_abi_tests.sh"
+
+# Suite 6: Binary probe injector
 run_suite "Binary probe injector" "${SCRIPT_DIR}/run_binary_probe_injector_tests.sh"
 
-# Suite 6: Binary probe support compile
+# Suite 7: Binary probe support compile
 run_suite "Binary probe support compile" "${SCRIPT_DIR}/run_binary_probe_support_compile_tests.sh"
 
-# Suite 7: Binary probe cache preparation
+# Suite 8: Binary probe cache preparation
 run_suite "Binary probe cache preparation" "${SCRIPT_DIR}/run_binary_probe_cache_prepare_tests.sh"
 
-# Suite 8: Probe helper examples
+# Suite 9: Probe helper examples
 run_suite "Probe helper examples" "${SCRIPT_DIR}/run_probe_helper_example_tests.sh"
 
-# Suite 9: Probe surrogate smoke test
+# Suite 10: Probe surrogate smoke test
 run_suite "Probe surrogate smoke" "${SCRIPT_DIR}/run_probe_surrogate_smoke_tests.sh"
 
-# Suite 10: Probe lifecycle smoke test
+# Suite 11: Probe lifecycle smoke test
 run_suite "Probe lifecycle smoke" "${SCRIPT_DIR}/run_probe_lifecycle_smoke_tests.sh"
 
-# Suite 11: Binary-only probe runtime smoke
+# Suite 12: Binary-only probe runtime smoke
 run_suite "Binary probe runtime smoke" "${SCRIPT_DIR}/run_binary_probe_runtime_smoke_tests.sh"
 
-# Suite 12: Binary-only probe entry runtime smoke
+# Suite 13: Binary-only probe entry runtime smoke
 run_suite "Binary probe entry runtime smoke" "${SCRIPT_DIR}/run_binary_probe_entry_runtime_smoke_tests.sh"
 
-# Suite 13: Library filter chain (has its own build step)
+# Suite 14: Library filter chain (has its own build step)
 run_suite "Library filter chain" "${SCRIPT_DIR}/library_filter_chain/run_test.sh"
 
-# Suite 14: External code-object donor-free regeneration
+# Suite 15: External code-object donor-free regeneration
 run_suite "External code-object regeneration" "${SCRIPT_DIR}/run_codeobj_external_regen_tests.sh"
 
-# Suite 15: Code-object round-trip and donor-free regeneration scaffold
+# Suite 16: Code-object round-trip and donor-free regeneration scaffold
 run_suite "Code-object round-trip" "${SCRIPT_DIR}/run_codeobj_roundtrip_tests.sh"
 
-# Suite 16: rocPRIM donor-free breadth
+# Suite 17: rocPRIM donor-free breadth
 run_suite "rocPRIM donor-free breadth" "${SCRIPT_DIR}/run_codeobj_rocprim_breadth_tests.sh"
 
-# Suite 17: hipBLASLt instrumentation (requires INSTRUMENTED_HIPBLASLT_LIB_DIR)
+# Suite 18: hipBLASLt instrumentation (requires INSTRUMENTED_HIPBLASLT_LIB_DIR)
 run_suite "hipBLASLt instrumentation" "${SCRIPT_DIR}/hipblaslt/run_test.sh"
 
-# Suite 18: rocBLAS integration (requires INSTRUMENTED_ROCBLAS_LIB_DIR)
+# Suite 19: rocBLAS integration (requires INSTRUMENTED_ROCBLAS_LIB_DIR)
 run_suite "rocBLAS integration" "${SCRIPT_DIR}/rocblas_filter/run_test.sh"
 
-# Suite 19: rocBLAS + hipBLASLt combined (requires INSTRUMENTED_ROCBLAS_LIB_DIR + INSTRUMENTED_HIPBLASLT_LIB_DIR)
+# Suite 20: rocBLAS + hipBLASLt combined (requires INSTRUMENTED_ROCBLAS_LIB_DIR + INSTRUMENTED_HIPBLASLT_LIB_DIR)
 run_suite "rocBLAS + hipBLASLt combined" "${SCRIPT_DIR}/rocblas_hipblaslt/run_test.sh"
 
-# Suite 20: Triton integration (requires TRITON_DIR)
+# Suite 21: Triton integration (requires TRITON_DIR)
 run_suite "Triton integration" "${SCRIPT_DIR}/triton/run_test.sh"
 
 # Summary

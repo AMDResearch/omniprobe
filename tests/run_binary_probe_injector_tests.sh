@@ -88,6 +88,97 @@ write_lifecycle_spec "$ENTRY_SPEC" "kernel_entry"
 prepare_shared_artifacts "binary_probe_injector_exit" "$EXIT_SPEC"
 prepare_shared_artifacts "binary_probe_injector_entry" "$ENTRY_SPEC"
 
+ENTRY_BACKEND_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_entry_backend.plan.json"
+ENTRY_BACKEND_THUNK_JSON="$OUTPUT_DIR/binary_probe_injector_entry_backend.thunks.json"
+
+python3 - "$ENTRY_BACKEND_PLAN_JSON" "$ENTRY_BACKEND_THUNK_JSON" <<'PY'
+import json
+import sys
+
+plan = {
+    "kernels": [
+        {
+            "source_kernel": "entry_abi_kernel",
+            "clone_kernel": "__amd_crk_entry_abi_kernel",
+            "hidden_omniprobe_ctx": {
+                "offset": 272,
+            },
+            "planned_sites": [
+                {
+                    "status": "planned",
+                    "contract": "kernel_lifecycle_v1",
+                    "when": "kernel_entry",
+                }
+            ],
+        }
+    ]
+}
+
+thunks = {
+    "thunks": [
+        {
+            "source_kernel": "entry_abi_kernel",
+            "when": "kernel_entry",
+            "thunk": "__omniprobe_binary_kernel_timing_entry_abi_kernel_kernel_entry_thunk",
+            "call_arguments": [
+                {
+                    "kind": "hidden_ctx",
+                    "name": "hidden_ctx",
+                    "c_type": "const void *",
+                    "size_bytes": 8,
+                    "vgprs": [0, 1],
+                },
+                {
+                    "kind": "capture",
+                    "name": "capture_data",
+                    "c_type": "uint64_t",
+                    "size_bytes": 8,
+                    "kernel_arg_offset": 0,
+                    "vgprs": [2, 3],
+                },
+                {
+                    "kind": "capture",
+                    "name": "capture_size",
+                    "c_type": "uint64_t",
+                    "size_bytes": 8,
+                    "kernel_arg_offset": 8,
+                    "vgprs": [4, 5],
+                },
+                {
+                    "kind": "timestamp",
+                    "name": "timestamp",
+                    "c_type": "uint64_t",
+                    "size_bytes": 8,
+                    "vgprs": [6, 7],
+                },
+            ],
+        }
+    ]
+}
+
+json.dump(plan, open(sys.argv[1], "w", encoding="utf-8"), indent=2)
+open(sys.argv[1], "a", encoding="utf-8").write("\n")
+json.dump(thunks, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
+open(sys.argv[2], "a", encoding="utf-8").write("\n")
+PY
+
+make_high_vgpr_entry_manifest() {
+    local input_manifest="$1"
+    local output_manifest="$2"
+    python3 - "$input_manifest" "$output_manifest" <<'PY'
+import json
+import sys
+
+manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+descriptor = manifest["kernels"]["descriptors"][0]
+descriptor.setdefault("compute_pgm_rsrc1", {})["granulated_workitem_vgpr_count"] = 3
+kernel = manifest["kernels"]["metadata"]["kernels"][0]
+kernel["vgpr_count"] = 32
+json.dump(manifest, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
+open(sys.argv[2], "a", encoding="utf-8").write("\n")
+PY
+}
+
 run_inject_test() {
     local arch="$1"
     local ir_fixture="$2"
@@ -241,7 +332,9 @@ assert meta["staging_sgpr_base"] == 36
 assert meta["staging_sgpr_count"] == 10
 assert meta["timestamp_pair"] == [42, 43]
 assert meta["target_pair"] == [44, 45]
-assert meta["total_sgprs"] == 46
+assert meta["kernarg_restore_pair"] == [46, 47]
+assert meta["exec_restore_pair"] == [48, 49]
+assert meta["total_sgprs"] == 50
 instructions = fn["instructions"]
 entry_stub = []
 first_stub = next(i for i, insn in enumerate(instructions) if insn.get("synthetic"))
@@ -250,7 +343,7 @@ cursor = first_stub
 while cursor < len(instructions) and instructions[cursor].get("synthetic"):
     entry_stub.append(instructions[cursor])
     cursor += 1
-assert len(entry_stub) == 20
+assert len(entry_stub) == 26
 assert entry_stub[0]["mnemonic"] == "s_load_dwordx2"
 assert entry_stub[0]["operand_text"].startswith("s[36:37]")
 assert entry_stub[0]["operand_text"].endswith(", 0x10")
@@ -270,10 +363,16 @@ assert entry_stub[13]["mnemonic"] == "s_waitcnt"
 assert entry_stub[14]["operand_text"] == "v6, s42"
 assert entry_stub[15]["operand_text"] == "v7, s43"
 assert "__omniprobe_binary_kernel_timing_simple_kernel_kernel_entry_thunk@rel32@lo+4" in entry_stub[17]["operand_text"]
-assert entry_stub[-1]["mnemonic"] == "s_swappc_b64"
+assert entry_stub[19]["operand_text"] == "s[48:49], exec"
+assert entry_stub[20]["operand_text"] == "s46, s{}".format(expected_kernarg[0])
+assert entry_stub[21]["operand_text"] == "s47, s{}".format(expected_kernarg[1])
+assert entry_stub[-4]["mnemonic"] == "s_swappc_b64"
+assert entry_stub[-4]["operand_text"] == "s[30:31], s[44:45]"
+assert entry_stub[-3]["operand_text"] == "s{}, s46".format(expected_kernarg[0])
+assert entry_stub[-2]["operand_text"] == "s{}, s47".format(expected_kernarg[1])
+assert entry_stub[-1]["operand_text"] == "exec, s[48:49]"
 assert instructions[cursor]["address"] == meta["injected_before_instruction_address"]
-assert first_stub > 0
-assert instructions[first_stub - 1]["mnemonic"].startswith("s_load_dword")
+assert first_stub == 0
 PY
         then
             echo -e "  ${GREEN}✓ PASS${NC} - ${arch} entry stub injection reserved fresh SGPRs and marshalled the thunk arguments"
@@ -284,6 +383,93 @@ PY
         fi
     else
         echo -e "  ${RED}✗ FAIL${NC} - ${arch} entry injector execution failed"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+run_entry_backend_pattern_test() {
+    local arch="$1"
+    local ir_fixture="$2"
+    local manifest_fixture="$3"
+    local expected_kernarg_pair="$4"
+    local expected_workitem_pattern="$5"
+    local expected_private_pattern="$6"
+    local expected_private_offset="$7"
+    local expected_setup_pattern="$8"
+    local expected_restore_kind="$9"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    local test_name="binary_probe_inject_entry_backend_${arch}"
+    echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $test_name"
+
+    local adjusted_manifest="$OUTPUT_DIR/${test_name}.manifest.json"
+    local out_ir="$OUTPUT_DIR/${test_name}.ir.json"
+    make_high_vgpr_entry_manifest "$manifest_fixture" "$adjusted_manifest"
+
+    if python3 "$INJECTOR" "$ir_fixture" \
+        --plan "$ENTRY_BACKEND_PLAN_JSON" \
+        --thunk-manifest "$ENTRY_BACKEND_THUNK_JSON" \
+        --manifest "$adjusted_manifest" \
+        --function entry_abi_kernel \
+        --output "$out_ir" > "$OUTPUT_DIR/${test_name}.out"; then
+        if python3 - "$out_ir" "$expected_kernarg_pair" "$expected_workitem_pattern" "$expected_private_pattern" "$expected_private_offset" "$expected_setup_pattern" "$expected_restore_kind" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+expected_kernarg = [int(part) for part in sys.argv[2].split(":")]
+expected_workitem_pattern = sys.argv[3]
+expected_private_pattern = sys.argv[4]
+expected_private_offset = None if sys.argv[5] == "none" else int(sys.argv[5])
+expected_setup_pattern = sys.argv[6]
+expected_restore_kind = sys.argv[7]
+
+fn = payload["functions"][0]
+meta = fn["instrumentation"]["lifecycle_entry_stub"]
+preserved = meta["preserved_workitem_vgprs"]
+entry_abi = meta["entry_abi_analysis"]
+assert meta["kernarg_pair"] == expected_kernarg
+assert preserved["count"] == 3
+assert preserved["packed_workitem_dest_vgpr"] is None
+assert preserved["pattern_class"] == expected_workitem_pattern
+assert preserved["private_segment_pattern_class"] == expected_private_pattern
+assert preserved["private_segment_offset_source_sgpr"] == expected_private_offset
+assert preserved["restore_mode"] == "direct"
+assert entry_abi["observed_workitem_id_materialization"]["pattern_class"] == expected_workitem_pattern
+assert entry_abi["observed_private_segment_materialization"]["pattern_class"] == expected_private_pattern
+
+synthetic = [insn for insn in fn["instructions"] if insn.get("synthetic")]
+texts = [f"{insn['mnemonic']} {insn.get('operand_text', '')}".strip() for insn in synthetic]
+assert any(expected_setup_pattern in text for text in texts)
+if expected_workitem_pattern == "direct_vgpr_xyz":
+    assert any("buffer_store_dword v0" in text and "offset:528" in text for text in texts)
+    assert any("buffer_store_dword v1" in text and "offset:532" in text for text in texts)
+    assert any("buffer_store_dword v2" in text and "offset:536" in text for text in texts)
+    assert any("buffer_load_dword v0" in text and "offset:528" in text for text in texts)
+    assert any("buffer_load_dword v1" in text and "offset:532" in text for text in texts)
+    assert any("buffer_load_dword v2" in text and "offset:536" in text for text in texts)
+else:
+    assert any("buffer_store_dword v0" in text and "offset:528" in text for text in texts)
+    assert any("buffer_load_dword v0" in text and "offset:528" in text for text in texts)
+
+if expected_restore_kind == "unpack":
+    assert any("buffer_load_dword v1" in text and "offset:532" in text for text in texts)
+    assert any("buffer_load_dword v2" in text and "offset:536" in text for text in texts)
+elif expected_restore_kind == "restore_v0":
+    assert not any("offset:532" in text and "buffer_load_dword v1" in text for text in texts)
+    assert not any("offset:536" in text and "buffer_load_dword v2" in text for text in texts)
+else:
+    raise AssertionError(f"unknown expected restore kind {expected_restore_kind!r}")
+PY
+        then
+            echo -e "  ${GREEN}✓ PASS${NC} - ${arch} entry injector followed the tracked workitem/private-segment backend pattern"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            echo -e "  ${RED}✗ FAIL${NC} - ${arch} backend-pattern entry injection did not match expectations"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - ${arch} backend-pattern injector execution failed"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
@@ -330,5 +516,35 @@ run_entry_inject_test "gfx942" "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_callco
 run_entry_inject_test "gfx1030" "$OUTPUT_DIR/binary_probe_injector_gfx1030_fallback.ir.json" "4:5" "fallback"
 run_entry_inject_test "gfx90a" "$OUTPUT_DIR/binary_probe_injector_gfx90a_fallback.ir.json" "4:5" "fallback"
 run_entry_inject_test "gfx942" "$OUTPUT_DIR/binary_probe_injector_gfx942_fallback.ir.json" "0:1" "fallback"
+run_entry_backend_pattern_test \
+    "gfx1030" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx1030.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx1030.manifest.json" \
+    "4:5" \
+    "direct_vgpr_xyz" \
+    "setreg_flat_scratch_init" \
+    "11" \
+    "s_add_u32 s0, s0, s11" \
+    "unpack"
+run_entry_backend_pattern_test \
+    "gfx90a" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.manifest.json" \
+    "4:5" \
+    "packed_v0_10_10_10_unpack" \
+    "flat_scratch_alias_init" \
+    "11" \
+    "s_add_u32 s0, s0, s11" \
+    "restore_v0"
+run_entry_backend_pattern_test \
+    "gfx942" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.manifest.json" \
+    "0:1" \
+    "packed_v0_10_10_10_unpack" \
+    "src_private_base" \
+    "none" \
+    "s_mov_b64 s[0:1], src_private_base" \
+    "restore_v0"
 
 print_summary

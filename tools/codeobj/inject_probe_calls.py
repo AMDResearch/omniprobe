@@ -12,6 +12,10 @@ from amdgpu_calling_convention import (
     descriptor_allocated_vgpr_count,
     layout_call_arguments,
 )
+from amdgpu_entry_abi import (
+    analyze_kernel_entry_abi,
+    entry_livein_sgprs as tracked_entry_livein_sgprs,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -527,8 +531,13 @@ def reserve_entry_livein_restore(
     *,
     next_sgpr: int,
     descriptor: dict | None,
+    entry_analysis: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    source_sgprs = entry_livein_sgprs(descriptor)
+    source_sgprs = []
+    if isinstance(entry_analysis, dict):
+        source_sgprs = [int(value) for value in entry_analysis.get("entry_livein_sgprs", [])]
+    if not source_sgprs:
+        source_sgprs = tracked_entry_livein_sgprs(descriptor)
     if not source_sgprs:
         return {
             "source_sgprs": [],
@@ -547,50 +556,99 @@ def reserve_entry_livein_restore(
     }
 
 
-def infer_entry_workitem_vgpr_count(descriptor: dict | None) -> int:
-    if not isinstance(descriptor, dict):
-        return 0
-    rsrc2 = descriptor.get("compute_pgm_rsrc2", {})
-    if not isinstance(rsrc2, dict):
-        return 0
-    encoded = rsrc2.get("enable_vgpr_workitem_id")
-    if not isinstance(encoded, int):
-        return 0
-    if encoded < 0:
-        return 0
-    return min(encoded + 1, 3)
-
-
 def reserve_entry_workitem_restore(
     *,
     allocated_vgprs: int | None,
     reserved_low_vgprs: int,
     descriptor: dict | None,
+    entry_analysis: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    count = infer_entry_workitem_vgpr_count(descriptor)
+    count = 0
+    if isinstance(entry_analysis, dict):
+        count = int(entry_analysis.get("entry_workitem_vgpr_count", 0) or 0)
     if count <= 0:
         return {
             "count": 0,
             "spill_offset": None,
             "packed_workitem_dest_vgpr": None,
+            "pattern_class": None,
+            "private_segment_pattern_class": None,
+            "private_segment_offset_source_sgpr": None,
+            "source_vgprs": [],
+            "restore_mode": None,
         }
-    packed_workitem_dest_vgpr = 31
-    if allocated_vgprs is not None and allocated_vgprs <= packed_workitem_dest_vgpr:
+    workitem_pattern = entry_analysis.get("observed_workitem_id_materialization") if isinstance(entry_analysis, dict) else None
+    pattern_class = (
+        str(workitem_pattern.get("pattern_class"))
+        if isinstance(workitem_pattern, dict)
+        else None
+    )
+    if pattern_class not in {None, "direct_vgpr_xyz", "packed_v0_10_10_10_unpack", "single_vgpr_workitem_id"}:
         raise SystemExit(
-            "entry helper injection needs packed workitem VGPR v31, but the kernel "
-            f"allocates only {allocated_vgprs} VGPRs"
+            "entry helper injection does not yet support workitem-id materialization "
+            f"pattern {pattern_class!r}"
         )
+    if pattern_class == "packed_v0_10_10_10_unpack":
+        source_vgprs = [0]
+        restore_mode = "direct"
+    else:
+        effective_count = max(1, count) if pattern_class == "single_vgpr_workitem_id" else count
+        source_vgprs = list(range(effective_count))
+        restore_mode = "direct"
     private_segment_size = int((descriptor or {}).get("private_segment_fixed_size", 0) or 0)
-    spill_bytes = 16
     if private_segment_size < 0:
         raise SystemExit("kernel private-segment size cannot be negative")
+    private_materialization = (
+        entry_analysis.get("observed_private_segment_materialization")
+        if isinstance(entry_analysis, dict)
+        else None
+    )
+    private_pattern_class = (
+        str(private_materialization.get("pattern_class"))
+        if isinstance(private_materialization, dict)
+        else None
+    )
+    private_segment_offset_source_sgpr = None
+    if isinstance(private_materialization, dict):
+        details = private_materialization.get("details", {})
+        if isinstance(details, dict):
+            pair_updates = details.get("pair_updates", [])
+            if isinstance(pair_updates, list):
+                first_pair_update = next(
+                    (
+                        entry
+                        for entry in pair_updates
+                        if isinstance(entry, dict)
+                        and entry.get("pair") == [0, 1]
+                        and isinstance(entry.get("offset_sgpr"), int)
+                    ),
+                    None,
+                )
+                if first_pair_update is not None:
+                    private_segment_offset_source_sgpr = int(first_pair_update["offset_sgpr"])
+    if private_pattern_class not in {
+        None,
+        "setreg_flat_scratch_init",
+        "flat_scratch_alias_init",
+        "src_private_base",
+        "scalar_pair_update_only",
+    }:
+        raise SystemExit(
+            "entry helper injection does not yet support private-segment materialization "
+            f"pattern {private_pattern_class!r}"
+        )
     return {
         "count": count,
         # Binary probe regeneration grows the clone private segment by 16 bytes.
         # Spill the packed workitem state into that appended tail, not into the
         # source kernel's original private frame.
         "spill_offset": private_segment_size,
-        "packed_workitem_dest_vgpr": packed_workitem_dest_vgpr,
+        "packed_workitem_dest_vgpr": None,
+        "pattern_class": pattern_class,
+        "private_segment_pattern_class": private_pattern_class,
+        "private_segment_offset_source_sgpr": private_segment_offset_source_sgpr,
+        "source_vgprs": source_vgprs,
+        "restore_mode": restore_mode,
     }
 
 
@@ -618,179 +676,169 @@ def emit_entry_workitem_save_restore(
     saved_s1 = saved_sgpr_by_source.get(1)
     if not isinstance(saved_s0, int) or not isinstance(saved_s1, int):
         raise SystemExit("entry workitem preservation requires saved copies of s0:s1")
-    packed_workitem_dest_vgpr = restore_plan.get("packed_workitem_dest_vgpr")
+    workitem_pattern_class = restore_plan.get("pattern_class")
+    private_pattern_class = restore_plan.get("private_segment_pattern_class")
+    private_offset_source_sgpr = restore_plan.get("private_segment_offset_source_sgpr")
+    source_vgprs = [int(value) for value in restore_plan.get("source_vgprs", [])]
+    if not source_vgprs:
+        return [], []
 
     before: list[dict] = []
     after: list[dict] = []
-    if isinstance(packed_workitem_dest_vgpr, int):
+    address_setup: list[dict] = []
+    if private_pattern_class == "src_private_base":
+        address_setup.extend(
+            [
+                make_instruction(
+                    anchor_address,
+                    "s_mov_b64",
+                    "s[0:1], src_private_base",
+                    ["s[0:1]", "src_private_base"],
+                ),
+            ]
+        )
+        if isinstance(private_offset_source_sgpr, int):
+            address_setup.extend(
+                [
+                    make_instruction(
+                        anchor_address,
+                        "s_add_u32",
+                        f"s0, s0, s{private_offset_source_sgpr}",
+                        ["s0", "s0", f"s{private_offset_source_sgpr}"],
+                    ),
+                    make_instruction(
+                        anchor_address,
+                        "s_addc_u32",
+                        "s1, s1, 0",
+                        ["s1", "s1", "0"],
+                    ),
+                ]
+            )
+    elif private_pattern_class in {None, "setreg_flat_scratch_init", "flat_scratch_alias_init", "scalar_pair_update_only"}:
+        if not isinstance(private_offset_source_sgpr, int):
+            raise SystemExit(
+                "entry workitem preservation requires an observed private-segment offset SGPR "
+                f"for pattern {private_pattern_class!r}"
+            )
+        address_setup.extend(
+            [
+                make_instruction(
+                    anchor_address,
+                    "s_add_u32",
+                    f"s0, s0, s{private_offset_source_sgpr}",
+                    ["s0", "s0", f"s{private_offset_source_sgpr}"],
+                ),
+                make_instruction(
+                    anchor_address,
+                    "s_addc_u32",
+                    "s1, s1, 0",
+                    ["s1", "s1", "0"],
+                ),
+            ]
+        )
+    else:
+        raise SystemExit(
+            "entry workitem preservation does not support private-segment pattern "
+            f"{private_pattern_class!r}"
+        )
+
+    if workitem_pattern_class not in {None, "packed_v0_10_10_10_unpack", "single_vgpr_workitem_id", "direct_vgpr_xyz"}:
+        raise SystemExit(
+            "entry workitem preservation does not support workitem pattern "
+            f"{workitem_pattern_class!r}"
+        )
+    before.extend(
+        address_setup
+        + [
+            make_instruction(
+                anchor_address,
+                "s_mov_b32",
+                f"s{scratch_soffset_sgpr}, 0",
+                [f"s{scratch_soffset_sgpr}", "0"],
+            ),
+        ]
+    )
+    for index, source_vgpr in enumerate(source_vgprs):
+        store_offset = spill_offset + (index * 4)
         before.append(
             make_instruction(
                 anchor_address,
-                "v_mov_b32_e32",
-                f"v{packed_workitem_dest_vgpr}, v0",
-                [f"v{packed_workitem_dest_vgpr}", "v0"],
-            )
-        )
-        if count >= 2:
-            before.extend(
+                "buffer_store_dword",
+                f"v{source_vgpr}, off, s[0:3], s{scratch_soffset_sgpr} offset:{store_offset}",
                 [
-                    make_instruction(
-                        anchor_address,
-                        "v_lshlrev_b32_e32",
-                        "v0, 10, v1",
-                        ["v0", "10", "v1"],
-                    ),
-                    make_instruction(
-                        anchor_address,
-                        "v_or_b32_e32",
-                        f"v{packed_workitem_dest_vgpr}, v{packed_workitem_dest_vgpr}, v0",
-                        [f"v{packed_workitem_dest_vgpr}", f"v{packed_workitem_dest_vgpr}", "v0"],
-                    ),
-                ]
+                    f"v{source_vgpr}",
+                    "off",
+                    "s[0:3]",
+                    f"s{scratch_soffset_sgpr}",
+                    f"offset:{store_offset}",
+                ],
             )
-        if count >= 3:
-            before.extend(
+        )
+    before.extend(
+        [
+            make_instruction(
+                anchor_address,
+                "s_mov_b32",
+                f"s0, s{saved_s0}",
+                ["s0", f"s{saved_s0}"],
+            ),
+            make_instruction(
+                anchor_address,
+                "s_mov_b32",
+                f"s1, s{saved_s1}",
+                ["s1", f"s{saved_s1}"],
+            ),
+        ]
+    )
+    after.extend(
+        address_setup
+        + [
+            make_instruction(
+                anchor_address,
+                "s_mov_b32",
+                f"s{scratch_soffset_sgpr}, 0",
+                [f"s{scratch_soffset_sgpr}", "0"],
+            ),
+        ]
+    )
+    for index, source_vgpr in enumerate(source_vgprs):
+        load_offset = spill_offset + (index * 4)
+        after.append(
+            make_instruction(
+                anchor_address,
+                "buffer_load_dword",
+                f"v{source_vgpr}, off, s[0:3], s{scratch_soffset_sgpr} offset:{load_offset}",
                 [
-                    make_instruction(
-                        anchor_address,
-                        "v_lshlrev_b32_e32",
-                        "v1, 20, v2",
-                        ["v1", "20", "v2"],
-                    ),
-                    make_instruction(
-                        anchor_address,
-                        "v_or_b32_e32",
-                        f"v{packed_workitem_dest_vgpr}, v{packed_workitem_dest_vgpr}, v1",
-                        [f"v{packed_workitem_dest_vgpr}", f"v{packed_workitem_dest_vgpr}", "v1"],
-                    ),
-                ]
+                    f"v{source_vgpr}",
+                    "off",
+                    "s[0:3]",
+                    f"s{scratch_soffset_sgpr}",
+                    f"offset:{load_offset}",
+                ],
             )
-        before.extend(
-            [
-                make_instruction(
-                    anchor_address,
-                    "s_add_u32",
-                    "s0, s0, s15",
-                    ["s0", "s0", "s15"],
-                ),
-                make_instruction(
-                    anchor_address,
-                    "s_addc_u32",
-                    "s1, s1, 0",
-                    ["s1", "s1", "0"],
-                ),
-                make_instruction(
-                    anchor_address,
-                    "s_mov_b32",
-                    f"s{scratch_soffset_sgpr}, 0",
-                    [f"s{scratch_soffset_sgpr}", "0"],
-                ),
-                make_instruction(
-                    anchor_address,
-                    "buffer_store_dword",
-                    f"v{packed_workitem_dest_vgpr}, off, s[0:3], s{scratch_soffset_sgpr} offset:{spill_offset}",
-                    [
-                        f"v{packed_workitem_dest_vgpr}",
-                        "off",
-                        "s[0:3]",
-                        f"s{scratch_soffset_sgpr}",
-                        f"offset:{spill_offset}",
-                    ],
-                ),
-                make_instruction(
-                    anchor_address,
-                    "s_mov_b32",
-                    f"s0, s{saved_s0}",
-                    ["s0", f"s{saved_s0}"],
-                ),
-                make_instruction(
-                    anchor_address,
-                    "s_mov_b32",
-                    f"s1, s{saved_s1}",
-                    ["s1", f"s{saved_s1}"],
-                ),
-            ]
         )
-        after.extend(
-            [
-                make_instruction(
-                    anchor_address,
-                    "s_add_u32",
-                    "s0, s0, s15",
-                    ["s0", "s0", "s15"],
-                ),
-                make_instruction(
-                    anchor_address,
-                    "s_addc_u32",
-                    "s1, s1, 0",
-                    ["s1", "s1", "0"],
-                ),
-                make_instruction(
-                    anchor_address,
-                    "s_mov_b32",
-                    f"s{scratch_soffset_sgpr}, 0",
-                    [f"s{scratch_soffset_sgpr}", "0"],
-                ),
-                make_instruction(
-                    anchor_address,
-                    "buffer_load_dword",
-                    f"v{packed_workitem_dest_vgpr}, off, s[0:3], s{scratch_soffset_sgpr} offset:{spill_offset}",
-                    [
-                        f"v{packed_workitem_dest_vgpr}",
-                        "off",
-                        "s[0:3]",
-                        f"s{scratch_soffset_sgpr}",
-                        f"offset:{spill_offset}",
-                    ],
-                ),
-                make_instruction(
-                    anchor_address,
-                    "s_waitcnt",
-                    "vmcnt(0)",
-                    ["vmcnt(0)"],
-                ),
-                make_instruction(
-                    anchor_address,
-                    "v_and_b32_e32",
-                    f"v0, 0x3ff, v{packed_workitem_dest_vgpr}",
-                    ["v0", "0x3ff", f"v{packed_workitem_dest_vgpr}"],
-                ),
-            ]
-        )
-        if count >= 2:
-            after.append(
-                make_instruction(
-                    anchor_address,
-                    "v_bfe_u32",
-                    f"v1, v{packed_workitem_dest_vgpr}, 10, 10",
-                    ["v1", f"v{packed_workitem_dest_vgpr}", "10", "10"],
-                )
-            )
-        if count >= 3:
-            after.append(
-                make_instruction(
-                    anchor_address,
-                    "v_bfe_u32",
-                    f"v2, v{packed_workitem_dest_vgpr}, 20, 10",
-                    ["v2", f"v{packed_workitem_dest_vgpr}", "20", "10"],
-                )
-            )
-        after.extend(
-            [
-                make_instruction(
-                    anchor_address,
-                    "s_mov_b32",
-                    f"s0, s{saved_s0}",
-                    ["s0", f"s{saved_s0}"],
-                ),
-                make_instruction(
-                    anchor_address,
-                    "s_mov_b32",
-                    f"s1, s{saved_s1}",
-                    ["s1", f"s{saved_s1}"],
-                ),
-            ]
-        )
+    after.extend(
+        [
+            make_instruction(
+                anchor_address,
+                "s_waitcnt",
+                "vmcnt(0)",
+                ["vmcnt(0)"],
+            ),
+            make_instruction(
+                anchor_address,
+                "s_mov_b32",
+                f"s0, s{saved_s0}",
+                ["s0", f"s{saved_s0}"],
+            ),
+            make_instruction(
+                anchor_address,
+                "s_mov_b32",
+                f"s1, s{saved_s1}",
+                ["s1", f"s{saved_s1}"],
+            ),
+        ]
+    )
     return before, after
 
 
@@ -1242,6 +1290,11 @@ def inject_lifecycle_stubs(
     output = deepcopy(ir)
     function = find_function(output, function_name)
     analysis = analyze_kernel_calling_convention(function=function, descriptor=descriptor)
+    entry_analysis = analyze_kernel_entry_abi(
+        function=function,
+        descriptor=descriptor,
+        kernel_metadata=kernel_metadata,
+    )
     kernarg_base = analysis["inferred_kernarg_base"]
     if kernarg_base is None or not analysis.get("descriptor_has_kernarg_segment_ptr", False):
         raise SystemExit(f"function {function_name!r} is missing kernarg-base facts required for lifecycle stub injection")
@@ -1303,11 +1356,13 @@ def inject_lifecycle_stubs(
         livein_restore_plan = reserve_entry_livein_restore(
             next_sgpr=exec_restore_plan["total_sgprs"],
             descriptor=descriptor,
+            entry_analysis=entry_analysis,
         )
         workitem_restore_plan = reserve_entry_workitem_restore(
             allocated_vgprs=allocated_vgprs,
             reserved_low_vgprs=call_layout["total_dwords"],
             descriptor=descriptor,
+            entry_analysis=entry_analysis,
         )
         entry_anchor_index, entry_anchor_address = choose_entry_insertion_anchor(function, kernarg_base)
         entry_stub_instructions = lifecycle_entry_stub_instructions(
@@ -1351,6 +1406,7 @@ def inject_lifecycle_stubs(
             "entry_livein_save_sgprs": livein_restore_plan["save_sgprs"],
             "entry_livein_save_sgpr_base": livein_restore_plan["save_sgpr_base"],
             "entry_livein_save_sgpr_count": livein_restore_plan["save_sgpr_count"],
+            "entry_abi_analysis": entry_analysis,
             "preserved_workitem_vgprs": workitem_restore_plan,
             "total_sgprs": livein_restore_plan["total_sgprs"],
         }

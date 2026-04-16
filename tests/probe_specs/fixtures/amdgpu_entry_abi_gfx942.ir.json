@@ -1,0 +1,30 @@
+{
+  "arch": "gfx942",
+  "functions": [
+    {
+      "name": "entry_abi_kernel",
+      "instructions": [
+        {"address": 6400, "mnemonic": "s_load_dwordx8", "operand_text": "s[8:15], s[0:1], 0x0", "operands": ["s[8:15]", "s[0:1]", "0x0"]},
+        {"address": 6408, "mnemonic": "v_bfe_u32", "operand_text": "v3, v0, 20, 10", "operands": ["v3", "v0", "20", "10"]},
+        {"address": 6416, "mnemonic": "s_lshl_b32", "operand_text": "s0, s3, 4", "operands": ["s0", "s3", "4"]},
+        {"address": 6420, "mnemonic": "v_bfe_u32", "operand_text": "v1, v0, 10, 10", "operands": ["v1", "v0", "10", "10"]},
+        {"address": 6428, "mnemonic": "v_lshlrev_b32_e32", "operand_text": "v4, 20, v3", "operands": ["v4", "20", "v3"]},
+        {"address": 6432, "mnemonic": "s_waitcnt", "operand_text": "lgkmcnt(0)", "operands": ["lgkmcnt(0)"]},
+        {"address": 6436, "mnemonic": "s_add_i32", "operand_text": "s3, s13, s4", "operands": ["s3", "s13", "s4"]},
+        {"address": 6440, "mnemonic": "s_lshl_b32", "operand_text": "s1, s14, 16", "operands": ["s1", "s14", "16"]},
+        {"address": 6444, "mnemonic": "v_and_b32_e32", "operand_text": "v5, 0x3ff, v0", "operands": ["v5", "0x3ff", "v0"]},
+        {"address": 6452, "mnemonic": "s_lshl_b32", "operand_text": "s3, s3, 8", "operands": ["s3", "s3", "8"]},
+        {"address": 6456, "mnemonic": "s_add_i32", "operand_text": "s0, s0, s2", "operands": ["s0", "s0", "s2"]},
+        {"address": 6460, "mnemonic": "v_lshlrev_b32_e32", "operand_text": "v2, 10, v1", "operands": ["v2", "10", "v1"]},
+        {"address": 6464, "mnemonic": "v_xor_b32_e32", "operand_text": "v0, v5, v1", "operands": ["v0", "v5", "v1"]},
+        {"address": 6468, "mnemonic": "v_add3_u32", "operand_text": "v1, s0, v5, v4", "operands": ["v1", "s0", "v5", "v4"]},
+        {"address": 6476, "mnemonic": "s_add_i32", "operand_text": "s0, s3, s1", "operands": ["s0", "s3", "s1"]},
+        {"address": 6480, "mnemonic": "s_add_i32", "operand_text": "s0, s0, s12", "operands": ["s0", "s0", "s12"]},
+        {"address": 6484, "mnemonic": "v_xor_b32_e32", "operand_text": "v0, v0, v3", "operands": ["v0", "v0", "v3"]},
+        {"address": 6488, "mnemonic": "v_add3_u32", "operand_text": "v2, v1, v2, s0", "operands": ["v2", "v1", "v2", "s0"]},
+        {"address": 6496, "mnemonic": "s_mov_b64", "operand_text": "s[0:1], src_private_base", "operands": ["s[0:1]", "src_private_base"]},
+        {"address": 6500, "mnemonic": "v_and_b32_e32", "operand_text": "v0, 0x7f, v0", "operands": ["v0", "0x7f", "v0"]}
+      ]
+    }
+  ]
+}

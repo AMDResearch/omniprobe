@@ -1,0 +1,30 @@
+{
+  "arch": "gfx1030",
+  "functions": [
+    {
+      "name": "entry_abi_kernel",
+      "instructions": [
+        {"address": 6400, "mnemonic": "s_add_u32", "operand_text": "s6, s6, s11", "operands": ["s6", "s6", "s11"]},
+        {"address": 6404, "mnemonic": "s_addc_u32", "operand_text": "s7, s7, 0", "operands": ["s7", "s7", "0"]},
+        {"address": 6408, "mnemonic": "s_setreg_b32", "operand_text": "hwreg(HW_REG_FLAT_SCR_LO), s6", "operands": ["hwreg(HW_REG_FLAT_SCR_LO)", "s6"]},
+        {"address": 6412, "mnemonic": "s_setreg_b32", "operand_text": "hwreg(HW_REG_FLAT_SCR_HI), s7", "operands": ["hwreg(HW_REG_FLAT_SCR_HI)", "s7"]},
+        {"address": 6416, "mnemonic": "s_load_dwordx8", "operand_text": "s[12:19], s[4:5], null", "operands": ["s[12:19]", "s[4:5]", "null"]},
+        {"address": 6424, "mnemonic": "s_add_u32", "operand_text": "s0, s0, s11", "operands": ["s0", "s0", "s11"]},
+        {"address": 6428, "mnemonic": "s_addc_u32", "operand_text": "s1, s1, 0", "operands": ["s1", "s1", "0"]},
+        {"address": 6432, "mnemonic": "s_lshl_b32", "operand_text": "s4, s9, 4", "operands": ["s4", "s9", "4"]},
+        {"address": 6436, "mnemonic": "v_lshlrev_b32_e32", "operand_text": "v3, 10, v1", "operands": ["v3", "10", "v1"]},
+        {"address": 6440, "mnemonic": "v_lshlrev_b32_e32", "operand_text": "v4, 20, v2", "operands": ["v4", "20", "v2"]},
+        {"address": 6444, "mnemonic": "v_add3_u32", "operand_text": "v5, s4, s8, v0", "operands": ["v5", "s4", "s8", "v0"]},
+        {"address": 6452, "mnemonic": "v_xor3_b32", "operand_text": "v2, v0, v1, v2", "operands": ["v2", "v0", "v1", "v2"]},
+        {"address": 6460, "mnemonic": "v_add3_u32", "operand_text": "v3, v5, v4, v3", "operands": ["v3", "v5", "v4", "v3"]},
+        {"address": 6468, "mnemonic": "v_and_b32_e32", "operand_text": "v2, 0x7f, v2", "operands": ["v2", "0x7f", "v2"]},
+        {"address": 6476, "mnemonic": "v_lshl_add_u32", "operand_text": "v2, v2, 2, 0", "operands": ["v2", "v2", "2", "0"]},
+        {"address": 6484, "mnemonic": "s_waitcnt", "operand_text": "lgkmcnt(0)", "operands": ["lgkmcnt(0)"]},
+        {"address": 6488, "mnemonic": "s_add_i32", "operand_text": "s5, s17, s10", "operands": ["s5", "s17", "s10"]},
+        {"address": 6492, "mnemonic": "s_lshl_b32", "operand_text": "s4, s18, 16", "operands": ["s4", "s18", "16"]},
+        {"address": 6496, "mnemonic": "s_lshl_b32", "operand_text": "s5, s5, 8", "operands": ["s5", "s5", "8"]},
+        {"address": 6500, "mnemonic": "s_and_b32", "operand_text": "s6, s19, 0xffff", "operands": ["s6", "s19", "0xffff"]}
+      ]
+    }
+  ]
+}
