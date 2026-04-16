@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import re
 import shutil
 import subprocess
@@ -45,8 +46,18 @@ def detect_llvm_tool(tool_name: str, explicit: str | None = None) -> str:
     raise SystemExit(f"{tool_name} was not found")
 
 
-def sanitize_bundle_id(bundle_id: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]+", "_", bundle_id).strip("_")
+def sanitize_bundle_id(bundle_id: str, max_length: int = 120) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "_", bundle_id).strip("_")
+    if not sanitized:
+        sanitized = "item"
+    if max_length <= 0 or len(sanitized) <= max_length:
+        return sanitized
+
+    digest = hashlib.sha1(bundle_id.encode("utf-8")).hexdigest()[:12]
+    keep = max_length - len(digest) - 1
+    if keep <= 0:
+        return digest[:max_length]
+    return f"{sanitized[:keep].rstrip('._-')}_{digest}"
 
 
 def get_instrumented_name(func_decl: str) -> str:
