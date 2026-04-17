@@ -653,13 +653,20 @@ def probe_kernel_rewrite_eligibility(kernel_plan: dict) -> tuple[bool, list[str]
         planned_whens.add(when)
         helper_context = site.get("helper_context", {})
         helper_builtins = helper_context.get("builtins", []) if isinstance(helper_context, dict) else []
+        event_usage = str(site.get("event_usage", "dispatch_origin") or "dispatch_origin")
         if contract == "kernel_lifecycle_v1":
             if when == "kernel_entry":
                 reasons.append(
                     "donor-free binary rewrite does not support kernel_entry lifecycle helper execution; "
                     "use the pass-plugin path or choose kernel_exit"
                 )
-            elif when != "kernel_exit":
+            elif when == "kernel_exit":
+                if event_usage != "none":
+                    reasons.append(
+                        "donor-free binary rewrite does not support kernel_exit lifecycle helpers that consume args.event; "
+                        "set inject.event_usage: none or use the pass-plugin path"
+                    )
+            else:
                 reasons.append(
                     f"binary rewrite currently supports only kernel_exit lifecycle sites, not {when!r}"
                 )

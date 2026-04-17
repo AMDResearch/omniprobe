@@ -17,7 +17,7 @@ ALLOWED_DEFAULT_KEYS = {"emission", "lane_headers", "state"}
 ALLOWED_PROBE_KEYS = {"id", "target", "inject", "payload", "capture"}
 ALLOWED_TARGET_KEYS = {"kernels", "match"}
 ALLOWED_MATCH_KEYS = {"kind", "values"}
-ALLOWED_INJECT_KEYS = {"when", "helper", "contract"}
+ALLOWED_INJECT_KEYS = {"when", "helper", "contract", "event_usage"}
 ALLOWED_PAYLOAD_KEYS = {"mode", "message"}
 ALLOWED_CAPTURE_KEYS = {"kernel_args", "builtins", "instruction"}
 
@@ -37,6 +37,7 @@ ALLOWED_CONTRACTS = {
     "basic_block_v1": {"basic_block"},
     "call_v1": {"call_before", "call_after"},
 }
+ALLOWED_EVENT_USAGE = {"none", "dispatch_origin"}
 ALLOWED_MATCH_KINDS = {
     "isa_mnemonic",
     "function_name",
@@ -424,6 +425,26 @@ def normalize_probe(probe: Any, defaults: dict[str, Any], probe_index: int) -> d
         raise SpecError(
             f"{context}.inject.contract: {contract} does not support when={unsupported_for_contract}"
         )
+    event_usage = inject.get("event_usage")
+    if contract == "kernel_lifecycle_v1":
+        if event_usage is None:
+            event_usage = "dispatch_origin"
+        if not isinstance(event_usage, str) or event_usage not in ALLOWED_EVENT_USAGE:
+            raise SpecError(
+                f"{context}.inject.event_usage: expected one of {sorted(ALLOWED_EVENT_USAGE)}"
+            )
+    elif "event_usage" in inject:
+        raise SpecError(
+            f"{context}.inject.event_usage: only supported for contract 'kernel_lifecycle_v1'"
+        )
+
+    normalized_inject = {
+        "when": when,
+        "helper": helper,
+        "contract": contract,
+    }
+    if contract == "kernel_lifecycle_v1":
+        normalized_inject["event_usage"] = event_usage
 
     payload = probe.get("payload", {})
     if not isinstance(payload, dict):
@@ -461,11 +482,7 @@ def normalize_probe(probe: Any, defaults: dict[str, Any], probe_index: int) -> d
     return {
         "id": probe_id,
         "target": normalized_target,
-        "inject": {
-            "when": when,
-            "helper": helper,
-            "contract": contract,
-        },
+        "inject": normalized_inject,
         "payload": {
             "mode": mode,
             "message": message,

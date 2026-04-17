@@ -53,6 +53,9 @@ SPEC_FILE="$WORK_DIR/module_load_binary_lifecycle.yaml"
 HELPER_FILE="$WORK_DIR/module_load_binary_lifecycle_helper.hip"
 SUMMARY_JSON="$WORK_DIR/cache_prepare.summary.json"
 OUTPUT_MANIFEST="$WORK_DIR/cache_prepare.output.manifest.json"
+EVENT_SUMMARY_JSON="$WORK_DIR/cache_prepare_event.summary.json"
+EVENT_SPEC_FILE="$WORK_DIR/module_load_binary_lifecycle_event.yaml"
+EVENT_HELPER_FILE="$WORK_DIR/module_load_binary_lifecycle_event_helper.hip"
 BASIC_BLOCK_SPEC_FILE="$WORK_DIR/module_load_binary_basic_block.yaml"
 BASIC_BLOCK_HELPER_FILE="$WORK_DIR/module_load_binary_basic_block_helper.hip"
 BASIC_BLOCK_SUMMARY_JSON="$WORK_DIR/basic_block_cache_prepare.summary.json"
@@ -78,6 +81,7 @@ probes:
       when: [kernel_exit]
       helper: module_load_binary_lifecycle_probe
       contract: kernel_lifecycle_v1
+      event_usage: none
     payload:
       mode: scalar
       message: custom
@@ -95,12 +99,54 @@ using namespace omniprobe::probe_abi_v1;
 extern "C" __device__ void module_load_binary_lifecycle_probe(
     const helper_args<omniprobe_user::module_load_binary_lifecycle_captures,
                       kernel_lifecycle_event> &args) {
+  auto *data = reinterpret_cast<int *>(static_cast<uintptr_t>(args.captures->data));
+  data[0] = 1234;
+}
+EOF
+
+cat > "$EVENT_SPEC_FILE" <<'EOF'
+version: 1
+
+helpers:
+  source: module_load_binary_lifecycle_event_helper.hip
+  namespace: omniprobe_user
+
+defaults:
+  emission: scalar
+  lane_headers: false
+  state: none
+
+probes:
+  - id: module_load_binary_lifecycle_event
+    target:
+      kernels: ["mlk"]
+    inject:
+      when: [kernel_exit]
+      helper: module_load_binary_lifecycle_event_probe
+      contract: kernel_lifecycle_v1
+    payload:
+      mode: scalar
+      message: custom
+    capture:
+      kernel_args:
+        - name: data
+          type: u64
+        - name: size
+          type: u64
+EOF
+
+cat > "$EVENT_HELPER_FILE" <<'EOF'
+using namespace omniprobe::probe_abi_v1;
+
+extern "C" __device__ void module_load_binary_lifecycle_event_probe(
+    const helper_args<omniprobe_user::module_load_binary_lifecycle_captures,
+                      kernel_lifecycle_event> &args) {
   if (!lifecycle_event_is_dispatch_origin(*args.event)) {
     return;
   }
 
   auto *data = reinterpret_cast<int *>(static_cast<uintptr_t>(args.captures->data));
-  data[0] = 1234;
+  data[0] = 5678;
 }
 EOF
 
@@ -256,6 +302,52 @@ else
     echo -e "  ${RED}✗ FAIL${NC} - Prepared cache artifact metadata was not correct"
     echo "  Report: $OUTPUT_REPORT"
     echo "  Manifest: $OUTPUT_MANIFEST"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+set +e
+python3 "$PREPARE_HSACO_CACHE" \
+    "$MODULE_LOAD_PLAIN_HSACO" \
+    --output-dir "$CACHE_DIR" \
+    --kernel-filter '^mlk$' \
+    --surrogate-mode donor-free \
+    --probe-spec "$EVENT_SPEC_FILE" \
+    --hipcc "$HIPCC" \
+    --llvm-readelf "$LLVM_READELF" \
+    --llvm-objdump "$LLVM_OBJDUMP" \
+    --llvm-mc "$LLVM_MC" \
+    --ld-lld "$LD_LLD" > "$EVENT_SUMMARY_JSON"
+EVENT_STATUS=$?
+set -e
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="binary_probe_cache_prepare_kernel_exit_event_rejected"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+
+if [ "$EVENT_STATUS" -ne 0 ] && python3 - "$EVENT_SUMMARY_JSON" <<'PY'
+import json
+import sys
+
+summary = json.load(open(sys.argv[1], encoding="utf-8"))
+assert len(summary) == 1
+item = summary[0]
+probe = item["probe_instrumentation"]
+assert probe["status"] == "planned"
+assert probe["supported"] is True
+assert probe["rewrite_pending"] is True
+kernel_rewrite = probe["kernel_rewrite"]["mlk"]
+assert kernel_rewrite["supported"] is False
+assert kernel_rewrite["instrumented"] is False
+reasons = kernel_rewrite["reasons"]
+assert any("consume args.event" in reason for reason in reasons)
+assert item["outputs"] == []
+PY
+then
+    echo -e "  ${GREEN}✓ PASS${NC} - Cache preparation fails closed on donor-free kernel-exit helpers that require args.event"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Donor-free kernel-exit helper using args.event was not rejected as expected"
+    echo "  Summary: $EVENT_SUMMARY_JSON"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 

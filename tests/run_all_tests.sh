@@ -105,31 +105,43 @@ run_suite "Probe lifecycle smoke" "${SCRIPT_DIR}/run_probe_lifecycle_smoke_tests
 # Suite 12: Binary-only probe runtime smoke
 run_suite "Binary probe runtime smoke" "${SCRIPT_DIR}/run_binary_probe_runtime_smoke_tests.sh"
 
-# Suite 13: Binary-only probe entry runtime smoke
+# Suite 13: Binary-only basic-block runtime smoke
+run_suite "Binary probe basic-block runtime smoke" "${SCRIPT_DIR}/run_binary_probe_basic_block_runtime_smoke_tests.sh"
+
+# Suite 14: Binary-only basic-block counter capability
+run_suite "Binary probe basic-block counter" "${SCRIPT_DIR}/run_binary_probe_basic_block_counter_tests.sh"
+
+# Suite 15: Binary-only basic-block dh_comms capability
+run_suite "Binary probe basic-block dh_comms" "${SCRIPT_DIR}/run_binary_probe_basic_block_dh_comms_tests.sh"
+
+# Suite 16: Binary-only kernel-exit summary capability
+run_suite "Binary probe kernel-exit summary" "${SCRIPT_DIR}/run_binary_probe_kernel_exit_summary_tests.sh"
+
+# Suite 17: Binary-only probe entry runtime smoke
 run_suite "Binary probe entry runtime smoke" "${SCRIPT_DIR}/run_binary_probe_entry_runtime_smoke_tests.sh"
 
-# Suite 14: Library filter chain (has its own build step)
+# Suite 18: Library filter chain (has its own build step)
 run_suite "Library filter chain" "${SCRIPT_DIR}/library_filter_chain/run_test.sh"
 
-# Suite 15: External code-object donor-free regeneration
+# Suite 19: External code-object donor-free regeneration
 run_suite "External code-object regeneration" "${SCRIPT_DIR}/run_codeobj_external_regen_tests.sh"
 
-# Suite 16: Code-object round-trip and donor-free regeneration scaffold
+# Suite 20: Code-object round-trip and donor-free regeneration scaffold
 run_suite "Code-object round-trip" "${SCRIPT_DIR}/run_codeobj_roundtrip_tests.sh"
 
-# Suite 17: rocPRIM donor-free breadth
+# Suite 21: rocPRIM donor-free breadth
 run_suite "rocPRIM donor-free breadth" "${SCRIPT_DIR}/run_codeobj_rocprim_breadth_tests.sh"
 
-# Suite 18: hipBLASLt instrumentation (requires INSTRUMENTED_HIPBLASLT_LIB_DIR)
+# Suite 22: hipBLASLt instrumentation (requires INSTRUMENTED_HIPBLASLT_LIB_DIR)
 run_suite "hipBLASLt instrumentation" "${SCRIPT_DIR}/hipblaslt/run_test.sh"
 
-# Suite 19: rocBLAS integration (requires INSTRUMENTED_ROCBLAS_LIB_DIR)
+# Suite 23: rocBLAS integration (requires INSTRUMENTED_ROCBLAS_LIB_DIR)
 run_suite "rocBLAS integration" "${SCRIPT_DIR}/rocblas_filter/run_test.sh"
 
-# Suite 20: rocBLAS + hipBLASLt combined (requires INSTRUMENTED_ROCBLAS_LIB_DIR + INSTRUMENTED_HIPBLASLT_LIB_DIR)
+# Suite 24: rocBLAS + hipBLASLt combined (requires INSTRUMENTED_ROCBLAS_LIB_DIR + INSTRUMENTED_HIPBLASLT_LIB_DIR)
 run_suite "rocBLAS + hipBLASLt combined" "${SCRIPT_DIR}/rocblas_hipblaslt/run_test.sh"
 
-# Suite 21: Triton integration (requires TRITON_DIR)
+# Suite 25: Triton integration (requires TRITON_DIR)
 run_suite "Triton integration" "${SCRIPT_DIR}/triton/run_test.sh"
 
 # Summary

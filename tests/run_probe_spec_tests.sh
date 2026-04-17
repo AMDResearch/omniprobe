@@ -47,6 +47,7 @@ payload = json.load(open(sys.argv[1], encoding="utf-8"))
 assert payload["version"] == 1
 assert len(payload["probes"]) == 2
 assert payload["probes"][0]["inject"]["contract"] == "kernel_lifecycle_v1"
+assert payload["probes"][0]["inject"]["event_usage"] == "dispatch_origin"
 assert payload["probes"][1]["payload"]["mode"] == "vector"
 assert payload["probes"][0]["capture"]["builtins"] == ["grid_dim", "block_dim"]
 PY
@@ -88,6 +89,7 @@ contracts = {entry["surrogate"]: entry["contract"] for entry in surrogates}
 assert contracts["__omniprobe_probe_global_loads_surrogate"] == "memory_op_v1"
 entry = next(item for item in surrogates if item["probe_id"] == "kernel_timing")
 assert entry["helper_context"]["builtins"] == ["grid_dim", "block_dim"]
+assert entry["event_usage"] == "dispatch_origin"
 assert entry["capture_layout"]["struct_fields"] == [{"name": "n"}]
 assert entry["capture_layout"]["event_fields"] == []
 PY

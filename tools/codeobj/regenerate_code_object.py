@@ -167,12 +167,18 @@ def reject_unsupported_binary_probe_sites(probe_plan: dict, *, kernel_name: str)
             continue
         if str(site.get("contract", "")) != "kernel_lifecycle_v1":
             continue
-        if str(site.get("when", "")) != "kernel_entry":
-            continue
-        raise SystemExit(
-            "donor-free binary rewrite does not support kernel_entry lifecycle helper execution; "
-            "use the pass-plugin path or choose a supported binary insertion point such as kernel_exit"
-        )
+        when = str(site.get("when", ""))
+        event_usage = str(site.get("event_usage", "dispatch_origin") or "dispatch_origin")
+        if when == "kernel_entry":
+            raise SystemExit(
+                "donor-free binary rewrite does not support kernel_entry lifecycle helper execution; "
+                "use the pass-plugin path or choose a supported binary insertion point such as kernel_exit"
+            )
+        if when == "kernel_exit" and event_usage != "none":
+            raise SystemExit(
+                "donor-free binary rewrite does not support kernel_exit lifecycle helpers that consume args.event; "
+                "set inject.event_usage: none, use the pass-plugin path, or choose a captures-only binary helper"
+            )
 
 
 def run(command: list[str]) -> None:

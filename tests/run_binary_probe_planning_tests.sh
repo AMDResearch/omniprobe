@@ -96,6 +96,8 @@ assert [binding["kernel_arg_name"] for binding in entry_bindings] == ["data", "s
 assert sites["kernel_entry"]["helper_context"]["builtins"] == [
     "grid_dim", "block_dim", "block_idx", "thread_idx", "dispatch_id"
 ]
+assert sites["kernel_entry"]["event_usage"] == "dispatch_origin"
+assert sites["kernel_exit"]["event_usage"] == "dispatch_origin"
 PY
     then
         echo -e "  ${GREEN}✓ PASS${NC} - Lifecycle probe planning resolved kernel targets and captures"

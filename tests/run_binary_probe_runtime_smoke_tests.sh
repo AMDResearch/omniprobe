@@ -90,6 +90,7 @@ probes:
       when: [kernel_exit]
       helper: module_load_binary_lifecycle_probe
       contract: kernel_lifecycle_v1
+      event_usage: none
     payload:
       mode: scalar
       message: custom

@@ -233,6 +233,7 @@ def expand_probe_sites(spec: dict[str, object]) -> list[dict[str, object]]:
                     "target": probe["target"],
                     "payload": probe["payload"],
                     "capture": probe["capture"],
+                    "event_usage": probe["inject"].get("event_usage"),
                 }
             )
             next_site_id += 1
@@ -392,6 +393,9 @@ def flatten_manifest_entries(sites: list[dict[str, object]]) -> list[dict[str, o
         manifest["helper_context"] = {
             "builtins": capture["builtins"],
         }
+        event_usage = site.get("event_usage")
+        if isinstance(event_usage, str) and event_usage:
+            manifest["event_usage"] = event_usage
         entries.append(manifest)
     return entries
 

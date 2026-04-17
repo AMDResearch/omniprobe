@@ -395,6 +395,7 @@ def planned_site_base(entry: dict, kernel: dict) -> tuple[dict, list[dict], list
             "event_fields": event_fields,
         },
         "helper_context": entry.get("helper_context", {}),
+        "event_usage": entry.get("event_usage"),
         "capture_bindings": bindings,
         "unresolved_captures": unresolved,
     }
