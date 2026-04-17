@@ -51,7 +51,8 @@ static StorageInitInfo createRuntimeCtxStorage(Function &F, Module &M,
   IRBuilder<> Builder(&*F.getEntryBlock().getFirstInsertionPt());
   Type *PtrTy = PointerType::get(Ctx, 0);
   StructType *RuntimeCtxTy =
-      StructType::get(PtrTy, PtrTy, PtrTy, Builder.getInt64Ty());
+      StructType::get(PtrTy, PtrTy, PtrTy, Builder.getInt64Ty(), PtrTy, PtrTy,
+                      PtrTy, PtrTy, Builder.getInt32Ty(), Builder.getInt32Ty());
   AllocaInst *RuntimeCtx = Builder.CreateAlloca(RuntimeCtxTy, nullptr,
                                                 "omniprobe.runtime_ctx");
 
@@ -59,6 +60,16 @@ static StorageInitInfo createRuntimeCtxStorage(Function &F, Module &M,
   Value *ConfigField = Builder.CreateStructGEP(RuntimeCtxTy, RuntimeCtx, 1);
   Value *StateField = Builder.CreateStructGEP(RuntimeCtxTy, RuntimeCtx, 2);
   Value *DispatchField = Builder.CreateStructGEP(RuntimeCtxTy, RuntimeCtx, 3);
+  Value *RawHiddenField = Builder.CreateStructGEP(RuntimeCtxTy, RuntimeCtx, 4);
+  Value *EntrySnapshotField =
+      Builder.CreateStructGEP(RuntimeCtxTy, RuntimeCtx, 5);
+  Value *DhBuiltinsField =
+      Builder.CreateStructGEP(RuntimeCtxTy, RuntimeCtx, 6);
+  Value *DispatchPrivateField =
+      Builder.CreateStructGEP(RuntimeCtxTy, RuntimeCtx, 7);
+  Value *AbiVersionField =
+      Builder.CreateStructGEP(RuntimeCtxTy, RuntimeCtx, 8);
+  Value *FlagsField = Builder.CreateStructGEP(RuntimeCtxTy, RuntimeCtx, 9);
 
   Value *DhAsVoidPtr = Builder.CreatePointerCast(DhPtr, PtrTy);
   Builder.CreateStore(DhAsVoidPtr, DhField);
@@ -66,8 +77,18 @@ static StorageInitInfo createRuntimeCtxStorage(Function &F, Module &M,
                       ConfigField);
   Builder.CreateStore(ConstantPointerNull::get(cast<PointerType>(PtrTy)),
                       StateField);
-  Instruction *LastInit = Builder.CreateStore(
-      ConstantInt::get(Builder.getInt64Ty(), 0), DispatchField);
+  Builder.CreateStore(ConstantInt::get(Builder.getInt64Ty(), 0), DispatchField);
+  Builder.CreateStore(DhAsVoidPtr, RawHiddenField);
+  Builder.CreateStore(ConstantPointerNull::get(cast<PointerType>(PtrTy)),
+                      EntrySnapshotField);
+  Builder.CreateStore(ConstantPointerNull::get(cast<PointerType>(PtrTy)),
+                      DhBuiltinsField);
+  Builder.CreateStore(ConstantPointerNull::get(cast<PointerType>(PtrTy)),
+                      DispatchPrivateField);
+  Builder.CreateStore(ConstantInt::get(Builder.getInt32Ty(), 1),
+                      AbiVersionField);
+  Instruction *LastInit =
+      Builder.CreateStore(ConstantInt::get(Builder.getInt32Ty(), 0), FlagsField);
   return {RuntimeCtx, LastInit};
 }
 

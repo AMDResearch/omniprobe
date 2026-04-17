@@ -272,6 +272,7 @@ def render_text(
             ref["high_instruction_address"] for ref in symbolic_refs.values()
         }
     postamble: list[str] = []
+    emitted_labels: set[int] = set()
     for instruction in function["instructions"]:
         address = instruction["address"]
         if address in skipped_instruction_addresses:
@@ -279,8 +280,9 @@ def render_text(
         destination = lines
         if function_end_address is not None and address >= function_end_address:
             destination = postamble
-        if address in labels:
+        if address in labels and address not in emitted_labels:
             destination.append(f"{labels[address]}:")
+            emitted_labels.add(address)
         if exact_encoding:
             symbolic_ref = symbolic_refs.get(address)
             if symbolic_ref:

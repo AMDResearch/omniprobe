@@ -143,6 +143,38 @@ def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def reject_unsupported_binary_probe_sites(probe_plan: dict, *, kernel_name: str) -> None:
+    kernels = probe_plan.get("kernels", [])
+    if not isinstance(kernels, list):
+        return
+    kernel_plan = next(
+        (
+            entry
+            for entry in kernels
+            if isinstance(entry, dict)
+            and kernel_name in {
+                str(entry.get("source_kernel", "")),
+                str(entry.get("clone_kernel", "")),
+                str(entry.get("source_symbol", "")),
+            }
+        ),
+        None,
+    )
+    if not isinstance(kernel_plan, dict):
+        return
+    for site in kernel_plan.get("planned_sites", []):
+        if not isinstance(site, dict):
+            continue
+        if str(site.get("contract", "")) != "kernel_lifecycle_v1":
+            continue
+        if str(site.get("when", "")) != "kernel_entry":
+            continue
+        raise SystemExit(
+            "donor-free binary rewrite does not support kernel_entry lifecycle helper execution; "
+            "use the pass-plugin path or choose a supported binary insertion point such as kernel_exit"
+        )
+
+
 def run(command: list[str]) -> None:
     subprocess.run(command, check=True)
 
@@ -884,6 +916,10 @@ def main() -> int:
             if bool(args.probe_plan) != bool(args.thunk_manifest):
                 raise SystemExit("--probe-plan and --thunk-manifest must be provided together")
             if args.probe_plan and args.thunk_manifest:
+                reject_unsupported_binary_probe_sites(
+                    load_json(Path(args.probe_plan).resolve()),
+                    kernel_name=kernel_name,
+                )
                 inject_tool = tool_dir / "inject_probe_calls.py"
                 inject_command = [
                     args.python,
@@ -911,29 +947,36 @@ def main() -> int:
                     None,
                 )
                 instrumentation_map = (injected_function or {}).get("instrumentation", {})
-                instrumentation = instrumentation_map.get("lifecycle_entry_stub") or instrumentation_map.get(
-                    "lifecycle_exit_stub", {}
+                instrumentation = (
+                    instrumentation_map.get("basic_block_stubs")
+                    or instrumentation_map.get("lifecycle_entry_stub")
+                    or instrumentation_map.get("lifecycle_exit_stub", {})
                 )
                 total_probe_sgprs = int(instrumentation.get("total_sgprs", 0) or 0)
+                private_segment_growth = int(instrumentation.get("private_segment_growth", 0) or 0)
                 lifecycle_when = str(instrumentation.get("when", "") or "")
+                instrumentation_mode = str(instrumentation.get("mode", "") or "")
                 for intent in manifest_payload.get("clone_intents", []):
                     if not isinstance(intent, dict):
                         continue
                     if intent.get("clone_kernel") == clone_result["clone_kernel"]:
-                        intent["mode"] = (
-                            f"hidden-abi-lifecycle-{lifecycle_when}-clone"
-                            if lifecycle_when
-                            else "hidden-abi-lifecycle-clone"
-                        )
-                        intent["nonleaf_private_segment_growth"] = 16
+                        if instrumentation_mode == "basic_block":
+                            intent["mode"] = "hidden-abi-basic-block-clone"
+                        elif lifecycle_when:
+                            intent["mode"] = f"hidden-abi-lifecycle-{lifecycle_when}-clone"
+                        else:
+                            intent["mode"] = "hidden-abi-probe-clone"
+                        if private_segment_growth:
+                            intent["nonleaf_private_segment_growth"] = private_segment_growth
                         if total_probe_sgprs:
                             intent["probe_total_sgprs"] = total_probe_sgprs
                         break
-                apply_binary_probe_nonleaf_policy(
-                    manifest_payload,
-                    clone_kernel=str(clone_result["clone_kernel"]),
-                    private_segment_growth=16,
-                )
+                if private_segment_growth:
+                    apply_binary_probe_nonleaf_policy(
+                        manifest_payload,
+                        clone_kernel=str(clone_result["clone_kernel"]),
+                        private_segment_growth=private_segment_growth,
+                    )
                 if total_probe_sgprs:
                     apply_binary_probe_saved_sgpr_policy(
                         manifest_payload,
@@ -942,12 +985,13 @@ def main() -> int:
                     )
                 if asm_manifest_path != working_manifest_path and asm_manifest_path.exists():
                     asm_manifest_payload_updated = load_json(asm_manifest_path)
-                    apply_binary_probe_nonleaf_policy(
-                        asm_manifest_payload_updated,
-                        clone_kernel=str(clone_result["clone_kernel"]),
-                        private_segment_growth=16,
-                        refresh_rendered_metadata=False,
-                    )
+                    if private_segment_growth:
+                        apply_binary_probe_nonleaf_policy(
+                            asm_manifest_payload_updated,
+                            clone_kernel=str(clone_result["clone_kernel"]),
+                            private_segment_growth=private_segment_growth,
+                            refresh_rendered_metadata=False,
+                        )
                     if total_probe_sgprs:
                         apply_binary_probe_saved_sgpr_policy(
                             asm_manifest_payload_updated,

@@ -1,0 +1,118 @@
+{
+  "input_file": "binary_probe_sites.s",
+  "arch": "gfx90a",
+  "functions": [
+    {
+      "name": "simple_kernel",
+      "start_address": 4096,
+      "instructions": [
+        {
+          "address": 4096,
+          "mnemonic": "s_mov_b32",
+          "operand_text": "s0, 0",
+          "operands": ["s0", "0"],
+          "control_flow": "linear",
+          "encoding_words": ["0xbe800000"]
+        },
+        {
+          "address": 4100,
+          "mnemonic": "buffer_load_dword",
+          "operand_text": "v0, off, s[0:3], s4 offen offset:0",
+          "operands": ["v0", "off", "s[0:3]", "s4", "offen", "offset:0"],
+          "control_flow": "linear",
+          "encoding_words": ["0xe0500000"]
+        },
+        {
+          "address": 4104,
+          "mnemonic": "s_cbranch_scc1",
+          "operand_text": "0x1018",
+          "operands": ["0x1018"],
+          "control_flow": "branch_conditional",
+          "target": {
+            "symbol": "simple_kernel",
+            "offset": 24
+          },
+          "encoding_words": ["0xbf850004"]
+        },
+        {
+          "address": 4108,
+          "mnemonic": "s_swappc_b64",
+          "operand_text": "s[30:31], helper_target",
+          "operands": ["s[30:31]", "helper_target"],
+          "control_flow": "branch_indirect",
+          "target": {
+            "symbol": "helper_target",
+            "offset": 0
+          },
+          "encoding_words": ["0xbe801e00"]
+        },
+        {
+          "address": 4112,
+          "mnemonic": "flat_store_dword",
+          "operand_text": "v[0:1], v2",
+          "operands": ["v[0:1]", "v2"],
+          "control_flow": "linear",
+          "encoding_words": ["0xdc700000"]
+        },
+        {
+          "address": 4116,
+          "mnemonic": "s_branch",
+          "operand_text": "0x1020",
+          "operands": ["0x1020"],
+          "control_flow": "branch_unconditional",
+          "target": {
+            "symbol": "simple_kernel",
+            "offset": 32
+          },
+          "encoding_words": ["0xbf820002"]
+        },
+        {
+          "address": 4120,
+          "mnemonic": "buffer_store_dword",
+          "operand_text": "v3, off, s[0:3], s4 offen offset:4",
+          "operands": ["v3", "off", "s[0:3]", "s4", "offen", "offset:4"],
+          "control_flow": "linear",
+          "encoding_words": ["0xe0700004"]
+        },
+        {
+          "address": 4124,
+          "mnemonic": "s_endpgm",
+          "operand_text": "",
+          "operands": [],
+          "control_flow": "return",
+          "encoding_words": ["0xbf810000"]
+        },
+        {
+          "address": 4128,
+          "mnemonic": "flat_load_dword",
+          "operand_text": "v4, v[0:1]",
+          "operands": ["v4", "v[0:1]"],
+          "control_flow": "linear",
+          "encoding_words": ["0xdc500000"]
+        },
+        {
+          "address": 4132,
+          "mnemonic": "s_endpgm",
+          "operand_text": "",
+          "operands": [],
+          "control_flow": "return",
+          "encoding_words": ["0xbf810000"]
+        }
+      ]
+    },
+    {
+      "name": "helper_target",
+      "start_address": 8192,
+      "instructions": [
+        {
+          "address": 8192,
+          "mnemonic": "s_endpgm",
+          "operand_text": "",
+          "operands": [],
+          "control_flow": "return",
+          "encoding_words": ["0xbf810000"]
+        }
+      ]
+    }
+  ]
+}

@@ -111,6 +111,7 @@ private:
     static hsa_status_t hsa_executable_symbol_get_info(hsa_executable_symbol_t symbol, hsa_executable_symbol_info_t attribute, void *data);
     void fixupKernArgs(void *dst, void *src, void *comms, arg_descriptor_t desc);
     hsa_kernel_dispatch_packet_t *fixupPacket(const hsa_kernel_dispatch_packet_t *packet, hsa_queue_t *queue, uint64_t dispatch_id);
+    void *allocateHiddenRuntimeCtx(hsa_agent_t agent, dh_comms::dh_comms_descriptor *dh, uint64_t dispatch_id);
     virtual void doPackets(hsa_queue_t *queue, const packet_t *packet, uint64_t count, hsa_amd_queue_intercept_packet_writer writer);
     bool growBufferPool(hsa_agent_t agent, size_t count);
     hsa_mem_mgr *checkoutBuffer(hsa_agent_t agent);
@@ -168,6 +169,7 @@ private:
     bool run_instrumented_;
     KernArgAllocator allocator_;
     std::map<hsa_signal_t, void *, hsa_cmp<hsa_signal_t>> pending_kernargs_;
+    std::map<hsa_signal_t, void *, hsa_cmp<hsa_signal_t>> pending_hidden_runtime_ctx_;
     std::map<hsa_agent_t, hsa_mem_mgr *, hsa_cmp<hsa_agent_t>> mem_mgrs_;
     std::map<hsa_agent_t, std::vector<void *>, hsa_cmp<hsa_agent_t>> device_buffer_pool_;
     std::map<hsa_agent_t, std::vector<dh_comms::dh_comms_descriptor>, hsa_cmp<hsa_agent_t>> descriptor_pool_;

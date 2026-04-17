@@ -23,8 +23,15 @@ THE SOFTWARE.
 
 #include <cstdint>
 
+#if defined(__HIPCC__) || defined(__HIP_DEVICE_COMPILE__) || defined(__HIP__)
+#define OMNIPROBE_PROBE_ABI_HD __host__ __device__
+#else
+#define OMNIPROBE_PROBE_ABI_HD
+#endif
+
 namespace dh_comms {
 struct dh_comms_descriptor;
+struct builtin_snapshot_t;
 }
 
 namespace omniprobe::probe_abi_v1 {
@@ -76,11 +83,50 @@ enum class address_space_kind : uint8_t {
     unknown = 0xff,
 };
 
+inline constexpr uint32_t runtime_ctx_abi_version = 1;
+
+struct entry_snapshot_v1 {
+    uint32_t workgroup_x = 0;
+    uint32_t workgroup_y = 0;
+    uint32_t workgroup_z = 0;
+    uint32_t thread_x = 0;
+    uint32_t thread_y = 0;
+    uint32_t thread_z = 0;
+    uint32_t block_dim_x = 0;
+    uint32_t block_dim_y = 0;
+    uint32_t block_dim_z = 0;
+    uint32_t lane_id = 0;
+    uint32_t wave_id = 0;
+    uint32_t wavefront_size = 0;
+    uint32_t hw_id = 0;
+    uint32_t reserved0 = 0;
+    uint32_t reserved1 = 0;
+    uint64_t exec_mask = 0;
+    uint64_t timestamp = 0;
+};
+
+struct runtime_storage_v1 {
+    dh_comms::dh_comms_descriptor *dh = nullptr;
+    const void *config_blob = nullptr;
+    void *state_blob = nullptr;
+    uint64_t dispatch_id = 0;
+    entry_snapshot_v1 entry_snapshot{};
+    const void *dispatch_private = nullptr;
+    uint32_t abi_version = runtime_ctx_abi_version;
+    uint32_t flags = 0;
+};
+
 struct runtime_ctx {
     dh_comms::dh_comms_descriptor *dh = nullptr;
     const void *config_blob = nullptr;
     void *state_blob = nullptr;
     uint64_t dispatch_id = 0;
+    const void *raw_hidden_ctx = nullptr;
+    const entry_snapshot_v1 *entry_snapshot = nullptr;
+    const dh_comms::builtin_snapshot_t *dh_builtins = nullptr;
+    const void *dispatch_private = nullptr;
+    uint32_t abi_version = runtime_ctx_abi_version;
+    uint32_t flags = 0;
 };
 
 struct site_info {
@@ -109,7 +155,35 @@ struct helper_args {
 
 struct kernel_lifecycle_event {
     uint64_t timestamp = 0;
+    uint32_t workgroup_x = 0;
+    uint32_t workgroup_y = 0;
+    uint32_t workgroup_z = 0;
+    uint32_t thread_x = 0;
+    uint32_t thread_y = 0;
+    uint32_t thread_z = 0;
+    uint32_t block_dim_x = 0;
+    uint32_t block_dim_y = 0;
+    uint32_t block_dim_z = 0;
+    uint32_t lane_id = 0;
+    uint32_t wave_id = 0;
+    uint32_t wavefront_size = 0;
+    uint32_t hw_id = 0;
+    uint64_t exec_mask = 0;
 };
+
+OMNIPROBE_PROBE_ABI_HD inline bool entry_snapshot_is_dispatch_origin(const entry_snapshot_v1 &snapshot) {
+    return snapshot.workgroup_x == 0 && snapshot.workgroup_y == 0 &&
+           snapshot.workgroup_z == 0 && snapshot.thread_x == 0 &&
+           snapshot.thread_y == 0 && snapshot.thread_z == 0 &&
+           snapshot.lane_id == 0 && snapshot.wave_id == 0;
+}
+
+OMNIPROBE_PROBE_ABI_HD inline bool lifecycle_event_is_dispatch_origin(const kernel_lifecycle_event &event) {
+    return event.workgroup_x == 0 && event.workgroup_y == 0 &&
+           event.workgroup_z == 0 && event.thread_x == 0 &&
+           event.thread_y == 0 && event.thread_z == 0 &&
+           event.lane_id == 0 && event.wave_id == 0;
+}
 
 struct memory_op_event {
     uint64_t address = 0;
@@ -129,3 +203,5 @@ struct basic_block_event {
 };
 
 } // namespace omniprobe::probe_abi_v1
+
+#undef OMNIPROBE_PROBE_ABI_HD

@@ -22,13 +22,32 @@ TYPE_MAP = {
     "bool": "bool",
 }
 
+CONTRACT_EVENT_ARGUMENTS = {
+    "kernel_lifecycle_v1": [
+        {"kind": "timestamp", "name": "timestamp", "c_type": "uint64_t", "size_bytes": 8},
+    ],
+    "memory_op_v1": [
+        {"kind": "event", "name": "address", "c_type": "uint64_t", "size_bytes": 8},
+        {"kind": "event", "name": "bytes", "c_type": "uint32_t", "size_bytes": 4},
+        {"kind": "event", "name": "access_kind", "c_type": "uint8_t", "size_bytes": 1},
+        {"kind": "event", "name": "address_space", "c_type": "uint8_t", "size_bytes": 1},
+    ],
+    "basic_block_v1": [
+        {"kind": "timestamp", "name": "timestamp", "c_type": "uint64_t", "size_bytes": 8},
+        {"kind": "event", "name": "block_id", "c_type": "uint32_t", "size_bytes": 4},
+    ],
+    "call_v1": [
+        {"kind": "timestamp", "name": "timestamp", "c_type": "uint64_t", "size_bytes": 8},
+        {"kind": "event", "name": "callee_id", "c_type": "uint32_t", "size_bytes": 4},
+    ],
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Generate kernel-specific binary probe thunks from an Omniprobe "
-            "binary probe plan. The current implementation supports "
-            "kernel_lifecycle_v1 sites."
+            "binary probe plan."
         )
     )
     parser.add_argument(
@@ -137,17 +156,177 @@ def build_call_arguments(capture_fields: list[dict], capture_bindings: list[dict
     return arguments
 
 
+def build_site_call_arguments(contract: str, capture_fields: list[dict], capture_bindings: list[dict]) -> list[dict]:
+    arguments: list[dict] = [
+        {
+            "kind": "hidden_ctx",
+            "name": "hidden_ctx",
+            "c_type": "const void *",
+            "size_bytes": 8,
+        }
+    ]
+    for field, binding in zip(capture_fields, capture_bindings):
+        field_name = field_argument_name(field)
+        arguments.append(
+            {
+                "kind": "capture",
+                "name": field_name,
+                "field_name": sanitize_identifier(str(field.get("name", "value"))),
+                "c_type": cpp_type_for_field(field),
+                "size_bytes": int(binding.get("kernel_arg_size", 0) or 0),
+                "kernel_arg_offset": int(binding.get("kernel_arg_offset", 0) or 0),
+                "kernel_arg_name": binding.get("kernel_arg_name"),
+            }
+        )
+    contract_arguments = CONTRACT_EVENT_ARGUMENTS.get(contract)
+    if contract_arguments is None:
+        raise SystemExit(f"generate_binary_probe_thunks.py does not yet support contract {contract!r}")
+    arguments.extend(dict(argument) for argument in contract_arguments)
+    return arguments
+
+
+def surrogate_forward_arguments(contract: str) -> list[str]:
+    if contract == "kernel_lifecycle_v1":
+        return [
+            "timestamp",
+            "__omniprobe_event_workgroup_x",
+            "__omniprobe_event_workgroup_y",
+            "__omniprobe_event_workgroup_z",
+            "__omniprobe_event_thread_x",
+            "__omniprobe_event_thread_y",
+            "__omniprobe_event_thread_z",
+            "__omniprobe_event_block_dim_x",
+            "__omniprobe_event_block_dim_y",
+            "__omniprobe_event_block_dim_z",
+            "__omniprobe_event_lane_id",
+            "__omniprobe_event_wave_id",
+            "__omniprobe_event_wavefront_size",
+            "__omniprobe_event_hw_id",
+            "__omniprobe_event_exec_mask",
+        ]
+    arguments = CONTRACT_EVENT_ARGUMENTS.get(contract)
+    if arguments is None:
+        raise SystemExit(f"generate_binary_probe_thunks.py does not yet support contract {contract!r}")
+    return [str(entry["name"]) for entry in arguments]
+
+
+def render_site_event_locals(contract: str, when: str) -> list[str]:
+    if contract != "kernel_lifecycle_v1":
+        return []
+    if when == "kernel_entry":
+        return [
+            "  if (!(blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 &&",
+            "        threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0 &&",
+            "        __omniprobe_lane_id == 0)) {",
+            "    return;",
+            "  }",
+            "  const auto *__omniprobe_event_snapshot = runtime.entry_snapshot;",
+            "  if (__omniprobe_event_snapshot == nullptr) {",
+            "    return;",
+            "  }",
+            "  const uint32_t __omniprobe_event_workgroup_x = __omniprobe_event_snapshot->workgroup_x;",
+            "  const uint32_t __omniprobe_event_workgroup_y = __omniprobe_event_snapshot->workgroup_y;",
+            "  const uint32_t __omniprobe_event_workgroup_z = __omniprobe_event_snapshot->workgroup_z;",
+            "  const uint32_t __omniprobe_event_thread_x = __omniprobe_event_snapshot->thread_x;",
+            "  const uint32_t __omniprobe_event_thread_y = __omniprobe_event_snapshot->thread_y;",
+            "  const uint32_t __omniprobe_event_thread_z = __omniprobe_event_snapshot->thread_z;",
+            "  const uint32_t __omniprobe_event_block_dim_x = __omniprobe_event_snapshot->block_dim_x;",
+            "  const uint32_t __omniprobe_event_block_dim_y = __omniprobe_event_snapshot->block_dim_y;",
+            "  const uint32_t __omniprobe_event_block_dim_z = __omniprobe_event_snapshot->block_dim_z;",
+            "  const uint32_t __omniprobe_event_lane_id = __omniprobe_event_snapshot->lane_id;",
+            "  const uint32_t __omniprobe_event_wave_id = __omniprobe_event_snapshot->wave_id;",
+            "  const uint32_t __omniprobe_event_wavefront_size = __omniprobe_event_snapshot->wavefront_size;",
+            "  const uint32_t __omniprobe_event_hw_id = __omniprobe_event_snapshot->hw_id;",
+            "  const uint64_t __omniprobe_event_exec_mask = __omniprobe_event_snapshot->exec_mask;",
+        ]
+    return [
+        "  const uint32_t __omniprobe_event_workgroup_x = static_cast<uint32_t>(blockIdx.x);",
+        "  const uint32_t __omniprobe_event_workgroup_y = static_cast<uint32_t>(blockIdx.y);",
+        "  const uint32_t __omniprobe_event_workgroup_z = static_cast<uint32_t>(blockIdx.z);",
+        "  const uint32_t __omniprobe_event_thread_x = static_cast<uint32_t>(threadIdx.x);",
+        "  const uint32_t __omniprobe_event_thread_y = static_cast<uint32_t>(threadIdx.y);",
+        "  const uint32_t __omniprobe_event_thread_z = static_cast<uint32_t>(threadIdx.z);",
+        "  const uint32_t __omniprobe_event_block_dim_x = static_cast<uint32_t>(blockDim.x);",
+        "  const uint32_t __omniprobe_event_block_dim_y = static_cast<uint32_t>(blockDim.y);",
+        "  const uint32_t __omniprobe_event_block_dim_z = static_cast<uint32_t>(blockDim.z);",
+        "  const uint32_t __omniprobe_event_lane_id = static_cast<uint32_t>(__lane_id());",
+        "  const uint32_t __omniprobe_event_wavefront_size = static_cast<uint32_t>(warpSize);",
+        "  const uint32_t __omniprobe_event_linear_tid = static_cast<uint32_t>(",
+        "      threadIdx.x + blockDim.x * (threadIdx.y + blockDim.y * threadIdx.z));",
+        "  const uint32_t __omniprobe_event_wave_id =",
+        "      __omniprobe_event_wavefront_size == 0",
+        "          ? 0",
+        "          : (__omniprobe_event_linear_tid / __omniprobe_event_wavefront_size);",
+        "  const uint32_t __omniprobe_event_hw_id = static_cast<uint32_t>(__smid());",
+        "  const uint64_t __omniprobe_event_exec_mask = __builtin_amdgcn_read_exec();",
+    ]
+
+
+def render_runtime_init_lines() -> list[str]:
+    return [
+        "  auto *runtime_storage = reinterpret_cast<runtime_storage_v1 *>(",
+        "      const_cast<void *>(hidden_ctx));",
+        "  runtime_ctx runtime{};",
+        "  runtime.raw_hidden_ctx = hidden_ctx;",
+        "  if (runtime_storage != nullptr) {",
+        "    runtime.dh = runtime_storage->dh;",
+        "    runtime.config_blob = runtime_storage->config_blob;",
+        "    runtime.state_blob = runtime_storage->state_blob;",
+        "    runtime.dispatch_id = runtime_storage->dispatch_id;",
+        "    runtime.entry_snapshot = &runtime_storage->entry_snapshot;",
+        "    runtime.dispatch_private = runtime_storage->dispatch_private;",
+        "    runtime.abi_version = runtime_storage->abi_version;",
+        "    runtime.flags = runtime_storage->flags;",
+        "  }",
+    ]
+
+
+def render_dh_builtin_capture_lines(when: str) -> list[str]:
+    if when != "kernel_entry":
+        return []
+    return [
+        "  dh_comms::builtin_snapshot_t __omniprobe_dh_builtins =",
+        "      dh_comms::capture_builtin_snapshot();",
+        "  runtime.dh_builtins = &__omniprobe_dh_builtins;",
+    ]
+
+def render_entry_snapshot_capture_lines(when: str) -> list[str]:
+    if when != "kernel_entry":
+        return []
+    return [
+        "  auto *entry_snapshot = const_cast<entry_snapshot_v1 *>(runtime.entry_snapshot);",
+        "  if (entry_snapshot == nullptr) {",
+        "    return;",
+        "  }",
+        "  const uint32_t __omniprobe_lane_id = static_cast<uint32_t>(__lane_id());",
+        "  if (blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 &&",
+        "      threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0 &&",
+        "      __omniprobe_lane_id == 0) {",
+        "    entry_snapshot->workgroup_x = static_cast<uint32_t>(blockIdx.x);",
+        "    entry_snapshot->workgroup_y = static_cast<uint32_t>(blockIdx.y);",
+        "    entry_snapshot->workgroup_z = static_cast<uint32_t>(blockIdx.z);",
+        "    entry_snapshot->thread_x = static_cast<uint32_t>(threadIdx.x);",
+        "    entry_snapshot->thread_y = static_cast<uint32_t>(threadIdx.y);",
+        "    entry_snapshot->thread_z = static_cast<uint32_t>(threadIdx.z);",
+        "    entry_snapshot->block_dim_x = static_cast<uint32_t>(blockDim.x);",
+        "    entry_snapshot->block_dim_y = static_cast<uint32_t>(blockDim.y);",
+        "    entry_snapshot->block_dim_z = static_cast<uint32_t>(blockDim.z);",
+        "    entry_snapshot->lane_id = __omniprobe_lane_id;",
+        "    entry_snapshot->wave_id = 0;",
+        "    entry_snapshot->wavefront_size = static_cast<uint32_t>(warpSize);",
+        "    entry_snapshot->hw_id = static_cast<uint32_t>(__smid());",
+        "    entry_snapshot->exec_mask = __builtin_amdgcn_read_exec();",
+        "    entry_snapshot->timestamp = timestamp;",
+        "  }",
+    ]
+
+
 def render_thunk_function(kernel: dict, site: dict) -> tuple[str, dict]:
     contract = str(site.get("contract", ""))
-    if contract != "kernel_lifecycle_v1":
+    when = str(site.get("when", ""))
+    if contract not in CONTRACT_EVENT_ARGUMENTS:
         raise SystemExit(
             f"generate_binary_probe_thunks.py does not yet support contract {contract!r}"
-        )
-
-    when = str(site.get("when", ""))
-    if when not in {"kernel_entry", "kernel_exit"}:
-        raise SystemExit(
-            f"generate_binary_probe_thunks.py does not support lifecycle when={when!r}"
         )
 
     probe_id = str(site.get("probe_id", "probe"))
@@ -178,7 +357,7 @@ def render_thunk_function(kernel: dict, site: dict) -> tuple[str, dict]:
             f"{len(capture_fields)} fields vs {len(capture_bindings)} bindings"
         )
 
-    call_arguments = build_call_arguments(capture_fields, capture_bindings)
+    call_arguments = build_site_call_arguments(contract, capture_fields, capture_bindings)
     call_layout = layout_call_arguments(call_arguments)
     parameter_lines = []
     for index, argument in enumerate(call_arguments):
@@ -189,9 +368,10 @@ def render_thunk_function(kernel: dict, site: dict) -> tuple[str, dict]:
         f"extern \"C\" __device__ __attribute__((used)) void {thunk_name}(",
         *parameter_lines,
         ") {",
-        "  runtime_ctx runtime{};",
-        "  runtime.dh = reinterpret_cast<dh_comms::dh_comms_descriptor *>(",
-        "      const_cast<void *>(hidden_ctx));",
+        *render_runtime_init_lines(),
+        *render_dh_builtin_capture_lines(when),
+        *render_entry_snapshot_capture_lines(when),
+        *render_site_event_locals(contract, when),
         f"  {captures_type} captures{{}};",
     ]
     for field in capture_fields:
@@ -199,7 +379,8 @@ def render_thunk_function(kernel: dict, site: dict) -> tuple[str, dict]:
         argument_name = field_argument_name(field)
         field_type = cpp_type_for_field(field)
         lines.append(f"  captures.{field_name} = static_cast<{field_type}>({argument_name});")
-    lines.append(f"  {surrogate}(&runtime, &captures, timestamp);")
+    forward_arguments = ", ".join(["&runtime", "&captures", *surrogate_forward_arguments(contract)])
+    lines.append(f"  {surrogate}({forward_arguments});")
     lines.append("}")
     manifest_entry = {
         "source_kernel": source_kernel,
@@ -231,6 +412,7 @@ def render_source(bundle: dict, plan: dict) -> tuple[str, list[dict]]:
 
     generated_blocks: list[str] = []
     manifest_entries: list[dict] = []
+    seen_thunks: set[str] = set()
     for kernel in plan.get("kernels", []):
         if not isinstance(kernel, dict):
             continue
@@ -238,6 +420,10 @@ def render_source(bundle: dict, plan: dict) -> tuple[str, list[dict]]:
             if not isinstance(site, dict):
                 continue
             block, entry = render_thunk_function(kernel, site)
+            thunk_name = str(entry.get("thunk", ""))
+            if thunk_name in seen_thunks:
+                continue
+            seen_thunks.add(thunk_name)
             generated_blocks.append(block)
             manifest_entries.append(entry)
 
@@ -249,6 +435,7 @@ def render_source(bundle: dict, plan: dict) -> tuple[str, list[dict]]:
         "// from the rewritten caller, and then call the shared surrogate layer.",
         "",
         "#include <stdint.h>",
+        "#include <hip/hip_runtime.h>",
         f'#include "{surrogate_source}"',
         f'#include "{helper_source}"',
         "",

@@ -90,6 +90,9 @@ prepare_shared_artifacts "binary_probe_injector_entry" "$ENTRY_SPEC"
 
 ENTRY_BACKEND_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_entry_backend.plan.json"
 ENTRY_BACKEND_THUNK_JSON="$OUTPUT_DIR/binary_probe_injector_entry_backend.thunks.json"
+BASIC_BLOCK_BACKEND_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_basic_block_backend.plan.json"
+BASIC_BLOCK_BACKEND_THUNK_JSON="$OUTPUT_DIR/binary_probe_injector_basic_block_backend.thunks.json"
+BASIC_BLOCK_BACKEND_BUILTINS_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_basic_block_backend_builtins.plan.json"
 
 python3 - "$ENTRY_BACKEND_PLAN_JSON" "$ENTRY_BACKEND_THUNK_JSON" <<'PY'
 import json
@@ -160,6 +163,96 @@ json.dump(plan, open(sys.argv[1], "w", encoding="utf-8"), indent=2)
 open(sys.argv[1], "a", encoding="utf-8").write("\n")
 json.dump(thunks, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
 open(sys.argv[2], "a", encoding="utf-8").write("\n")
+PY
+
+python3 - "$BASIC_BLOCK_BACKEND_PLAN_JSON" "$BASIC_BLOCK_BACKEND_THUNK_JSON" "$BASIC_BLOCK_BACKEND_BUILTINS_PLAN_JSON" <<'PY'
+import json
+import sys
+
+plan = {
+    "kernels": [
+        {
+            "source_kernel": "entry_abi_kernel",
+            "clone_kernel": "__amd_crk_entry_abi_kernel",
+            "hidden_omniprobe_ctx": {
+                "offset": 272,
+            },
+            "planned_sites": [
+                {
+                    "status": "planned",
+                    "contract": "basic_block_v1",
+                    "when": "basic_block",
+                    "binary_site_id": 0,
+                    "helper_context": {
+                        "builtins": [],
+                    },
+                    "injection_point": {
+                        "kind": "basic_block",
+                        "block_id": 0,
+                        "block_label": "bb_0",
+                        "start_address": 6400,
+                        "end_address": 6500,
+                    },
+                    "event_materialization": {
+                        "timestamp": {"kind": "dynamic_timestamp"},
+                        "block_id": {"kind": "static_block_id", "value": 0},
+                    },
+                }
+            ],
+        }
+    ]
+}
+
+plan_with_builtins = json.loads(json.dumps(plan))
+plan_with_builtins["kernels"][0]["planned_sites"][0]["helper_context"]["builtins"] = ["block_idx", "thread_idx", "dispatch_id"]
+
+thunks = {
+    "thunks": [
+        {
+            "source_kernel": "entry_abi_kernel",
+            "when": "basic_block",
+            "thunk": "__omniprobe_binary_basic_block_entry_abi_kernel_basic_block_thunk",
+            "call_arguments": [
+                {
+                    "kind": "hidden_ctx",
+                    "name": "hidden_ctx",
+                    "c_type": "const void *",
+                    "size_bytes": 8,
+                    "vgprs": [0, 1],
+                },
+                {
+                    "kind": "capture",
+                    "name": "capture_size",
+                    "c_type": "uint64_t",
+                    "size_bytes": 8,
+                    "kernel_arg_offset": 8,
+                    "vgprs": [2, 3],
+                },
+                {
+                    "kind": "timestamp",
+                    "name": "timestamp",
+                    "c_type": "uint64_t",
+                    "size_bytes": 8,
+                    "vgprs": [4, 5],
+                },
+                {
+                    "kind": "event",
+                    "name": "block_id",
+                    "c_type": "uint32_t",
+                    "size_bytes": 4,
+                    "vgprs": [6],
+                },
+            ],
+        }
+    ]
+}
+
+json.dump(plan, open(sys.argv[1], "w", encoding="utf-8"), indent=2)
+open(sys.argv[1], "a", encoding="utf-8").write("\n")
+json.dump(thunks, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
+open(sys.argv[2], "a", encoding="utf-8").write("\n")
+json.dump(plan_with_builtins, open(sys.argv[3], "w", encoding="utf-8"), indent=2)
+open(sys.argv[3], "a", encoding="utf-8").write("\n")
 PY
 
 make_high_vgpr_entry_manifest() {
@@ -474,6 +567,143 @@ PY
     fi
 }
 
+run_basic_block_inject_test() {
+    local arch="$1"
+    local ir_fixture="$2"
+    local manifest_fixture="$3"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    local test_name="binary_probe_inject_basic_block_${arch}"
+    echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $test_name"
+    local adjusted_manifest="$OUTPUT_DIR/${test_name}.manifest.json"
+    local out_ir="$OUTPUT_DIR/${test_name}.ir.json"
+    make_high_vgpr_entry_manifest "$manifest_fixture" "$adjusted_manifest"
+
+    if python3 "$INJECTOR" "$ir_fixture" \
+        --plan "$BASIC_BLOCK_BACKEND_PLAN_JSON" \
+        --thunk-manifest "$BASIC_BLOCK_BACKEND_THUNK_JSON" \
+        --manifest "$adjusted_manifest" \
+        --function entry_abi_kernel \
+        --output "$out_ir" > "$OUTPUT_DIR/${test_name}.out"; then
+        if python3 - "$out_ir" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+fn = payload["functions"][0]
+meta = fn["instrumentation"]["basic_block_stubs"]
+assert meta["mode"] == "basic_block"
+assert meta["when"] == "basic_block"
+assert meta["contract"] == "basic_block_v1"
+assert meta["call_source"] == "reserved_mid_kernel_stub_sgprs"
+assert meta["kernarg_pair"] == [4, 5]
+assert [entry["kind"] for entry in meta["call_arguments"]] == ["hidden_ctx", "capture", "timestamp", "event"]
+assert meta["call_arguments"][0]["vgprs"] == [0, 1]
+assert meta["call_arguments"][1]["vgprs"] == [2, 3]
+assert meta["call_arguments"][2]["vgprs"] == [4, 5]
+assert meta["call_arguments"][3]["vgprs"] == [6]
+staged = meta["staged_call_arguments"]
+assert [entry["kind"] for entry in staged] == ["hidden_ctx", "capture"]
+assert meta["saved_kernarg_pair"] == [26, 27]
+assert staged[0]["staging_sgprs"] == [28, 29]
+assert staged[0]["kernel_arg_offset"] == 272
+assert staged[1]["staging_sgprs"] == [30, 31]
+assert staged[1]["kernel_arg_offset"] == 8
+assert meta["timestamp_pair"] == [32, 33]
+assert meta["target_pair"] == [34, 35]
+assert meta["scratch_restore_pair"] == [36, 37]
+assert meta["return_restore_pair"] == [38, 39]
+assert meta["exec_restore_pair"] == [40, 41]
+assert meta["total_sgprs"] == 42
+spill = meta["preserved_low_vgprs"]
+assert spill["source_vgprs"] == [0, 1, 2, 3, 4, 5, 6]
+assert spill["spill_offset"] == 528
+assert spill["spill_bytes"] == 28
+assert spill["private_segment_growth"] == 32
+assert spill["private_segment_pattern_class"] == "flat_scratch_alias_init"
+assert spill["private_segment_offset_source_sgpr"] == 11
+sites = meta["injected_sites"]
+assert [site["block_id"] for site in sites] == [0]
+assert [site["start_address"] for site in sites] == [6400]
+instructions = fn["instructions"]
+assert instructions[0]["mnemonic"] == "s_mov_b64"
+assert instructions[0]["operand_text"] == "s[26:27], s[4:5]"
+for site in sites:
+    start = site["start_address"]
+    original_index = site["original_instruction_index"]
+    synthetic_before = []
+    cursor = original_index
+    while cursor < len(instructions) and instructions[cursor].get("synthetic"):
+        synthetic_before.append(instructions[cursor])
+        cursor += 1
+    assert synthetic_before, f"missing stub before block start {start}"
+    assert instructions[cursor]["address"] == start
+    assert any(insn["mnemonic"] == "s_memtime" for insn in synthetic_before)
+    assert any(
+        insn["mnemonic"] == "v_mov_b32_e32" and insn["operand_text"] == f"v6, {site['block_id']}"
+        for insn in synthetic_before
+    )
+    assert any(
+        insn["mnemonic"] == "s_mov_b64" and insn["operand_text"] == "s[38:39], s[30:31]"
+        for insn in synthetic_before
+    )
+    assert any(
+        insn["mnemonic"] == "s_mov_b64" and insn["operand_text"] == "exec, s[40:41]"
+        for insn in synthetic_before
+    )
+    assert any(
+        insn["mnemonic"] == "buffer_store_dword" and "offset:552" in insn["operand_text"]
+        for insn in synthetic_before
+    )
+    assert any(
+        insn["mnemonic"] == "buffer_load_dword" and "offset:552" in insn["operand_text"]
+        for insn in synthetic_before
+    )
+PY
+        then
+            echo -e "  ${GREEN}✓ PASS${NC} - ${arch} basic-block injector inserted mid-kernel thunk calls at each planned block leader"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            echo -e "  ${RED}✗ FAIL${NC} - ${arch} basic-block injected IR did not match expectations"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - ${arch} basic-block injector execution failed"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+run_basic_block_builtin_rejection_test() {
+    local arch="$1"
+    local ir_fixture="$2"
+    local manifest_fixture="$3"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    local test_name="binary_probe_inject_basic_block_${arch}_reject_builtins"
+    echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $test_name"
+    local adjusted_manifest="$OUTPUT_DIR/${test_name}.manifest.json"
+    local out_ir="$OUTPUT_DIR/${test_name}.ir.json"
+    make_high_vgpr_entry_manifest "$manifest_fixture" "$adjusted_manifest"
+
+    if python3 "$INJECTOR" "$ir_fixture" \
+        --plan "$BASIC_BLOCK_BACKEND_BUILTINS_PLAN_JSON" \
+        --thunk-manifest "$BASIC_BLOCK_BACKEND_THUNK_JSON" \
+        --manifest "$adjusted_manifest" \
+        --function entry_abi_kernel \
+        --output "$out_ir" > "$OUTPUT_DIR/${test_name}.out" 2>&1; then
+        echo -e "  ${RED}✗ FAIL${NC} - ${arch} basic-block injector unexpectedly accepted helper builtins"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    else
+        if grep -q 'does not yet support helper builtins' "$OUTPUT_DIR/${test_name}.out"; then
+            echo -e "  ${GREEN}✓ PASS${NC} - ${arch} basic-block injector fails closed when helper builtins are requested"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            echo -e "  ${RED}✗ FAIL${NC} - ${arch} basic-block rejection reason was incorrect"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    fi
+}
+
 make_fallback_fixture() {
     local input_ir="$1"
     local output_ir="$2"
@@ -516,6 +746,14 @@ run_entry_inject_test "gfx942" "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_callco
 run_entry_inject_test "gfx1030" "$OUTPUT_DIR/binary_probe_injector_gfx1030_fallback.ir.json" "4:5" "fallback"
 run_entry_inject_test "gfx90a" "$OUTPUT_DIR/binary_probe_injector_gfx90a_fallback.ir.json" "4:5" "fallback"
 run_entry_inject_test "gfx942" "$OUTPUT_DIR/binary_probe_injector_gfx942_fallback.ir.json" "0:1" "fallback"
+run_basic_block_inject_test \
+    "gfx90a" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.manifest.json"
+run_basic_block_builtin_rejection_test \
+    "gfx90a" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.manifest.json"
 run_entry_backend_pattern_test \
     "gfx1030" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx1030.ir.json" \

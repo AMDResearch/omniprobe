@@ -66,6 +66,7 @@ THE SOFTWARE.
 
 
 #include "inc/interceptor.h"
+#include "inc/omniprobe_probe_abi_v1.h"
 
 #include <rocprofiler-sdk/registration.h>
 #include <rocprofiler-sdk/intercept_table.h>
@@ -373,6 +374,12 @@ void hsaInterceptor::signalCompleted(const hsa_signal_t sig)
             allocator_.free(ka_it->second);
             pending_kernargs_.erase(sig);
         }
+        auto hidden_ctx_it = pending_hidden_runtime_ctx_.find(sig);
+        if (hidden_ctx_it != pending_hidden_runtime_ctx_.end())
+        {
+            hsa_amd_memory_pool_free(hidden_ctx_it->second);
+            pending_hidden_runtime_ctx_.erase(hidden_ctx_it);
+        }
         //Put this completion signal back in the pool for subsequent dispatches
         sig_pool_.push_back(sig);
         if (ki.comms_obj_) {
@@ -662,6 +669,68 @@ void dumpKernArgs(void *args, uint32_t size)
         std::cout << std::hex << std::setw(8) << std::setfill('0') << ((uint32_t *)args)[i] << std::endl;
 }
 
+void * hsaInterceptor::allocateHiddenRuntimeCtx(hsa_agent_t agent,
+                                                dh_comms::dh_comms_descriptor *dh,
+                                                uint64_t dispatch_id)
+{
+    using omniprobe::probe_abi_v1::runtime_ctx_abi_version;
+    using omniprobe::probe_abi_v1::runtime_storage_v1;
+
+    struct RuntimePoolSelection {
+        hsa_amd_memory_pool_t pool{};
+        bool found = false;
+    } selection;
+    hsa_amd_memory_pool_t runtime_pool = {};
+    hsa_amd_agent_iterate_memory_pools(
+        agent,
+        [](hsa_amd_memory_pool_t pool, void *data) {
+            auto *selection = reinterpret_cast<RuntimePoolSelection *>(data);
+            hsa_amd_segment_t segment{};
+            bool runtime_allocatable = false;
+            if (hsa_amd_memory_pool_get_info(pool, HSA_AMD_MEMORY_POOL_INFO_SEGMENT, &segment) != HSA_STATUS_SUCCESS)
+                return HSA_STATUS_SUCCESS;
+            if (segment != HSA_AMD_SEGMENT_GLOBAL)
+                return HSA_STATUS_SUCCESS;
+            if (hsa_amd_memory_pool_get_info(pool, HSA_AMD_MEMORY_POOL_INFO_RUNTIME_ALLOC_ALLOWED,
+                                             &runtime_allocatable) != HSA_STATUS_SUCCESS)
+                return HSA_STATUS_SUCCESS;
+            if (!runtime_allocatable)
+                return HSA_STATUS_SUCCESS;
+            selection->pool = pool;
+            selection->found = true;
+            return HSA_STATUS_INFO_BREAK;
+        },
+        &selection);
+    runtime_pool = selection.pool;
+    if (!selection.found)
+        return nullptr;
+
+    size_t granularity = 0;
+    if (hsa_amd_memory_pool_get_info(runtime_pool,
+                                     HSA_AMD_MEMORY_POOL_INFO_RUNTIME_ALLOC_GRANULE,
+                                     &granularity) != HSA_STATUS_SUCCESS)
+        return nullptr;
+    if (granularity == 0)
+        granularity = alignof(runtime_storage_v1);
+
+    const size_t mask = granularity - 1;
+    const size_t alloc_size = (sizeof(runtime_storage_v1) + mask) & ~mask;
+    void *device_storage = nullptr;
+    if (hsa_amd_memory_pool_allocate(runtime_pool, alloc_size, 0, &device_storage) != HSA_STATUS_SUCCESS)
+        return nullptr;
+
+    runtime_storage_v1 host_storage{};
+    host_storage.dh = dh;
+    host_storage.dispatch_id = dispatch_id;
+    host_storage.abi_version = runtime_ctx_abi_version;
+    if (hsa_memory_copy(device_storage, &host_storage, sizeof(host_storage)) != HSA_STATUS_SUCCESS)
+    {
+        hsa_amd_memory_pool_free(device_storage);
+        return nullptr;
+    }
+    return device_storage;
+}
+
 void hsaInterceptor::fixupKernArgs(void *dst, void *src, void *comms, arg_descriptor_t desc)
 {
     // std::cout << "Fixing up kernargs\n";
@@ -770,13 +839,24 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                             }
 
                             comms = comms_mgr_.checkoutCommsObject(queues_[queue], it->second.name_, dispatch_id, kdb);
+                            void *hidden_runtime_ctx =
+                                allocateHiddenRuntimeCtx(queues_[queue],
+                                                         comms ? comms->get_dev_rsrc_ptr() : nullptr,
+                                                         dispatch_id);
+                            if (!hidden_runtime_ctx)
+                            {
+                                std::cerr << "Failed to allocate hidden runtime context for "
+                                          << it->second.name_ << std::endl;
+                                abort();
+                            }
 
-                            fixupKernArgs(new_kernargs, packet->kernarg_address, comms->get_dev_rsrc_ptr(), args);
+                            fixupKernArgs(new_kernargs, packet->kernarg_address, hidden_runtime_ctx, args);
                             dispatch->kernarg_address = new_kernargs;
                             dispatch->private_segment_size = args.private_segment_size;
                             dispatch->group_segment_size = args.group_segment_size;
                             // Store the new kernarg address so we can free it up at kernel completion
                             pending_kernargs_[sig] = new_kernargs;
+                            pending_hidden_runtime_ctx_[sig] = hidden_runtime_ctx;
                         }
                         else
                         {

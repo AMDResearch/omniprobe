@@ -102,9 +102,10 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Optional Omniprobe v1 probe YAML spec. The current binary-only "
-            "integration can rewrite donor-free hidden-ABI clones for supported "
-            "kernel_entry or kernel_exit lifecycle probe sites and otherwise fails "
-            "closed with a plan/report."
+            "integration can plan IR-backed non-lifecycle sites, but only rewrites "
+            "donor-free hidden-ABI clones for supported kernel_entry/kernel_exit "
+            "lifecycle sites and constrained basic_block probe sites today; other "
+            "planned sites fail closed with a plan/report."
         ),
     )
     parser.add_argument(
@@ -641,22 +642,44 @@ def probe_kernel_rewrite_eligibility(kernel_plan: dict) -> tuple[bool, list[str]
         return False, reasons
 
     planned_whens: set[str] = set()
+    planned_contracts: set[str] = set()
     for site in planned_sites:
         if not isinstance(site, dict):
             reasons.append("probe plan contains an invalid site record")
             continue
         contract = str(site.get("contract", ""))
         when = str(site.get("when", ""))
+        planned_contracts.add(contract)
         planned_whens.add(when)
-        if contract != "kernel_lifecycle_v1":
+        helper_context = site.get("helper_context", {})
+        helper_builtins = helper_context.get("builtins", []) if isinstance(helper_context, dict) else []
+        if contract == "kernel_lifecycle_v1":
+            if when == "kernel_entry":
+                reasons.append(
+                    "donor-free binary rewrite does not support kernel_entry lifecycle helper execution; "
+                    "use the pass-plugin path or choose kernel_exit"
+                )
+            elif when != "kernel_exit":
+                reasons.append(
+                    f"binary rewrite currently supports only kernel_exit lifecycle sites, not {when!r}"
+                )
+        elif contract == "basic_block_v1":
+            if when != "basic_block":
+                reasons.append(
+                    f"binary rewrite currently supports only basic_block sites for contract {contract!r}, not {when!r}"
+                )
+            if isinstance(helper_builtins, list) and helper_builtins:
+                builtins = ", ".join(str(value) for value in helper_builtins)
+                reasons.append(
+                    "binary basic_block rewrite does not yet support helper builtins; "
+                    f"requested builtins: {builtins}"
+                )
+        else:
             reasons.append(f"contract {contract!r} is not yet supported by binary rewrite")
-        if when not in {"kernel_entry", "kernel_exit"}:
-            reasons.append(
-                f"binary rewrite currently supports only kernel_entry or kernel_exit lifecycle sites, not {when!r}"
-            )
-    if len(planned_whens) > 1:
+    if len(planned_contracts) > 1 or len(planned_whens) > 1:
         reasons.append(
-            "binary rewrite currently supports a single lifecycle insertion point per kernel; split kernel_entry and kernel_exit into separate probes"
+            "binary rewrite currently supports one instrumentation mode per kernel; "
+            "split lifecycle and basic_block probes into separate rewrites"
         )
     return len(reasons) == 0, reasons
 
@@ -744,10 +767,22 @@ def main() -> int:
         probe_plan_path = None
         thunk_source_path = None
         thunk_manifest_path = None
+        probe_ir_path = None
         if probe_bundle_path is not None:
+            probe_ir_path = output_dir / f"{record.cache_tag}.probe.ir.json"
+            run_python(
+                disasm_tool,
+                str(active_record.code_object_path),
+                "--manifest",
+                str(active_manifest_path),
+                "--output",
+                str(probe_ir_path),
+            )
             probe_plan_path = output_dir / f"{record.cache_tag}.probe-plan.json"
             plan_args = [
                 str(active_manifest_path),
+                "--ir",
+                str(probe_ir_path),
                 "--probe-bundle",
                 str(probe_bundle_path),
                 "--output",
@@ -771,6 +806,7 @@ def main() -> int:
                 "status": "planned",
                 "bundle": str(probe_bundle_path),
                 "plan": str(probe_plan_path),
+                "instruction_ir": str(probe_ir_path),
                 "supported": bool(probe_plan.get("supported", False)),
                 "planned_site_count": int(probe_plan.get("planned_site_count", 0) or 0),
                 "unsupported_site_count": int(probe_plan.get("unsupported_site_count", 0) or 0),

@@ -2,8 +2,9 @@
 ################################################################################
 # Binary-only probe cache-preparation tests
 #
-# Verifies prepare_hsaco_cache.py can consume a probe YAML spec and produce a
-# donor-free hidden-ABI probe carrier for supported lifecycle-exit sites.
+# Verifies prepare_hsaco_cache.py can consume probe YAML specs and produce
+# donor-free hidden-ABI probe carriers for supported lifecycle-exit and
+# constrained basic-block sites.
 ################################################################################
 
 set -e
@@ -44,13 +45,18 @@ fi
 
 WORK_DIR="$OUTPUT_DIR/binary_probe_cache_prepare"
 CACHE_DIR="$WORK_DIR/cache"
+BASIC_BLOCK_CACHE_DIR="$WORK_DIR/basic_block_cache"
 rm -rf "$WORK_DIR"
-mkdir -p "$WORK_DIR" "$CACHE_DIR"
+mkdir -p "$WORK_DIR" "$CACHE_DIR" "$BASIC_BLOCK_CACHE_DIR"
 
 SPEC_FILE="$WORK_DIR/module_load_binary_lifecycle.yaml"
 HELPER_FILE="$WORK_DIR/module_load_binary_lifecycle_helper.hip"
 SUMMARY_JSON="$WORK_DIR/cache_prepare.summary.json"
 OUTPUT_MANIFEST="$WORK_DIR/cache_prepare.output.manifest.json"
+BASIC_BLOCK_SPEC_FILE="$WORK_DIR/module_load_binary_basic_block.yaml"
+BASIC_BLOCK_HELPER_FILE="$WORK_DIR/module_load_binary_basic_block_helper.hip"
+BASIC_BLOCK_SUMMARY_JSON="$WORK_DIR/basic_block_cache_prepare.summary.json"
+BASIC_BLOCK_OUTPUT_MANIFEST="$WORK_DIR/basic_block_cache_prepare.output.manifest.json"
 
 cat > "$SPEC_FILE" <<'EOF'
 version: 1
@@ -89,8 +95,53 @@ using namespace omniprobe::probe_abi_v1;
 extern "C" __device__ void module_load_binary_lifecycle_probe(
     const helper_args<omniprobe_user::module_load_binary_lifecycle_captures,
                       kernel_lifecycle_event> &args) {
-  if (blockIdx.x != 0 || blockIdx.y != 0 || blockIdx.z != 0 || threadIdx.x != 0 ||
-      threadIdx.y != 0 || threadIdx.z != 0) {
+  if (!lifecycle_event_is_dispatch_origin(*args.event)) {
+    return;
+  }
+
+  auto *data = reinterpret_cast<int *>(static_cast<uintptr_t>(args.captures->data));
+  data[0] = 1234;
+}
+EOF
+
+cat > "$BASIC_BLOCK_SPEC_FILE" <<'EOF'
+version: 1
+
+helpers:
+  source: module_load_binary_basic_block_helper.hip
+  namespace: omniprobe_user
+
+defaults:
+  emission: scalar
+  lane_headers: false
+  state: none
+
+probes:
+  - id: module_load_binary_basic_block
+    target:
+      kernels: ["mlk"]
+    inject:
+      when: basic_block
+      helper: module_load_binary_basic_block_probe
+      contract: basic_block_v1
+    payload:
+      mode: scalar
+      message: custom
+    capture:
+      kernel_args:
+        - name: data
+          type: u64
+        - name: size
+          type: u64
+EOF
+
+cat > "$BASIC_BLOCK_HELPER_FILE" <<'EOF'
+using namespace omniprobe::probe_abi_v1;
+
+extern "C" __device__ void module_load_binary_basic_block_probe(
+    const helper_args<omniprobe_user::module_load_binary_basic_block_captures,
+                      basic_block_event> &args) {
+  if (args.event->block_id != 5) {
     return;
   }
 
@@ -205,6 +256,110 @@ else
     echo -e "  ${RED}✗ FAIL${NC} - Prepared cache artifact metadata was not correct"
     echo "  Report: $OUTPUT_REPORT"
     echo "  Manifest: $OUTPUT_MANIFEST"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+python3 "$PREPARE_HSACO_CACHE" \
+    "$MODULE_LOAD_PLAIN_HSACO" \
+    --output-dir "$BASIC_BLOCK_CACHE_DIR" \
+    --kernel-filter '^mlk$' \
+    --surrogate-mode donor-free \
+    --probe-spec "$BASIC_BLOCK_SPEC_FILE" \
+    --hipcc "$HIPCC" \
+    --llvm-readelf "$LLVM_READELF" \
+    --llvm-objdump "$LLVM_OBJDUMP" \
+    --llvm-mc "$LLVM_MC" \
+    --ld-lld "$LD_LLD" > "$BASIC_BLOCK_SUMMARY_JSON"
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="binary_probe_cache_prepare_basic_block_summary"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+
+if python3 - "$BASIC_BLOCK_SUMMARY_JSON" <<'PY'
+import json
+import sys
+
+summary = json.load(open(sys.argv[1], encoding="utf-8"))
+assert len(summary) == 1
+item = summary[0]
+probe = item["probe_instrumentation"]
+assert probe["status"] == "rewritten"
+assert probe["supported"] is True
+assert probe["rewrite_pending"] is False
+kernel_rewrite = probe["kernel_rewrite"]["mlk"]
+assert kernel_rewrite["supported"] is True
+assert kernel_rewrite["instrumented"] is True
+outputs = item["outputs"]
+assert len(outputs) == 1
+output = outputs[0]
+assert output["mode"] == "probe-surrogate"
+assert output["surrogate_mode"] == "donor-free"
+assert output["probe_plan"]
+plan = json.load(open(output["probe_plan"], encoding="utf-8"))
+kernel = plan["kernels"][0]
+sites = kernel["planned_sites"]
+assert [site["injection_point"]["block_id"] for site in sites] == [1, 2, 3, 4, 5]
+PY
+then
+    echo -e "  ${GREEN}✓ PASS${NC} - Cache preparation summary reports a completed basic-block probe rewrite"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Basic-block cache preparation summary did not describe the expected probe rewrite"
+    echo "  Summary: $BASIC_BLOCK_SUMMARY_JSON"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+BASIC_BLOCK_OUTPUT_HSACO="$(python3 - "$BASIC_BLOCK_SUMMARY_JSON" <<'PY'
+import json
+import sys
+summary = json.load(open(sys.argv[1], encoding="utf-8"))
+print(summary[0]["outputs"][0]["output"])
+PY
+)"
+BASIC_BLOCK_OUTPUT_REPORT="$(python3 - "$BASIC_BLOCK_SUMMARY_JSON" <<'PY'
+import json
+import sys
+summary = json.load(open(sys.argv[1], encoding="utf-8"))
+print(summary[0]["outputs"][0]["report"])
+PY
+)"
+
+python3 "$INSPECT_CODE_OBJECT" "$BASIC_BLOCK_OUTPUT_HSACO" --llvm-readelf "$LLVM_READELF" --output "$BASIC_BLOCK_OUTPUT_MANIFEST" >/dev/null
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="binary_probe_cache_prepare_basic_block_output"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+
+if python3 - "$BASIC_BLOCK_OUTPUT_REPORT" "$BASIC_BLOCK_OUTPUT_MANIFEST" <<'PY'
+import json
+import sys
+
+report = json.load(open(sys.argv[1], encoding="utf-8"))
+manifest = json.load(open(sys.argv[2], encoding="utf-8"))
+
+clone = report.get("clone_result", {})
+assert clone.get("clone_kernel") == "__amd_crk_mlk"
+extra = report.get("extra_link_objects", [])
+assert isinstance(extra, list) and extra
+
+kernels = manifest["kernels"]["metadata"]["kernels"]
+target = next(
+    kernel
+    for kernel in kernels
+    if kernel.get("name") == "__amd_crk_mlk" or kernel.get("symbol") == "__amd_crk_mlk.kd"
+)
+args = target.get("args", [])
+assert any(arg.get("name") == "hidden_omniprobe_ctx" for arg in args)
+assert int(target.get("kernarg_segment_size", 0)) > 16
+assert int(target.get("private_segment_fixed_size", 0)) > 224
+PY
+then
+    echo -e "  ${GREEN}✓ PASS${NC} - Cache preparation emitted a hidden-ABI basic-block carrier with grown private-segment metadata"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Prepared basic-block cache artifact metadata was not correct"
+    echo "  Report: $BASIC_BLOCK_OUTPUT_REPORT"
+    echo "  Manifest: $BASIC_BLOCK_OUTPUT_MANIFEST"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 

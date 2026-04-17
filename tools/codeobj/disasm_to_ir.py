@@ -214,7 +214,7 @@ def build_basic_blocks(function: dict) -> None:
             leaders.add(target_address)
             if instruction["control_flow"] != "branch_unconditional" and next_address is not None:
                 leaders.add(next_address)
-        elif instruction["control_flow"] in {"branch_conditional", "branch_indirect", "return"}:
+        elif instruction["control_flow"] in {"branch_conditional", "branch_indirect"}:
             if next_address is not None:
                 leaders.add(next_address)
 

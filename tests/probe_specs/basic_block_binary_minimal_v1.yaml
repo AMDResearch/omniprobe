@@ -1,0 +1,26 @@
+version: 1
+
+helpers:
+  source: helpers/basic_block_binary_minimal.hip
+  namespace: omniprobe_user
+
+defaults:
+  emission: scalar
+  lane_headers: false
+  state: none
+
+probes:
+  - id: basic_block_binary_minimal
+    target:
+      kernels: ["simple_kernel"]
+    inject:
+      when: basic_block
+      helper: basic_block_binary_minimal_probe
+      contract: basic_block_v1
+    payload:
+      mode: scalar
+      message: time_interval
+    capture:
+      kernel_args:
+        - name: size
+          type: u64
