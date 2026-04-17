@@ -282,8 +282,6 @@ def render_runtime_init_lines() -> list[str]:
 
 
 def render_dh_builtin_capture_lines(when: str) -> list[str]:
-    if when != "kernel_entry":
-        return []
     return [
         "  dh_comms::builtin_snapshot_t __omniprobe_dh_builtins =",
         "      dh_comms::capture_builtin_snapshot();",
