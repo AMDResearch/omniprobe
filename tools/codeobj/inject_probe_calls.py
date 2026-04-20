@@ -24,8 +24,8 @@ def parse_args() -> argparse.Namespace:
         description=(
             "Inject Omniprobe probe call sequences into instruction-level IR. "
             "The current implementation supports binary-only lifecycle entry "
-            "and lifecycle exit thunk calls, plus conservative basic-block "
-            "thunk insertion."
+            "and lifecycle exit thunk calls, plus conservative mid-kernel "
+            "basic-block and memory-op thunk insertion."
         )
     )
     parser.add_argument("ir", help="Instruction-level IR JSON")
@@ -1360,6 +1360,8 @@ def reserve_mid_kernel_scalar_arguments(
     next_sgpr += 2
     m0_restore_sgpr = next_sgpr
     next_sgpr += 1
+    private_offset_restore_sgpr = next_sgpr
+    next_sgpr += 1
     return {
         "staged_arguments": staged_arguments,
         "staging_sgpr_base": current_sgprs,
@@ -1372,6 +1374,7 @@ def reserve_mid_kernel_scalar_arguments(
         "exec_restore_pair": exec_restore_pair["restore_pair"],
         "vcc_restore_pair": vcc_restore_pair,
         "m0_restore_sgpr": m0_restore_sgpr,
+        "private_offset_restore_sgpr": private_offset_restore_sgpr,
         "total_sgprs": next_sgpr,
     }
 
@@ -1463,6 +1466,7 @@ def emit_mid_kernel_private_segment_address_setup(
     anchor_address: int,
     spill_plan: dict[str, Any] | None,
     scratch_restore_pair: list[int] | None,
+    private_offset_restore_sgpr: int | None,
     save_original: bool,
 ) -> list[dict]:
     if not isinstance(spill_plan, dict):
@@ -1490,6 +1494,15 @@ def emit_mid_kernel_private_segment_address_setup(
                 ),
             ]
         )
+        if isinstance(private_offset_source_sgpr, int) and isinstance(private_offset_restore_sgpr, int):
+            instructions.append(
+                make_instruction(
+                    anchor_address,
+                    "s_mov_b32",
+                    f"s{private_offset_restore_sgpr}, s{private_offset_source_sgpr}",
+                    [f"s{private_offset_restore_sgpr}", f"s{private_offset_source_sgpr}"],
+                )
+            )
     elif private_pattern_class in {None, "setreg_flat_scratch_init", "flat_scratch_alias_init", "scalar_pair_update_only"}:
         instructions.extend(
             [
@@ -1535,7 +1548,10 @@ def emit_mid_kernel_private_segment_address_setup(
                 ]
             )
     elif private_pattern_class in {None, "setreg_flat_scratch_init", "flat_scratch_alias_init", "scalar_pair_update_only"}:
-        if not isinstance(private_offset_source_sgpr, int):
+        effective_offset_sgpr = private_offset_source_sgpr
+        if isinstance(private_offset_restore_sgpr, int):
+            effective_offset_sgpr = private_offset_restore_sgpr
+        if not isinstance(effective_offset_sgpr, int):
             raise SystemExit(
                 "mid-kernel helper injection requires an observed private-segment offset SGPR "
                 f"for pattern {private_pattern_class!r}"
@@ -1545,8 +1561,8 @@ def emit_mid_kernel_private_segment_address_setup(
                 make_instruction(
                     anchor_address,
                     "s_add_u32",
-                    f"s0, s0, s{private_offset_source_sgpr}",
-                    ["s0", "s0", f"s{private_offset_source_sgpr}"],
+                    f"s0, s0, s{effective_offset_sgpr}",
+                    ["s0", "s0", f"s{effective_offset_sgpr}"],
                 ),
                 make_instruction(
                     anchor_address,
@@ -1569,6 +1585,7 @@ def emit_mid_kernel_vgpr_save_restore(
     anchor_address: int,
     spill_plan: dict[str, Any] | None,
     scratch_restore_pair: list[int] | None,
+    private_offset_restore_sgpr: int | None,
     scratch_soffset_sgpr: int,
 ) -> tuple[list[dict], list[dict]]:
     if not isinstance(spill_plan, dict):
@@ -1584,6 +1601,7 @@ def emit_mid_kernel_vgpr_save_restore(
         anchor_address=anchor_address,
         spill_plan=spill_plan,
         scratch_restore_pair=scratch_restore_pair,
+        private_offset_restore_sgpr=private_offset_restore_sgpr,
         save_original=True,
     )
 
@@ -1633,6 +1651,7 @@ def emit_mid_kernel_vgpr_save_restore(
         anchor_address=anchor_address,
         spill_plan=spill_plan,
         scratch_restore_pair=scratch_restore_pair,
+        private_offset_restore_sgpr=private_offset_restore_sgpr,
         save_original=False,
     )
     after.append(
@@ -1689,6 +1708,7 @@ def emit_mid_kernel_sgpr_save_restore(
     anchor_address: int,
     spill_plan: dict[str, Any] | None,
     scratch_restore_pair: list[int] | None,
+    private_offset_restore_sgpr: int | None,
     scratch_soffset_sgpr: int,
     shuttle_vgpr: int = 0,
 ) -> tuple[list[dict], list[dict]]:
@@ -1705,6 +1725,7 @@ def emit_mid_kernel_sgpr_save_restore(
         anchor_address=anchor_address,
         spill_plan=spill_plan,
         scratch_restore_pair=scratch_restore_pair,
+        private_offset_restore_sgpr=private_offset_restore_sgpr,
         save_original=True,
     )
     before.append(
@@ -1760,6 +1781,7 @@ def emit_mid_kernel_sgpr_save_restore(
         anchor_address=anchor_address,
         spill_plan=spill_plan,
         scratch_restore_pair=scratch_restore_pair,
+        private_offset_restore_sgpr=private_offset_restore_sgpr,
         save_original=False,
     )
     after.append(
@@ -1817,6 +1839,550 @@ def emit_mid_kernel_sgpr_save_restore(
         ]
     )
     return before, after
+
+
+def parse_vgpr_operand(operand: str) -> list[int] | None:
+    operand = str(operand or "").strip()
+    if operand.startswith("v[") and operand.endswith("]"):
+        body = operand[2:-1]
+        parts = body.split(":", 1)
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            start = int(parts[0])
+            end = int(parts[1])
+            if end < start:
+                return None
+            return list(range(start, end + 1))
+    if operand.startswith("v") and operand[1:].isdigit():
+        return [int(operand[1:])]
+    return None
+
+
+def memory_access_kind_immediate(value: str) -> int:
+    mapping = {
+        "load": 1,
+        "read": 1,
+        "store": 2,
+        "write": 2,
+        "read_write": 3,
+    }
+    key = str(value or "").strip().lower()
+    if key not in mapping:
+        raise SystemExit(f"unsupported memory access kind {value!r} for memory_op event materialization")
+    return mapping[key]
+
+
+def address_space_kind_immediate(value: str) -> int:
+    mapping = {
+        "flat": 0,
+        "global": 1,
+        "gds": 2,
+        "local": 3,
+        "shared": 3,
+        "constant": 4,
+        "scratch": 5,
+    }
+    key = str(value or "").strip().lower()
+    if key not in mapping:
+        raise SystemExit(f"unsupported address space {value!r} for memory_op event materialization")
+    return mapping[key]
+
+
+def memory_address_source_vgprs(instruction: dict) -> list[int]:
+    mnemonic = str(instruction.get("mnemonic", "") or "")
+    operands = instruction.get("operands", [])
+    if not isinstance(operands, list):
+        raise SystemExit("memory_op instruction operands are malformed")
+
+    operand_index = None
+    if mnemonic.startswith(("flat_store", "global_store")):
+        operand_index = 0
+    elif mnemonic.startswith(("flat_load", "global_load")):
+        operand_index = 1
+    else:
+        raise SystemExit(
+            "binary memory_op rewrite does not yet support address extraction for instruction "
+            f"{mnemonic!r}"
+        )
+
+    if operand_index >= len(operands):
+        raise SystemExit(
+            f"memory_op instruction {mnemonic!r} is missing operand index {operand_index} for address extraction"
+        )
+
+    address_vgprs = parse_vgpr_operand(str(operands[operand_index]))
+    if address_vgprs is None or len(address_vgprs) != 2:
+        raise SystemExit(
+            f"memory_op instruction {mnemonic!r} did not expose a 64-bit VGPR address operand: {operands[operand_index]!r}"
+        )
+    return address_vgprs
+
+
+def emit_memory_event_arguments(
+    *,
+    anchor_address: int,
+    instruction: dict,
+    site: dict,
+    call_arguments: list[dict],
+) -> list[dict]:
+    instructions: list[dict] = []
+    event_materialization = site.get("event_materialization", {})
+    if not isinstance(event_materialization, dict):
+        raise SystemExit("planned memory_op site is missing event materialization metadata")
+
+    address_arg = next(
+        (entry for entry in call_arguments if entry.get("kind") == "event" and entry.get("name") == "address"),
+        None,
+    )
+    if address_arg is None:
+        raise SystemExit("thunk manifest did not describe a memory_op address event argument")
+    address_vgprs = [int(value) for value in address_arg.get("vgprs", [])]
+    if len(address_vgprs) != 2:
+        raise SystemExit(f"memory_op address must occupy two VGPRs, got {address_vgprs!r}")
+    source_address_vgprs = memory_address_source_vgprs(instruction)
+    instructions.extend(
+        [
+            make_instruction(
+                anchor_address,
+                "v_mov_b32_e32",
+                f"v{address_vgprs[0]}, v{source_address_vgprs[0]}",
+                [f"v{address_vgprs[0]}", f"v{source_address_vgprs[0]}"],
+            ),
+            make_instruction(
+                anchor_address,
+                "v_mov_b32_e32",
+                f"v{address_vgprs[1]}, v{source_address_vgprs[1]}",
+                [f"v{address_vgprs[1]}", f"v{source_address_vgprs[1]}"],
+            ),
+        ]
+    )
+
+    bytes_materialization = event_materialization.get("bytes", {})
+    if (
+        not isinstance(bytes_materialization, dict)
+        or str(bytes_materialization.get("kind", "")) != "static_instruction_width"
+    ):
+        raise SystemExit("planned memory_op site is missing a supported static bytes materialization")
+    bytes_value = int(bytes_materialization.get("value", 0) or 0)
+    if bytes_value < 0 or bytes_value > 0xFFFF:
+        raise SystemExit(f"memory_op bytes value {bytes_value} is outside the compact binary ABI range")
+
+    access_materialization = event_materialization.get("access_kind", {})
+    if (
+        not isinstance(access_materialization, dict)
+        or str(access_materialization.get("kind", "")) != "static_access_kind"
+    ):
+        raise SystemExit("planned memory_op site is missing a supported static access_kind materialization")
+    access_value = memory_access_kind_immediate(str(access_materialization.get("value", "")))
+
+    address_space_materialization = event_materialization.get("address_space", {})
+    if (
+        not isinstance(address_space_materialization, dict)
+        or str(address_space_materialization.get("kind", "")) != "static_address_space"
+    ):
+        raise SystemExit("planned memory_op site is missing a supported static address_space materialization")
+    address_space_value = address_space_kind_immediate(str(address_space_materialization.get("value", "")))
+
+    packed_info_arg = next(
+        (entry for entry in call_arguments if entry.get("kind") == "event" and entry.get("name") == "memory_info"),
+        None,
+    )
+    if packed_info_arg is not None:
+        packed_vgprs = [int(value) for value in packed_info_arg.get("vgprs", [])]
+        if len(packed_vgprs) != 1:
+            raise SystemExit(f"memory_op memory_info must occupy one VGPR, got {packed_vgprs!r}")
+        packed_value = (
+            (bytes_value & 0xFFFF)
+            | ((access_value & 0xFF) << 16)
+            | ((address_space_value & 0xFF) << 24)
+        )
+        instructions.append(
+            make_instruction(
+                anchor_address,
+                "v_mov_b32_e32",
+                f"v{packed_vgprs[0]}, {packed_value}",
+                [f"v{packed_vgprs[0]}", str(packed_value)],
+            )
+        )
+        return instructions
+
+    bytes_arg = next(
+        (entry for entry in call_arguments if entry.get("kind") == "event" and entry.get("name") == "bytes"),
+        None,
+    )
+    if bytes_arg is None:
+        raise SystemExit("thunk manifest did not describe a memory_op bytes event argument")
+    bytes_vgprs = [int(value) for value in bytes_arg.get("vgprs", [])]
+    if len(bytes_vgprs) != 1:
+        raise SystemExit(f"memory_op bytes must occupy one VGPR, got {bytes_vgprs!r}")
+    instructions.append(
+        make_instruction(
+            anchor_address,
+            "v_mov_b32_e32",
+            f"v{bytes_vgprs[0]}, {bytes_value}",
+            [f"v{bytes_vgprs[0]}", str(bytes_value)],
+        )
+    )
+
+    access_arg = next(
+        (entry for entry in call_arguments if entry.get("kind") == "event" and entry.get("name") == "access_kind"),
+        None,
+    )
+    if access_arg is None:
+        raise SystemExit("thunk manifest did not describe a memory_op access_kind event argument")
+    access_vgprs = [int(value) for value in access_arg.get("vgprs", [])]
+    if len(access_vgprs) != 1:
+        raise SystemExit(f"memory_op access_kind must occupy one VGPR, got {access_vgprs!r}")
+    instructions.append(
+        make_instruction(
+            anchor_address,
+            "v_mov_b32_e32",
+            f"v{access_vgprs[0]}, {access_value}",
+            [f"v{access_vgprs[0]}", str(access_value)],
+        )
+    )
+
+    address_space_arg = next(
+        (entry for entry in call_arguments if entry.get("kind") == "event" and entry.get("name") == "address_space"),
+        None,
+    )
+    if address_space_arg is None:
+        raise SystemExit("thunk manifest did not describe a memory_op address_space event argument")
+    address_space_vgprs = [int(value) for value in address_space_arg.get("vgprs", [])]
+    if len(address_space_vgprs) != 1:
+        raise SystemExit(f"memory_op address_space must occupy one VGPR, got {address_space_vgprs!r}")
+    instructions.append(
+        make_instruction(
+            anchor_address,
+            "v_mov_b32_e32",
+            f"v{address_space_vgprs[0]}, {address_space_value}",
+            [f"v{address_space_vgprs[0]}", str(address_space_value)],
+        )
+    )
+    return instructions
+
+
+def memory_stub_instructions(
+    *,
+    anchor_address: int,
+    instruction: dict,
+    kernarg_pair: list[int],
+    thunk_name: str,
+    site: dict,
+    call_arguments: list[dict],
+    staged_arguments: list[dict],
+    target_pair: list[int],
+    scratch_restore_pair: list[int],
+    return_restore_pair: list[int],
+    exec_restore_pair: list[int] | None,
+    vcc_restore_pair: list[int],
+    m0_restore_sgpr: int,
+    private_offset_restore_sgpr: int | None,
+    builtin_liveins: dict[str, int] | None,
+    spill_plan: dict[str, Any],
+) -> list[dict]:
+    instructions: list[dict] = []
+    vgpr_save, vgpr_restore = emit_mid_kernel_vgpr_save_restore(
+        anchor_address=anchor_address,
+        spill_plan=spill_plan,
+        scratch_restore_pair=scratch_restore_pair,
+        private_offset_restore_sgpr=private_offset_restore_sgpr,
+        scratch_soffset_sgpr=target_pair[0],
+    )
+    sgpr_save, sgpr_restore = emit_mid_kernel_sgpr_save_restore(
+        anchor_address=anchor_address,
+        spill_plan=spill_plan,
+        scratch_restore_pair=scratch_restore_pair,
+        private_offset_restore_sgpr=private_offset_restore_sgpr,
+        scratch_soffset_sgpr=target_pair[0],
+        shuttle_vgpr=0,
+    )
+    instructions.extend(vgpr_save)
+    instructions.extend(
+        emit_memory_event_arguments(
+            anchor_address=anchor_address,
+            instruction=instruction,
+            site=site,
+            call_arguments=call_arguments,
+        )
+    )
+    instructions.extend(sgpr_save)
+    for staged_argument in staged_arguments:
+        instructions.extend(
+            emit_capture_load_and_marshal(
+                anchor_address=anchor_address,
+                kernarg_pair=kernarg_pair,
+                temp_pair=[int(value) for value in staged_argument.get("staging_sgprs", [])],
+                call_argument=staged_argument,
+            )
+        )
+    target_operand = f"s[{target_pair[0]}:{target_pair[1]}]"
+    builtin_setup, _ = emit_helper_builtin_liveins(
+        anchor_address=anchor_address,
+        kernarg_pair=kernarg_pair,
+        builtin_liveins=builtin_liveins,
+        restore_pair=None,
+    )
+    instructions.extend(
+        [
+            make_instruction(anchor_address, "s_getpc_b64", target_operand, [target_operand]),
+            make_instruction(
+                anchor_address,
+                "s_add_u32",
+                f"s{target_pair[0]}, s{target_pair[0]}, {thunk_name}@rel32@lo+4",
+                [f"s{target_pair[0]}", f"s{target_pair[0]}", f"{thunk_name}@rel32@lo+4"],
+            ),
+            make_instruction(
+                anchor_address,
+                "s_addc_u32",
+                f"s{target_pair[1]}, s{target_pair[1]}, {thunk_name}@rel32@hi+4",
+                [f"s{target_pair[1]}", f"s{target_pair[1]}", f"{thunk_name}@rel32@hi+4"],
+            ),
+            make_instruction(
+                anchor_address,
+                "s_mov_b64",
+                f"s[{return_restore_pair[0]}:{return_restore_pair[1]}], s[30:31]",
+                [f"s[{return_restore_pair[0]}:{return_restore_pair[1]}]", "s[30:31]"],
+            ),
+            make_instruction(
+                anchor_address,
+                "s_mov_b64",
+                f"s[{vcc_restore_pair[0]}:{vcc_restore_pair[1]}], vcc",
+                [f"s[{vcc_restore_pair[0]}:{vcc_restore_pair[1]}]", "vcc"],
+            ),
+            make_instruction(
+                anchor_address,
+                "s_mov_b32",
+                f"s{m0_restore_sgpr}, m0",
+                [f"s{m0_restore_sgpr}", "m0"],
+            ),
+        ]
+    )
+    instructions.extend(builtin_setup)
+    if exec_restore_pair is not None:
+        instructions.append(
+            make_instruction(
+                anchor_address,
+                "s_mov_b64",
+                f"s[{exec_restore_pair[0]}:{exec_restore_pair[1]}], exec",
+                [f"s[{exec_restore_pair[0]}:{exec_restore_pair[1]}]", "exec"],
+            )
+        )
+    instructions.append(
+        make_instruction(
+            anchor_address,
+            "s_swappc_b64",
+            f"s[30:31], {target_operand}",
+            ["s[30:31]", target_operand],
+        )
+    )
+    if exec_restore_pair is not None:
+        instructions.append(
+            make_instruction(
+                anchor_address,
+                "s_mov_b64",
+                f"exec, s[{exec_restore_pair[0]}:{exec_restore_pair[1]}]",
+                ["exec", f"s[{exec_restore_pair[0]}:{exec_restore_pair[1]}]"],
+            )
+        )
+    instructions.append(
+        make_instruction(
+            anchor_address,
+            "s_mov_b32",
+            f"m0, s{m0_restore_sgpr}",
+            ["m0", f"s{m0_restore_sgpr}"],
+        )
+    )
+    instructions.append(
+        make_instruction(
+            anchor_address,
+            "s_mov_b64",
+            f"vcc, s[{vcc_restore_pair[0]}:{vcc_restore_pair[1]}]",
+            ["vcc", f"s[{vcc_restore_pair[0]}:{vcc_restore_pair[1]}]"],
+        )
+    )
+    instructions.extend(sgpr_restore)
+    instructions.append(
+        make_instruction(
+            anchor_address,
+            "s_mov_b64",
+            f"s[30:31], s[{return_restore_pair[0]}:{return_restore_pair[1]}]",
+            ["s[30:31]", f"s[{return_restore_pair[0]}:{return_restore_pair[1]}]"],
+        )
+    )
+    instructions.extend(vgpr_restore)
+    return instructions
+
+
+def inject_memory_stubs(
+    *,
+    ir: dict,
+    function_name: str,
+    kernel_plan: dict,
+    thunk: dict,
+    descriptor: dict | None,
+    kernel_metadata: dict | None,
+) -> dict:
+    output = deepcopy(ir)
+    function = find_function(output, function_name)
+    analysis = analyze_kernel_calling_convention(function=function, descriptor=descriptor)
+    entry_analysis = analyze_kernel_entry_abi(
+        function=function,
+        descriptor=descriptor,
+        kernel_metadata=kernel_metadata,
+    )
+    kernarg_base = analysis["inferred_kernarg_base"]
+    if kernarg_base is None or not analysis.get("descriptor_has_kernarg_segment_ptr", False):
+        raise SystemExit(
+            f"function {function_name!r} is missing kernarg-base facts required for memory-op stub injection"
+        )
+    kernarg_pair = list(kernarg_base["base_pair"])
+    sites = find_planned_sites(kernel_plan, when="memory_op", contract="memory_op_v1")
+    if not sites:
+        raise SystemExit(f"kernel plan for {function_name!r} did not contain any planned memory-op sites")
+    require_no_helper_builtins(sites, mode="memory-op")
+
+    hidden_ctx = kernel_plan.get("hidden_omniprobe_ctx", {})
+    hidden_offset = int(hidden_ctx.get("offset", 0) or 0)
+    thunk_name = str(thunk.get("thunk", ""))
+    if not thunk_name:
+        raise SystemExit("thunk manifest entry did not contain a thunk name")
+    call_layout, call_arguments = call_arguments_from_thunk(thunk)
+    allocated_vgprs = descriptor_allocated_vgpr_count(descriptor)
+    if allocated_vgprs is not None and call_layout["total_dwords"] > allocated_vgprs:
+        raise SystemExit(
+            f"function {function_name!r} cannot marshal {call_layout['total_dwords']} dwords of call arguments "
+            f"with only {allocated_vgprs} allocated VGPRs"
+        )
+
+    scalar_plan = reserve_mid_kernel_scalar_arguments(
+        kernel_metadata=kernel_metadata,
+        descriptor=descriptor,
+        call_arguments=call_arguments,
+        hidden_offset=hidden_offset,
+    )
+    builtin_liveins_raw = infer_builtin_livein_plan(
+        kernel_metadata=kernel_metadata,
+        descriptor=descriptor,
+    )
+    builtin_snapshot_plan = reserve_entry_builtin_snapshot(
+        next_sgpr=scalar_plan["total_sgprs"],
+        builtin_liveins=builtin_liveins_raw,
+    )
+    if isinstance(builtin_liveins_raw, dict):
+        builtin_liveins = dict(builtin_liveins_raw)
+        for key, saved_source in builtin_snapshot_plan["saved_sources"].items():
+            builtin_liveins[key] = saved_source
+        scalar_plan["total_sgprs"] = int(builtin_snapshot_plan["total_sgprs"])
+    else:
+        builtin_liveins = None
+    spill_plan = reserve_mid_kernel_vgpr_spill(
+        kernel_metadata=kernel_metadata,
+        descriptor=descriptor,
+        entry_analysis=entry_analysis,
+        call_dword_count=call_layout["total_dwords"],
+    )
+
+    original_instructions = function.get("instructions", [])
+    site_by_address: dict[int, dict] = {}
+    for site in sites:
+        injection_point = site.get("injection_point", {})
+        if not isinstance(injection_point, dict):
+            raise SystemExit("planned memory_op site is missing an injection_point")
+        instruction_address = injection_point.get("instruction_address")
+        if not isinstance(instruction_address, int):
+            raise SystemExit("planned memory_op site is missing an instruction_address")
+        site_by_address[instruction_address] = site
+
+    mutated_instructions: list[dict] = []
+    injected_sites: list[dict] = []
+    if original_instructions:
+        entry_anchor = int(original_instructions[0].get("address", function.get("start_address", 0)) or 0)
+        mutated_instructions.extend(
+            emit_mid_kernel_kernarg_snapshot(
+                anchor_address=entry_anchor,
+                kernarg_pair=kernarg_pair,
+                saved_kernarg_pair=scalar_plan["saved_kernarg_pair"],
+            )
+        )
+        mutated_instructions.extend(
+            emit_entry_builtin_snapshot(
+                anchor_address=entry_anchor,
+                builtin_liveins=builtin_liveins_raw,
+                snapshot_plan=builtin_snapshot_plan,
+            )
+        )
+    for index, instruction in enumerate(original_instructions):
+        address = int(instruction.get("address", 0) or 0)
+        site = site_by_address.get(address)
+        if site is not None:
+            mutated_instructions.extend(
+                memory_stub_instructions(
+                    anchor_address=address,
+                    instruction=instruction,
+                    kernarg_pair=scalar_plan["saved_kernarg_pair"],
+                    thunk_name=thunk_name,
+                    site=site,
+                    call_arguments=call_arguments,
+                    staged_arguments=scalar_plan["staged_arguments"],
+                    target_pair=scalar_plan["target_pair"],
+                    scratch_restore_pair=scalar_plan["scratch_restore_pair"],
+                    return_restore_pair=scalar_plan["return_restore_pair"],
+                    exec_restore_pair=scalar_plan["exec_restore_pair"],
+                    vcc_restore_pair=scalar_plan["vcc_restore_pair"],
+                    m0_restore_sgpr=scalar_plan["m0_restore_sgpr"],
+                    private_offset_restore_sgpr=scalar_plan["private_offset_restore_sgpr"],
+                    builtin_liveins=builtin_liveins,
+                    spill_plan=spill_plan,
+                )
+            )
+            injection_point = site.get("injection_point", {})
+            injected_sites.append(
+                {
+                    "binary_site_id": site.get("binary_site_id"),
+                    "instruction_address": address,
+                    "instruction_mnemonic": injection_point.get("instruction_mnemonic"),
+                    "original_instruction_index": index,
+                }
+            )
+        mutated_instructions.append(instruction)
+    if len(injected_sites) != len(sites):
+        raise SystemExit(
+            f"function {function_name!r} did not contain all planned memory-op insertion anchors"
+        )
+
+    function["instructions"] = mutated_instructions
+    function["instrumentation"] = {
+        "memory_op_stubs": {
+            "mode": "memory_op",
+            "when": "memory_op",
+            "contract": "memory_op_v1",
+            "call_source": "reserved_mid_kernel_stub_sgprs",
+            "hidden_omniprobe_ctx_offset": hidden_offset,
+            "thunk": thunk_name,
+            "kernarg_pair": kernarg_pair,
+            "call_arguments": call_arguments,
+            "staged_call_arguments": scalar_plan["staged_arguments"],
+            "staging_sgpr_base": scalar_plan["staging_sgpr_base"],
+            "staging_sgpr_count": scalar_plan["staging_sgpr_count"],
+            "saved_kernarg_pair": scalar_plan["saved_kernarg_pair"],
+            "target_pair": scalar_plan["target_pair"],
+            "scratch_restore_pair": scalar_plan["scratch_restore_pair"],
+            "return_restore_pair": scalar_plan["return_restore_pair"],
+            "exec_restore_pair": scalar_plan["exec_restore_pair"],
+            "vcc_restore_pair": scalar_plan["vcc_restore_pair"],
+            "m0_restore_sgpr": scalar_plan["m0_restore_sgpr"],
+            "helper_builtin_liveins": builtin_liveins,
+            "entry_raw_builtin_liveins": builtin_liveins_raw,
+            "builtin_snapshot_sgprs": builtin_snapshot_plan["saved_sources"],
+            "builtin_snapshot_sgpr_base": builtin_snapshot_plan["snapshot_sgpr_base"],
+            "builtin_snapshot_sgpr_count": builtin_snapshot_plan["snapshot_sgpr_count"],
+            "preserved_low_vgprs": spill_plan,
+            "private_segment_growth": spill_plan["private_segment_growth"],
+            "injected_sites": injected_sites,
+            "total_sgprs": scalar_plan["total_sgprs"],
+        }
+    }
+    return output
 
 
 def emit_basic_block_event_arguments(
@@ -1900,6 +2466,7 @@ def basic_block_stub_instructions(
     exec_restore_pair: list[int] | None,
     vcc_restore_pair: list[int],
     m0_restore_sgpr: int,
+    private_offset_restore_sgpr: int | None,
     builtin_liveins: dict[str, int] | None,
     spill_plan: dict[str, Any],
 ) -> list[dict]:
@@ -1908,12 +2475,14 @@ def basic_block_stub_instructions(
         anchor_address=anchor_address,
         spill_plan=spill_plan,
         scratch_restore_pair=scratch_restore_pair,
+        private_offset_restore_sgpr=private_offset_restore_sgpr,
         scratch_soffset_sgpr=target_pair[0],
     )
     sgpr_save, sgpr_restore = emit_mid_kernel_sgpr_save_restore(
         anchor_address=anchor_address,
         spill_plan=spill_plan,
         scratch_restore_pair=scratch_restore_pair,
+        private_offset_restore_sgpr=private_offset_restore_sgpr,
         scratch_soffset_sgpr=target_pair[0],
         shuttle_vgpr=0,
     )
@@ -2170,6 +2739,7 @@ def inject_basic_block_stubs(
                     exec_restore_pair=scalar_plan["exec_restore_pair"],
                     vcc_restore_pair=scalar_plan["vcc_restore_pair"],
                     m0_restore_sgpr=scalar_plan["m0_restore_sgpr"],
+                    private_offset_restore_sgpr=scalar_plan["private_offset_restore_sgpr"],
                     builtin_liveins=builtin_liveins,
                     spill_plan=spill_plan,
                 )
@@ -2467,14 +3037,20 @@ def main() -> int:
     entry_site = find_planned_site(kernel_plan, "kernel_entry")
     exit_site = find_planned_site(kernel_plan, "kernel_exit")
     basic_block_sites = find_planned_sites(kernel_plan, when="basic_block", contract="basic_block_v1")
-    active_modes = int(entry_site is not None) + int(exit_site is not None) + int(bool(basic_block_sites))
+    memory_sites = find_planned_sites(kernel_plan, when="memory_op", contract="memory_op_v1")
+    active_modes = (
+        int(entry_site is not None)
+        + int(exit_site is not None)
+        + int(bool(basic_block_sites))
+        + int(bool(memory_sites))
+    )
     if entry_site is not None and exit_site is not None:
         raise SystemExit(
             "binary lifecycle rewrite currently supports a single insertion point per kernel; split kernel_entry and kernel_exit into separate probes"
         )
     if active_modes > 1:
         raise SystemExit(
-            "binary rewrite currently supports one instrumentation mode per kernel; split lifecycle and basic_block probes into separate rewrites"
+            "binary rewrite currently supports one instrumentation mode per kernel; split lifecycle, basic_block, and memory_op probes into separate rewrites"
         )
     if entry_site is not None:
         thunk = find_thunk(thunk_manifest, kernel_plan, "kernel_entry")
@@ -2485,6 +3061,9 @@ def main() -> int:
     elif basic_block_sites:
         thunk = find_thunk(thunk_manifest, kernel_plan, "basic_block")
         rewrite_mode = "basic_block"
+    elif memory_sites:
+        thunk = find_thunk(thunk_manifest, kernel_plan, "memory_op")
+        rewrite_mode = "memory_op"
     else:
         raise SystemExit(
             f"kernel plan for {args.function!r} did not contain any supported planned rewrite sites"
@@ -2502,6 +3081,15 @@ def main() -> int:
         )
     elif rewrite_mode == "basic_block":
         mutated = inject_basic_block_stubs(
+            ir=ir,
+            function_name=args.function,
+            kernel_plan=kernel_plan,
+            thunk=thunk,
+            descriptor=descriptor,
+            kernel_metadata=kernel_metadata,
+        )
+    elif rewrite_mode == "memory_op":
+        mutated = inject_memory_stubs(
             ir=ir,
             function_name=args.function,
             kernel_plan=kernel_plan,

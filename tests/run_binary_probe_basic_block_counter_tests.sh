@@ -111,6 +111,18 @@ extern "C" __device__ void module_load_binary_basic_block_counter_probe(
     return;
   }
 
+  const auto *uniform = args.runtime != nullptr ? args.runtime->dispatch_uniform : nullptr;
+  if (uniform == nullptr) {
+    return;
+  }
+  if ((uniform->valid_mask & dispatch_uniform_valid_grid_dim) == 0 ||
+      (uniform->valid_mask & dispatch_uniform_valid_block_dim) == 0) {
+    return;
+  }
+  if (uniform->grid_dim_x != 4u || uniform->block_dim_x != 64u) {
+    return;
+  }
+
   auto *data = reinterpret_cast<unsigned int *>(static_cast<uintptr_t>(args.captures->data));
   const size_t size = static_cast<size_t>(args.captures->size);
   atomicAdd(data + size, 1u);

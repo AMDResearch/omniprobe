@@ -83,7 +83,15 @@ enum class address_space_kind : uint8_t {
     unknown = 0xff,
 };
 
-inline constexpr uint32_t runtime_ctx_abi_version = 1;
+inline constexpr uint32_t runtime_ctx_abi_version = 2;
+
+inline constexpr uint64_t dispatch_uniform_valid_dispatch_ptr = 1ull << 0;
+inline constexpr uint64_t dispatch_uniform_valid_kernarg_segment_ptr = 1ull << 1;
+inline constexpr uint64_t dispatch_uniform_valid_dispatch_id = 1ull << 2;
+inline constexpr uint64_t dispatch_uniform_valid_grid_dim = 1ull << 3;
+inline constexpr uint64_t dispatch_uniform_valid_block_dim = 1ull << 4;
+inline constexpr uint64_t dispatch_uniform_valid_hidden_block_count = 1ull << 5;
+inline constexpr uint64_t dispatch_uniform_valid_hidden_group_size = 1ull << 6;
 
 struct entry_snapshot_v1 {
     uint32_t workgroup_x = 0;
@@ -105,12 +113,32 @@ struct entry_snapshot_v1 {
     uint64_t timestamp = 0;
 };
 
-struct runtime_storage_v1 {
+struct dispatch_uniform_snapshot_v1 {
+    uint64_t valid_mask = 0;
+    uint64_t dispatch_ptr = 0;
+    uint64_t kernarg_segment_ptr = 0;
+    uint64_t dispatch_id = 0;
+    uint32_t grid_dim_x = 0;
+    uint32_t grid_dim_y = 0;
+    uint32_t grid_dim_z = 0;
+    uint32_t block_dim_x = 0;
+    uint32_t block_dim_y = 0;
+    uint32_t block_dim_z = 0;
+    uint32_t hidden_block_count_x = 0;
+    uint32_t hidden_block_count_y = 0;
+    uint32_t hidden_block_count_z = 0;
+    uint32_t hidden_group_size_x = 0;
+    uint32_t hidden_group_size_y = 0;
+    uint32_t hidden_group_size_z = 0;
+};
+
+struct runtime_storage_v2 {
     dh_comms::dh_comms_descriptor *dh = nullptr;
     const void *config_blob = nullptr;
     void *state_blob = nullptr;
     uint64_t dispatch_id = 0;
     entry_snapshot_v1 entry_snapshot{};
+    dispatch_uniform_snapshot_v1 dispatch_uniform{};
     const void *dispatch_private = nullptr;
     uint32_t abi_version = runtime_ctx_abi_version;
     uint32_t flags = 0;
@@ -123,6 +151,7 @@ struct runtime_ctx {
     uint64_t dispatch_id = 0;
     const void *raw_hidden_ctx = nullptr;
     const entry_snapshot_v1 *entry_snapshot = nullptr;
+    const dispatch_uniform_snapshot_v1 *dispatch_uniform = nullptr;
     const dh_comms::builtin_snapshot_t *dh_builtins = nullptr;
     const void *dispatch_private = nullptr;
     uint32_t abi_version = runtime_ctx_abi_version;

@@ -136,6 +136,7 @@ PY
            grep -q 'using namespace omniprobe_user;' "$THUNK_SOURCE" && \
            grep -q 'runtime.raw_hidden_ctx = hidden_ctx;' "$THUNK_SOURCE" && \
            grep -q 'runtime.entry_snapshot = &runtime_storage->entry_snapshot;' "$THUNK_SOURCE" && \
+           grep -q 'runtime.dispatch_uniform = &runtime_storage->dispatch_uniform;' "$THUNK_SOURCE" && \
            grep -q 'entry_snapshot->workgroup_x = static_cast<uint32_t>(blockIdx.x);' "$THUNK_SOURCE" && \
            grep -q 'entry_snapshot->timestamp = timestamp;' "$THUNK_SOURCE" && \
            grep -q 'captures.data = static_cast<uint64_t>(capture_data);' "$THUNK_SOURCE" && \
@@ -143,6 +144,8 @@ PY
            grep -q 'if (!(blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 &&' "$THUNK_SOURCE" && \
            grep -Fq 'const auto *__omniprobe_event_snapshot = runtime.entry_snapshot;' "$THUNK_SOURCE" && \
            grep -q '__omniprobe_event_wavefront_size = __omniprobe_event_snapshot->wavefront_size;' "$THUNK_SOURCE" && \
+           grep -q '__omniprobe_dh_builtins.grid_dim_x = __omniprobe_has_grid_dim' "$THUNK_SOURCE" && \
+           ! grep -q 'capture_builtin_snapshot' "$THUNK_SOURCE" && \
            grep -q '__omniprobe_probe_kernel_timing_kernel_entry_surrogate(&runtime, &captures, timestamp, __omniprobe_event_workgroup_x, __omniprobe_event_workgroup_y, __omniprobe_event_workgroup_z, __omniprobe_event_thread_x, __omniprobe_event_thread_y, __omniprobe_event_thread_z, __omniprobe_event_block_dim_x, __omniprobe_event_block_dim_y, __omniprobe_event_block_dim_z, __omniprobe_event_lane_id, __omniprobe_event_wave_id, __omniprobe_event_wavefront_size, __omniprobe_event_hw_id, __omniprobe_event_exec_mask);' "$THUNK_SOURCE"; then
             echo -e "  ${GREEN}✓ PASS${NC} - Lifecycle thunk source reconstructs captures from marshalled arguments and forwards to the shared surrogate"
             TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -223,11 +226,14 @@ entry = payload["thunks"][0]
 assert entry["when"] == "memory_op"
 assert entry["contract"] == "memory_op_v1"
 names = [argument["name"] for argument in entry["call_arguments"]]
-assert names == ["hidden_ctx", "capture_data", "capture_size", "address", "bytes", "access_kind", "address_space"]
+assert names == ["hidden_ctx", "capture_data", "capture_size", "address", "memory_info"]
+assert entry["call_argument_dwords"] == 9
+assert entry["binary_event_abi"] == "memory_op_compact_v1"
 PY
     then
         if grep -q '__omniprobe_binary_memory_trace_simple_kernel_memory_op_thunk' "$MEMORY_THUNK_SOURCE" && \
-           grep -q '__omniprobe_probe_memory_trace_surrogate(&runtime, &captures, address, bytes, access_kind, address_space);' "$MEMORY_THUNK_SOURCE"; then
+           grep -q 'const uint32_t __omniprobe_event_bytes = static_cast<uint32_t>(memory_info & 0xffffu);' "$MEMORY_THUNK_SOURCE" && \
+           grep -q '__omniprobe_probe_memory_trace_surrogate(&runtime, &captures, address, __omniprobe_event_bytes, __omniprobe_event_access_kind, __omniprobe_event_address_space);' "$MEMORY_THUNK_SOURCE"; then
             echo -e "  ${GREEN}✓ PASS${NC} - Memory-op thunk generation deduplicated per-site wrappers and forwarded event arguments"
             TESTS_PASSED=$((TESTS_PASSED + 1))
         else

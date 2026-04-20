@@ -955,6 +955,7 @@ def main() -> int:
                 instrumentation_map = (injected_function or {}).get("instrumentation", {})
                 instrumentation = (
                     instrumentation_map.get("basic_block_stubs")
+                    or instrumentation_map.get("memory_op_stubs")
                     or instrumentation_map.get("lifecycle_entry_stub")
                     or instrumentation_map.get("lifecycle_exit_stub", {})
                 )
@@ -968,6 +969,8 @@ def main() -> int:
                     if intent.get("clone_kernel") == clone_result["clone_kernel"]:
                         if instrumentation_mode == "basic_block":
                             intent["mode"] = "hidden-abi-basic-block-clone"
+                        elif instrumentation_mode == "memory_op":
+                            intent["mode"] = "hidden-abi-memory-op-clone"
                         elif lifecycle_when:
                             intent["mode"] = f"hidden-abi-lifecycle-{lifecycle_when}-clone"
                         else:

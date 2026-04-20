@@ -42,6 +42,19 @@ CONTRACT_EVENT_ARGUMENTS = {
     ],
 }
 
+BINARY_CONTRACT_EVENT_ARGUMENTS = {
+    "memory_op_v1": [
+        {"kind": "event", "name": "address", "c_type": "uint64_t", "size_bytes": 8},
+        {
+            "kind": "event",
+            "name": "memory_info",
+            "c_type": "uint32_t",
+            "size_bytes": 4,
+            "packing": "memory_op_compact_v1",
+        },
+    ],
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -178,7 +191,9 @@ def build_site_call_arguments(contract: str, capture_fields: list[dict], capture
                 "kernel_arg_name": binding.get("kernel_arg_name"),
             }
         )
-    contract_arguments = CONTRACT_EVENT_ARGUMENTS.get(contract)
+    contract_arguments = BINARY_CONTRACT_EVENT_ARGUMENTS.get(contract)
+    if contract_arguments is None:
+        contract_arguments = CONTRACT_EVENT_ARGUMENTS.get(contract)
     if contract_arguments is None:
         raise SystemExit(f"generate_binary_probe_thunks.py does not yet support contract {contract!r}")
     arguments.extend(dict(argument) for argument in contract_arguments)
@@ -186,6 +201,13 @@ def build_site_call_arguments(contract: str, capture_fields: list[dict], capture
 
 
 def surrogate_forward_arguments(contract: str) -> list[str]:
+    if contract == "memory_op_v1":
+        return [
+            "address",
+            "__omniprobe_event_bytes",
+            "__omniprobe_event_access_kind",
+            "__omniprobe_event_address_space",
+        ]
     if contract == "kernel_lifecycle_v1":
         return [
             "timestamp",
@@ -208,6 +230,18 @@ def surrogate_forward_arguments(contract: str) -> list[str]:
     if arguments is None:
         raise SystemExit(f"generate_binary_probe_thunks.py does not yet support contract {contract!r}")
     return [str(entry["name"]) for entry in arguments]
+
+
+def render_site_event_unpack_lines(contract: str) -> list[str]:
+    if contract != "memory_op_v1":
+        return []
+    return [
+        "  const uint32_t __omniprobe_event_bytes = static_cast<uint32_t>(memory_info & 0xffffu);",
+        "  const uint8_t __omniprobe_event_access_kind =",
+        "      static_cast<uint8_t>((memory_info >> 16) & 0xffu);",
+        "  const uint8_t __omniprobe_event_address_space =",
+        "      static_cast<uint8_t>((memory_info >> 24) & 0xffu);",
+    ]
 
 
 def render_site_event_locals(contract: str, when: str) -> list[str]:
@@ -264,7 +298,7 @@ def render_site_event_locals(contract: str, when: str) -> list[str]:
 
 def render_runtime_init_lines() -> list[str]:
     return [
-        "  auto *runtime_storage = reinterpret_cast<runtime_storage_v1 *>(",
+        "  auto *runtime_storage = reinterpret_cast<runtime_storage_v2 *>(",
         "      const_cast<void *>(hidden_ctx));",
         "  runtime_ctx runtime{};",
         "  runtime.raw_hidden_ctx = hidden_ctx;",
@@ -274,6 +308,7 @@ def render_runtime_init_lines() -> list[str]:
         "    runtime.state_blob = runtime_storage->state_blob;",
         "    runtime.dispatch_id = runtime_storage->dispatch_id;",
         "    runtime.entry_snapshot = &runtime_storage->entry_snapshot;",
+        "    runtime.dispatch_uniform = &runtime_storage->dispatch_uniform;",
         "    runtime.dispatch_private = runtime_storage->dispatch_private;",
         "    runtime.abi_version = runtime_storage->abi_version;",
         "    runtime.flags = runtime_storage->flags;",
@@ -283,8 +318,65 @@ def render_runtime_init_lines() -> list[str]:
 
 def render_dh_builtin_capture_lines(when: str) -> list[str]:
     return [
-        "  dh_comms::builtin_snapshot_t __omniprobe_dh_builtins =",
-        "      dh_comms::capture_builtin_snapshot();",
+        "  dh_comms::builtin_snapshot_t __omniprobe_dh_builtins{};",
+        "  const auto *__omniprobe_dispatch_uniform = runtime.dispatch_uniform;",
+        "  const bool __omniprobe_has_grid_dim = __omniprobe_dispatch_uniform != nullptr &&",
+        "      ((__omniprobe_dispatch_uniform->valid_mask & dispatch_uniform_valid_grid_dim) != 0);",
+        "  const bool __omniprobe_has_block_dim = __omniprobe_dispatch_uniform != nullptr &&",
+        "      ((__omniprobe_dispatch_uniform->valid_mask & dispatch_uniform_valid_block_dim) != 0);",
+        "  __omniprobe_dh_builtins.grid_dim_x = __omniprobe_has_grid_dim",
+        "      ? __omniprobe_dispatch_uniform->grid_dim_x",
+        "      : static_cast<uint32_t>(gridDim.x);",
+        "  __omniprobe_dh_builtins.grid_dim_y = __omniprobe_has_grid_dim",
+        "      ? __omniprobe_dispatch_uniform->grid_dim_y",
+        "      : static_cast<uint32_t>(gridDim.y);",
+        "  __omniprobe_dh_builtins.grid_dim_z = __omniprobe_has_grid_dim",
+        "      ? __omniprobe_dispatch_uniform->grid_dim_z",
+        "      : static_cast<uint32_t>(gridDim.z);",
+        "  const uint32_t __omniprobe_builtin_block_dim_x = __omniprobe_has_block_dim",
+        "      ? __omniprobe_dispatch_uniform->block_dim_x",
+        "      : static_cast<uint32_t>(blockDim.x);",
+        "  const uint32_t __omniprobe_builtin_block_dim_y = __omniprobe_has_block_dim",
+        "      ? __omniprobe_dispatch_uniform->block_dim_y",
+        "      : static_cast<uint32_t>(blockDim.y);",
+        "  const uint32_t __omniprobe_builtin_block_dim_z = __omniprobe_has_block_dim",
+        "      ? __omniprobe_dispatch_uniform->block_dim_z",
+        "      : static_cast<uint32_t>(blockDim.z);",
+        "  __omniprobe_dh_builtins.block_dim_x = __omniprobe_builtin_block_dim_x;",
+        "  __omniprobe_dh_builtins.block_dim_y = __omniprobe_builtin_block_dim_y;",
+        "  __omniprobe_dh_builtins.block_dim_z = __omniprobe_builtin_block_dim_z;",
+        "  __omniprobe_dh_builtins.block_idx_x = static_cast<uint32_t>(blockIdx.x);",
+        "  __omniprobe_dh_builtins.block_idx_y = static_cast<uint32_t>(blockIdx.y);",
+        "  __omniprobe_dh_builtins.block_idx_z = static_cast<uint32_t>(blockIdx.z);",
+        "  const uint32_t __omniprobe_builtin_thread_idx_x = static_cast<uint32_t>(threadIdx.x);",
+        "  const uint32_t __omniprobe_builtin_thread_idx_y = static_cast<uint32_t>(threadIdx.y);",
+        "  const uint32_t __omniprobe_builtin_thread_idx_z = static_cast<uint32_t>(threadIdx.z);",
+        "  __omniprobe_dh_builtins.thread_idx_x = __omniprobe_builtin_thread_idx_x;",
+        "  __omniprobe_dh_builtins.thread_idx_y = __omniprobe_builtin_thread_idx_y;",
+        "  __omniprobe_dh_builtins.thread_idx_z = __omniprobe_builtin_thread_idx_z;",
+        "  __omniprobe_dh_builtins.lane_id = static_cast<uint32_t>(__lane_id());",
+        "  __omniprobe_dh_builtins.wavefront_size = static_cast<uint32_t>(warpSize);",
+        "  const uint32_t __omniprobe_builtin_linear_tid =",
+        "      __omniprobe_builtin_thread_idx_x +",
+        "      __omniprobe_builtin_block_dim_x *",
+        "          (__omniprobe_builtin_thread_idx_y +",
+        "           __omniprobe_builtin_block_dim_y * __omniprobe_builtin_thread_idx_z);",
+        "  __omniprobe_dh_builtins.wave_num = __omniprobe_dh_builtins.wavefront_size == 0",
+        "      ? 0",
+        "      : (__omniprobe_builtin_linear_tid / __omniprobe_dh_builtins.wavefront_size);",
+        "  __omniprobe_dh_builtins.exec = __builtin_amdgcn_read_exec();",
+        "  __omniprobe_dh_builtins.xcc_id = 0;",
+        "#if defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__)",
+        "  uint32_t __omniprobe_builtin_xcc_reg = 0;",
+        '  asm volatile("s_getreg_b32 %0, hwreg(HW_REG_XCC_ID)" : "=s"(__omniprobe_builtin_xcc_reg));',
+        "  __omniprobe_dh_builtins.xcc_id = static_cast<uint16_t>(__omniprobe_builtin_xcc_reg & 0xf);",
+        "#endif",
+        "  uint32_t __omniprobe_builtin_hw_id_reg = 0;",
+        '  asm volatile("s_getreg_b32 %0, hwreg(HW_REG_HW_ID)" : "=s"(__omniprobe_builtin_hw_id_reg));',
+        "  __omniprobe_dh_builtins.hw_id = __omniprobe_builtin_hw_id_reg;",
+        "  __omniprobe_dh_builtins.se_id = static_cast<uint16_t>((__omniprobe_builtin_hw_id_reg >> 13) & 0x7);",
+        "  __omniprobe_dh_builtins.cu_id = static_cast<uint16_t>((__omniprobe_builtin_hw_id_reg >> 8) & 0xf);",
+        "  __omniprobe_dh_builtins.arch = dh_comms::detect_gcn_arch();",
         "  runtime.dh_builtins = &__omniprobe_dh_builtins;",
     ]
 
@@ -370,6 +462,7 @@ def render_thunk_function(kernel: dict, site: dict) -> tuple[str, dict]:
         *render_dh_builtin_capture_lines(when),
         *render_entry_snapshot_capture_lines(when),
         *render_site_event_locals(contract, when),
+        *render_site_event_unpack_lines(contract),
         f"  {captures_type} captures{{}};",
     ]
     for field in capture_fields:
@@ -394,6 +487,11 @@ def render_thunk_function(kernel: dict, site: dict) -> tuple[str, dict]:
         },
         "call_arguments": call_layout["arguments"],
         "call_argument_dwords": call_layout["total_dwords"],
+        "binary_event_abi": (
+            "memory_op_compact_v1"
+            if contract == "memory_op_v1"
+            else "direct"
+        ),
         "capture_bindings": capture_bindings,
     }
     return "\n".join(lines), manifest_entry

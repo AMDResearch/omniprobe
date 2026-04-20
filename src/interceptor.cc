@@ -671,10 +671,17 @@ void dumpKernArgs(void *args, uint32_t size)
 
 void * hsaInterceptor::allocateHiddenRuntimeCtx(hsa_agent_t agent,
                                                 dh_comms::dh_comms_descriptor *dh,
-                                                uint64_t dispatch_id)
+                                                uint64_t dispatch_id,
+                                                const hsa_kernel_dispatch_packet_t *packet)
 {
+    using omniprobe::probe_abi_v1::dispatch_uniform_valid_block_dim;
+    using omniprobe::probe_abi_v1::dispatch_uniform_valid_dispatch_id;
+    using omniprobe::probe_abi_v1::dispatch_uniform_valid_grid_dim;
+    using omniprobe::probe_abi_v1::dispatch_uniform_valid_hidden_block_count;
+    using omniprobe::probe_abi_v1::dispatch_uniform_valid_hidden_group_size;
+    using omniprobe::probe_abi_v1::dispatch_uniform_valid_kernarg_segment_ptr;
     using omniprobe::probe_abi_v1::runtime_ctx_abi_version;
-    using omniprobe::probe_abi_v1::runtime_storage_v1;
+    using omniprobe::probe_abi_v1::runtime_storage_v2;
 
     struct RuntimePoolSelection {
         hsa_amd_memory_pool_t pool{};
@@ -711,18 +718,57 @@ void * hsaInterceptor::allocateHiddenRuntimeCtx(hsa_agent_t agent,
                                      &granularity) != HSA_STATUS_SUCCESS)
         return nullptr;
     if (granularity == 0)
-        granularity = alignof(runtime_storage_v1);
+        granularity = alignof(runtime_storage_v2);
 
     const size_t mask = granularity - 1;
-    const size_t alloc_size = (sizeof(runtime_storage_v1) + mask) & ~mask;
+    const size_t alloc_size = (sizeof(runtime_storage_v2) + mask) & ~mask;
     void *device_storage = nullptr;
     if (hsa_amd_memory_pool_allocate(runtime_pool, alloc_size, 0, &device_storage) != HSA_STATUS_SUCCESS)
         return nullptr;
 
-    runtime_storage_v1 host_storage{};
+    runtime_storage_v2 host_storage{};
     host_storage.dh = dh;
     host_storage.dispatch_id = dispatch_id;
     host_storage.abi_version = runtime_ctx_abi_version;
+
+    auto ceil_div_u32 = [](uint32_t numerator, uint32_t denominator) -> uint32_t {
+        if (denominator == 0)
+            return 0;
+        return (numerator + denominator - 1) / denominator;
+    };
+
+    if (packet)
+    {
+        auto &uniform = host_storage.dispatch_uniform;
+        const uint32_t block_dim_x = packet->workgroup_size_x;
+        const uint32_t block_dim_y = packet->workgroup_size_y;
+        const uint32_t block_dim_z = packet->workgroup_size_z;
+        const uint32_t grid_dim_x = ceil_div_u32(packet->grid_size_x, block_dim_x);
+        const uint32_t grid_dim_y = ceil_div_u32(packet->grid_size_y, block_dim_y);
+        const uint32_t grid_dim_z = ceil_div_u32(packet->grid_size_z, block_dim_z);
+
+        uniform.kernarg_segment_ptr = reinterpret_cast<uint64_t>(packet->kernarg_address);
+        uniform.dispatch_id = dispatch_id;
+        uniform.grid_dim_x = grid_dim_x;
+        uniform.grid_dim_y = grid_dim_y;
+        uniform.grid_dim_z = grid_dim_z;
+        uniform.block_dim_x = block_dim_x;
+        uniform.block_dim_y = block_dim_y;
+        uniform.block_dim_z = block_dim_z;
+        uniform.hidden_block_count_x = grid_dim_x;
+        uniform.hidden_block_count_y = grid_dim_y;
+        uniform.hidden_block_count_z = grid_dim_z;
+        uniform.hidden_group_size_x = block_dim_x;
+        uniform.hidden_group_size_y = block_dim_y;
+        uniform.hidden_group_size_z = block_dim_z;
+        uniform.valid_mask = dispatch_uniform_valid_kernarg_segment_ptr |
+                             dispatch_uniform_valid_dispatch_id |
+                             dispatch_uniform_valid_grid_dim |
+                             dispatch_uniform_valid_block_dim |
+                             dispatch_uniform_valid_hidden_block_count |
+                             dispatch_uniform_valid_hidden_group_size;
+    }
+
     if (hsa_memory_copy(device_storage, &host_storage, sizeof(host_storage)) != HSA_STATUS_SUCCESS)
     {
         hsa_amd_memory_pool_free(device_storage);
@@ -842,7 +888,8 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                             void *hidden_runtime_ctx =
                                 allocateHiddenRuntimeCtx(queues_[queue],
                                                          comms ? comms->get_dev_rsrc_ptr() : nullptr,
-                                                         dispatch_id);
+                                                         dispatch_id,
+                                                         packet);
                             if (!hidden_runtime_ctx)
                             {
                                 std::cerr << "Failed to allocate hidden runtime context for "
