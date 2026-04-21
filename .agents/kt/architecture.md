@@ -3,7 +3,13 @@
 ## Overview
 Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runtime information such as memory access patterns, cache line usage, and LDS bank conflicts.
 
-**Recent Changes** (2026-04-07):
+**Recent Changes** (2026-04-14):
+- Merged kerneldb PR #27: lazy loading support for code objects. Adds `addFile(lazy=true)`
+  and per-kernel on-demand disassembly via `ensureKernelLoaded()`. Submodule updated to
+  `995bc16`. Refactor dossier `rf_lazy-kerneldb-loading` ready to start.
+- Handler tests now 25/25, Triton tests 5/5 (30 total).
+
+**Changes** (2026-04-07):
 - Documentation rewrite for v1.0 complete (`rf_documentation-v1`, done).
   New docs/: `building-from-source.md`, `container-usage.md`, `usage.md`,
   `hip-instrumentation.md`. README.md rewritten: elevator pitch, quick start,
@@ -242,4 +248,5 @@ Useful build artifacts:
 | `DH_COMMS_GROUP_FILTER_X/Y/Z` | Block index filters (N or N:M range) |
 
 ## Last Verified
-Date: 2026-03-24 (post rf_rocprofiler-sdk)
+Commit: 2dcea70
+Date: 2026-04-14

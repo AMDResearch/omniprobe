@@ -36,11 +36,28 @@ Kernel database for ISA extraction and DWARF correlation. Provides:
 
 ### Key APIs Added (2026-03-05)
 - `scanCodeObject(co_file)` — lazy full-disassembly + DWARF mapping + argument extraction for a single code object; idempotent (tracked via `scanned_code_objects_` set)
-- `hasKernel(name)` — thread-safe check if kernel exists in `kernels_` map
+- `hasKernel(name)` — thread-safe check if kernel exists in `kernels_` map (also checks `lazy_kernels_`)
 - `extractCodeObjects()` now supports CCOB (Compressed Clang Offload Bundle) files:
   - Standalone `.co` files: detected by CCOB magic, unbundled via `clang-offload-bundler`
   - Compressed `.hip_fatbin` sections: multi-block CCOB parsing + per-block unbundling
   - Transparent to callers — returns temp file paths regardless of compression
+
+### APIs Added by PR #27 (2026-04-14, lazy loading)
+- `addFile(path, agent, filter, lazy=true)` — with `lazy=true`, indexes kernel names from
+  ELF symbol table without disassembling. Disassembly deferred to first query.
+- `ensureKernelLoaded(name)` — (internal, called by `getKernel`, `getInstructionsForLine`,
+  `getFileName`, `getKernelLines`) disassembles a single kernel on demand. Thread-safe via
+  `loading_mutex_` + `condition_variable` sentinel pattern.
+- `getKernelNamesFromElf(fileName)` — (private) reads `.symtab` to get kernel names without
+  disassembly; used by `addFile(lazy=true)`.
+- `getDisassemblyForSymbol(agent, file, symbol, out)` — targeted disassembly via
+  `llvm-objdump --disassemble-symbols`.
+
+### Pending Refactor: Lazy Loading Adoption
+See `rf_lazy-kerneldb-loading.md`. Omniprobe currently uses `scanCodeObject()` (disassembles
+entire code object). Plan: switch to `addFile(lazy=true)` at startup, remove dispatch-time
+`scanCodeObject` block, let handlers trigger per-kernel loading via `ensureKernelLoaded()`.
+Status: Ready to start.
 
 ## Key Integration Invariants
 - kernelDB populated on-demand at dispatch time (not at startup)
@@ -54,4 +71,5 @@ IR-level instrumentation sees individual dword accesses in loops. Backend may op
 - Full sub-project KT at `external/kerneldb/.agents/kt/architecture.md` (when available)
 
 ## Last Verified
-Date: 2026-03-05
+Commit: 2dcea70
+Date: 2026-04-14
