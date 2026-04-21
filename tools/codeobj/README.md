@@ -119,6 +119,45 @@ Current scope:
     HIP-style code objects
   - useful for validating no-op and semantic rebuilds of simple extracted
     kernels without rebundling them into an executable first
+- `test_hip_module_dh_comms.cpp`
+  - `hipModuleLoad` / `hipModuleLaunchKernel` harness that validates host-visible
+    `dh_comms` traffic from standalone HIP-style code objects
+  - now supports an explicit `runtime-storage-explicit` launch mode for
+    compiler-owned entry-trampoline prototypes that take a direct
+    `runtime_storage_v2 *` argument
+- `generate_entry_trampolines.py`
+  - emits prototype compiler-owned entry-trampoline HIP source from a
+    `kernel_entry` / `kernel_lifecycle_v1` probe plan and probe bundle
+  - reuses Omniprobe's converged runtime structs, captures entry and dispatch
+    state, synthesizes `dh_comms` builtins, and forwards into the generated
+    surrogate layer
+  - can also emit a declared original-body handoff contract and a constrained
+    source-kernel-model device body for validated kernel families such as `mlk`
+  - the current `mlk` model uses an explicit generated handoff struct passed by
+    pointer into a noinline device body, which better matches the intended
+    future imported-body handoff shape
+  - currently scoped to the Phase 2 / early Phase 3 `abi-changing` prototype
+    path; true imported-original-body handoff remains the next stage
+- `plan_entry_trampoline_descriptor.py`
+  - compares an original kernel descriptor against a compiled trampoline
+    descriptor and emits a field-by-field merge-policy report
+  - distinguishes launch-contract fields from original-body handoff facts
+  - computes a conservative merged launch candidate for resource footprints and
+    fails closed on semantic mismatches such as wavefront mode divergence
+- `emit_entry_handoff_recipe.py`
+  - turns entry-ABI analysis into a fail-closed original-body reconstruction
+    recipe for one kernel
+  - emits the supported handoff class, required SGPR/VGPR reconstruction
+    actions, and blockers when the kernel falls outside the current supported
+    classes
+  - now distinguishes dispatch-carried hidden payload from entry-captured
+    workgroup/wave/lane state so the recipe does not over-claim what the host
+    can pre-populate once per dispatch
+- `emit_entry_handoff_stub.py`
+  - turns a supported handoff recipe into an explicit symbolic branch-to-entry
+    stub plan
+  - emits register reconstruction assignments, required runtime inputs, and a
+    symbolic `s_setpc_b64` transfer shape for the original body entry
 - `test_hidden_kernarg_repack.cpp`
   - validates Omniprobe's runtime kernarg rewrite contract for hidden-ABI
     clones using real COMGR-parsed descriptors from source and clone code

@@ -14,13 +14,17 @@ from pathlib import Path
 
 from code_object_model import CodeObjectModel
 from common import get_hidden_abi_instrumented_name
+from amdgpu_entry_abi import analyze_kernel_entry_abi
 from emit_hidden_abi_metadata import (
     build_metadata_document,
     build_metadata_document_from_raw,
     build_metadata_object,
+    build_metadata_object_with_inplace_update,
+    build_metadata_document_with_inplace_update,
     clone_kernel_record,
     dedupe_kernel_records,
     kernel_identity,
+    mutate_kernel_record_in_place,
     raw_kernel_blocks,
 )
 from msgpack_codec import packb
@@ -85,6 +89,44 @@ def parse_args() -> argparse.Namespace:
             "Duplicate the primary kernel into a donor-free same-ABI clone entry. "
             "This is the first true non-donor clone-insertion slice and keeps "
             "the clone body and kernarg ABI identical to the source kernel."
+        ),
+    )
+    parser.add_argument(
+        "--add-entry-wrapper-proof",
+        action="store_true",
+        help=(
+            "Fail-closed proof mode for retargeting a kernel entry to a tiny "
+            "wrapper that immediately branches into the original machine-code "
+            "body. Current support is intentionally narrow."
+        ),
+    )
+    parser.add_argument(
+        "--add-entry-wrapper-hidden-handoff-proof",
+        action="store_true",
+        help=(
+            "Extend the entry-wrapper proof by growing the exported kernel ABI "
+            "with a wrapper-only hidden_omniprobe_ctx pointer and emitting a "
+            "real wrapper-side scalar load from that slot before branching to "
+            "the original body."
+        ),
+    )
+    parser.add_argument(
+        "--add-entry-wrapper-kernarg-restore-proof",
+        action="store_true",
+        help=(
+            "Extend the entry-wrapper hidden-handoff proof by clobbering the "
+            "original kernarg base pair and restoring it from "
+            "hidden_omniprobe_ctx->original_kernarg_pointer before branching "
+            "to the original body."
+        ),
+    )
+    parser.add_argument(
+        "--add-entry-wrapper-workgroup-x-restore-proof",
+        action="store_true",
+        help=(
+            "Extend the entry-wrapper kernarg-restore proof by also clobbering "
+            "workgroup_id_x and restoring it from hidden_omniprobe_ctx under a "
+            "single-workgroup proof launch."
         ),
     )
     parser.add_argument(
@@ -223,6 +265,22 @@ def metadata_output_format(manifest: dict) -> str:
     return "msgpack" if isinstance(metadata.get("object"), dict) else "yaml"
 
 
+def rename_function_ir(ir: dict, source_name: str, new_name: str) -> dict:
+    source_function = next(
+        (fn for fn in ir.get("functions", []) if fn.get("name") == source_name),
+        None,
+    )
+    if source_function is None:
+        raise SystemExit(f"IR function {source_name!r} not found")
+    source_function["name"] = new_name
+    for instruction in source_function.get("instructions", []):
+        instruction.setdefault("source_address", instruction.get("address"))
+        target = instruction.get("target")
+        if isinstance(target, dict) and target.get("symbol") == source_name:
+            target["symbol"] = new_name
+    return source_function
+
+
 def duplicate_function_ir(ir: dict, source_name: str, clone_name: str) -> None:
     source_function = next(
         (fn for fn in ir.get("functions", []) if fn.get("name") == source_name),
@@ -251,6 +309,21 @@ def duplicate_symbol(records: list[dict], source_name: str, clone_name: str) -> 
     clone_symbol["name"] = clone_name
     records.append(clone_symbol)
     return clone_symbol
+
+
+def rename_symbol(records: list[dict], source_name: str, new_name: str) -> list[dict]:
+    matches = [entry for entry in records if entry.get("name") == source_name]
+    if not matches:
+        raise SystemExit(f"source symbol {source_name!r} not found")
+    for entry in matches:
+        entry["name"] = new_name
+    return matches
+
+
+def remove_symbol(records: list[dict], name: str) -> list[dict]:
+    removed = [entry for entry in records if entry.get("name") == name]
+    records[:] = [entry for entry in records if entry.get("name") != name]
+    return removed
 
 
 def patch_descriptor_bytes_hex(bytes_hex: str, kernarg_size: int) -> str:
@@ -650,6 +723,1033 @@ def add_noop_clone_intent(manifest: dict, ir: dict, model: CodeObjectModel, kern
         "clone_kernel": clone_name,
         "clone_descriptor": clone_descriptor_name,
         "abi": "unchanged",
+    }
+
+
+ENTRY_WRAPPER_PROOF_ARCH = "gfx1030"
+ENTRY_WRAPPER_PROOF_BODY_PREFIX = "__omniprobe_original_body_"
+ENTRY_WRAPPER_PROOF_SUPPORTED_CLASS = "rdna-gfx1030-wave32-kernarg-sgpr8-9-workgroup-xyz-private17-vgpr3"
+ENTRY_WRAPPER_HIDDEN_HANDOFF_POINTER_SIZE = 8
+ENTRY_WRAPPER_HIDDEN_HANDOFF_ALIGNMENT = 8
+
+
+def find_ir_function(ir: dict, function_name: str) -> dict:
+    function = next(
+        (entry for entry in ir.get("functions", []) if entry.get("name") == function_name),
+        None,
+    )
+    if function is None:
+        raise SystemExit(f"IR function {function_name!r} not found")
+    return function
+
+
+def align_up(value: int, alignment: int) -> int:
+    if alignment <= 0:
+        return value
+    return ((value + alignment - 1) // alignment) * alignment
+
+
+def build_text_function_symbol(
+    source_symbol: dict,
+    *,
+    name: str,
+    value: int,
+    size: int,
+    text_section: dict | None,
+) -> dict:
+    symbol = deepcopy(source_symbol)
+    symbol["name"] = name
+    symbol["value"] = int(value)
+    symbol["size"] = int(size)
+    symbol["section"] = ".text"
+    if isinstance(text_section, dict):
+        symbol["section_offset"] = int(value) - int(text_section.get("address", 0) or 0)
+    return symbol
+
+
+def wrapper_start_address(ir: dict, manifest: dict) -> int:
+    text_section = next(
+        (section for section in manifest.get("sections", []) if section.get("name") == ".text"),
+        None,
+    )
+    text_end = 0
+    if isinstance(text_section, dict):
+        text_end = int(text_section.get("address", 0) or 0) + int(text_section.get("size", 0) or 0)
+    function_end = max(
+        (
+            int(function.get("end_address", function.get("start_address", 0)) or 0)
+            for function in ir.get("functions", [])
+        ),
+        default=0,
+    )
+    return align_up(max(text_end, function_end), 0x100)
+
+
+def build_entry_wrapper_ir(
+    *,
+    wrapper_name: str,
+    body_name: str,
+    start_address: int,
+    scratch_pair: tuple[int, int],
+    hidden_ctx_offset: int | None = None,
+    hidden_ctx_source_pair: tuple[int, int] | None = None,
+    hidden_handoff_field_loads: list[dict] | None = None,
+) -> dict:
+    scratch_lo, scratch_hi = scratch_pair
+    next_address = start_address
+    instructions = []
+
+    if hidden_ctx_offset is not None:
+        if hidden_ctx_source_pair is None:
+            raise SystemExit("entry wrapper hidden handoff load requires a source kernarg SGPR pair")
+        source_lo, source_hi = hidden_ctx_source_pair
+        instructions.extend(
+            [
+                {
+                    "address": next_address,
+                    "mnemonic": "s_load_dwordx2",
+                    "operand_text": (
+                        f"s[{scratch_lo}:{scratch_hi}], "
+                        f"s[{source_lo}:{source_hi}], 0x{int(hidden_ctx_offset):x}"
+                    ),
+                    "operands": [
+                        f"s[{scratch_lo}:{scratch_hi}]",
+                        f"s[{source_lo}:{source_hi}]",
+                        f"0x{int(hidden_ctx_offset):x}",
+                    ],
+                    "control_flow": "linear",
+                    "target": None,
+                    "is_padding": False,
+                },
+                {
+                    "address": next_address + 4,
+                    "mnemonic": "s_waitcnt",
+                    "operand_text": "lgkmcnt(0)",
+                    "operands": ["lgkmcnt(0)"],
+                    "control_flow": "linear",
+                    "target": None,
+                    "is_padding": False,
+                },
+            ]
+        )
+        next_address += 8
+        for field_load in hidden_handoff_field_loads or []:
+            kind = str(field_load.get("kind", "") or "")
+            field_offset = int(field_load.get("offset", 0) or 0)
+            if kind == "u64":
+                target_pair_value = field_load.get("target_pair")
+                if (
+                    isinstance(target_pair_value, list)
+                    and len(target_pair_value) == 2
+                    and all(isinstance(entry, int) for entry in target_pair_value)
+                ):
+                    target_lo, target_hi = int(target_pair_value[0]), int(target_pair_value[1])
+                else:
+                    target_lo, target_hi = scratch_lo, scratch_hi
+                if bool(field_load.get("clobber_target_before_load", False)):
+                    instructions.extend(
+                        [
+                            {
+                                "address": next_address,
+                                "mnemonic": "s_mov_b32",
+                                "operand_text": f"s{target_lo}, 0",
+                                "operands": [f"s{target_lo}", "0"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 4,
+                                "mnemonic": "s_mov_b32",
+                                "operand_text": f"s{target_hi}, 0",
+                                "operands": [f"s{target_hi}", "0"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                        ]
+                    )
+                    next_address += 8
+                instructions.extend(
+                    [
+                        {
+                            "address": next_address,
+                            "mnemonic": "s_load_dwordx2",
+                            "operand_text": (
+                                f"s[{target_lo}:{target_hi}], "
+                                f"s[{scratch_lo}:{scratch_hi}], 0x{field_offset:x}"
+                            ),
+                            "operands": [
+                                f"s[{target_lo}:{target_hi}]",
+                                f"s[{scratch_lo}:{scratch_hi}]",
+                                f"0x{field_offset:x}",
+                            ],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 4,
+                            "mnemonic": "s_waitcnt",
+                            "operand_text": "lgkmcnt(0)",
+                            "operands": ["lgkmcnt(0)"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                    ]
+                )
+                next_address += 8
+            elif kind == "u32":
+                target_sgpr = field_load.get("target_sgpr")
+                target_sgpr_value = int(target_sgpr) if target_sgpr is not None else scratch_lo
+                if bool(field_load.get("clobber_target_before_load", False)):
+                    instructions.append(
+                        {
+                            "address": next_address,
+                            "mnemonic": "s_mov_b32",
+                            "operand_text": f"s{target_sgpr_value}, 0",
+                            "operands": [f"s{target_sgpr_value}", "0"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        }
+                    )
+                    next_address += 4
+                instructions.extend(
+                    [
+                        {
+                            "address": next_address,
+                            "mnemonic": "s_load_dword",
+                            "operand_text": (
+                                f"s{target_sgpr_value}, "
+                                f"s[{scratch_lo}:{scratch_hi}], 0x{field_offset:x}"
+                            ),
+                            "operands": [
+                                f"s{target_sgpr_value}",
+                                f"s[{scratch_lo}:{scratch_hi}]",
+                                f"0x{field_offset:x}",
+                            ],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 4,
+                            "mnemonic": "s_waitcnt",
+                            "operand_text": "lgkmcnt(0)",
+                            "operands": ["lgkmcnt(0)"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                    ]
+                )
+                next_address += 8
+            else:
+                raise SystemExit(f"unsupported hidden handoff field load kind {kind!r}")
+
+    instructions.extend(
+        [
+            {
+                "address": next_address,
+                "mnemonic": "s_getpc_b64",
+                "operand_text": f"s[{scratch_lo}:{scratch_hi}]",
+                "operands": [f"s[{scratch_lo}:{scratch_hi}]"],
+                "control_flow": "linear",
+                "target": None,
+                "is_padding": False,
+            },
+            {
+                "address": next_address + 4,
+                "mnemonic": "s_add_u32",
+                "operand_text": f"s{scratch_lo}, s{scratch_lo}, {body_name}@rel32@lo+4",
+                "operands": [f"s{scratch_lo}", f"s{scratch_lo}", f"{body_name}@rel32@lo+4"],
+                "control_flow": "linear",
+                "target": None,
+                "is_padding": False,
+            },
+            {
+                "address": next_address + 8,
+                "mnemonic": "s_addc_u32",
+                "operand_text": f"s{scratch_hi}, s{scratch_hi}, {body_name}@rel32@hi+4",
+                "operands": [f"s{scratch_hi}", f"s{scratch_hi}", f"{body_name}@rel32@hi+4"],
+                "control_flow": "linear",
+                "target": None,
+                "is_padding": False,
+            },
+            {
+                "address": next_address + 12,
+                "mnemonic": "s_setpc_b64",
+                "operand_text": f"s[{scratch_lo}:{scratch_hi}]",
+                "operands": [f"s[{scratch_lo}:{scratch_hi}]"],
+                "control_flow": "branch",
+                "target": {"symbol": body_name, "offset": 0},
+                "is_padding": False,
+            },
+        ]
+    )
+    end_address = next_address + 16
+    return {
+        "name": wrapper_name,
+        "start_address": start_address,
+        "end_address": end_address,
+        "basic_blocks": [
+            {
+                "label": "bb_0",
+                "start_address": start_address,
+                "end_address": end_address,
+                "instruction_addresses": [instruction["address"] for instruction in instructions],
+                "successors": [],
+            }
+        ],
+        "instructions": instructions,
+    }
+
+
+def classify_entry_handoff_supported_class(analysis: dict) -> tuple[str | None, list[str]]:
+    blockers: list[str] = []
+
+    if not analysis.get("descriptor_has_kernarg_segment_ptr", False):
+        blockers.append("missing-kernarg-segment-ptr")
+    if not analysis.get("inferred_kernarg_base"):
+        blockers.append("kernarg-base-not-observed")
+
+    wavefront_size = int(analysis.get("wavefront_size", 0) or 0)
+    if wavefront_size != 32:
+        blockers.append(f"unsupported-wavefront-size-{wavefront_size}")
+
+    workitem_vgpr_count = int(analysis.get("entry_workitem_vgpr_count", 0) or 0)
+    if workitem_vgpr_count != 3:
+        blockers.append(f"unsupported-workitem-vgpr-count-{workitem_vgpr_count}")
+
+    system_roles = analysis.get("entry_system_sgpr_roles", [])
+    role_names = [entry.get("role") for entry in system_roles if isinstance(entry, dict)]
+    if role_names != [
+        "workgroup_id_x",
+        "workgroup_id_y",
+        "workgroup_id_z",
+        "private_segment_wave_offset",
+    ]:
+        blockers.append(f"unsupported-system-sgpr-role-layout-{role_names}")
+
+    private_pattern = (
+        analysis.get("observed_private_segment_materialization", {}) or {}
+    ).get("pattern_class")
+    if private_pattern not in {"setreg_flat_scratch_init", "flat_scratch_alias_init", "src_private_base"}:
+        blockers.append(f"unsupported-private-pattern-{private_pattern}")
+
+    workitem_pattern = (
+        analysis.get("observed_workitem_id_materialization", {}) or {}
+    ).get("pattern_class")
+    if workitem_pattern not in {None, "direct_vgpr_xyz", "packed_v0_10_10_10_unpack"}:
+        blockers.append(f"unsupported-workitem-pattern-{workitem_pattern}")
+
+    if blockers:
+        return None, blockers
+    return ENTRY_WRAPPER_PROOF_SUPPORTED_CLASS, blockers
+
+
+def build_entry_handoff_reconstruction_actions(analysis: dict) -> list[dict]:
+    actions: list[dict] = []
+    kernarg_base = analysis.get("inferred_kernarg_base") or {}
+    base_pair = kernarg_base.get("base_pair") or []
+    if len(base_pair) == 2:
+        actions.append(
+            {
+                "action": "materialize-kernarg-base-pair",
+                "target_sgprs": [int(base_pair[0]), int(base_pair[1])],
+                "source": "original-launch-kernarg",
+            }
+        )
+
+    for entry in analysis.get("entry_system_sgpr_roles", []):
+        if not isinstance(entry, dict):
+            continue
+        role = entry.get("role")
+        sgpr = entry.get("sgpr")
+        if not isinstance(role, str) or not isinstance(sgpr, int):
+            continue
+        actions.append(
+            {
+                "action": "materialize-system-sgpr",
+                "role": role,
+                "target_sgpr": sgpr,
+                "source": f"reconstructed-{role}",
+            }
+        )
+
+    workitem_vgpr_count = int(analysis.get("entry_workitem_vgpr_count", 0) or 0)
+    if workitem_vgpr_count:
+        actions.append(
+            {
+                "action": "materialize-entry-workitem-vgprs",
+                "count": workitem_vgpr_count,
+                "source_pattern": (
+                    (analysis.get("observed_workitem_id_materialization", {}) or {}).get("pattern_class")
+                    or "descriptor-declared"
+                ),
+            }
+        )
+
+    private_materialization = analysis.get("observed_private_segment_materialization") or {}
+    if private_materialization:
+        actions.append(
+            {
+                "action": "materialize-private-segment-state",
+                "pattern_class": private_materialization.get("pattern_class"),
+            }
+        )
+
+    actions.append(
+        {
+            "action": "require-wavefront-mode",
+            "wavefront_size": int(analysis.get("wavefront_size", 0) or 0),
+        }
+    )
+    return actions
+
+
+def build_entry_wrapper_source_analysis(analysis: dict, actions: list[dict]) -> dict:
+    action_analysis: list[dict] = []
+    blockers: list[str] = []
+
+    for action in actions:
+        action_name = action.get("action")
+        record = {
+            "action": action_name,
+            "preserve_without_clobber": True,
+            "reconstruct_after_clobber_with_current_wrapper_only": False,
+            "blocker": None,
+        }
+        if action_name == "materialize-kernarg-base-pair":
+            record["blocker"] = "no-independent-kernarg-source-in-current-wrapper"
+        elif action_name == "materialize-system-sgpr":
+            role = action.get("role")
+            if role in {"workgroup_id_x", "workgroup_id_y", "workgroup_id_z"}:
+                record["blocker"] = "no-independent-current-workgroup-id-source"
+            elif role == "private_segment_wave_offset":
+                record["blocker"] = "no-independent-private-segment-wave-offset-source"
+            else:
+                record["blocker"] = f"no-independent-source-for-{role}"
+        elif action_name == "materialize-entry-workitem-vgprs":
+            record["blocker"] = "no-independent-entry-workitem-vgpr-source"
+        elif action_name == "materialize-private-segment-state":
+            record["blocker"] = "requires-original-private-state-or-supplemental-handoff"
+        elif action_name == "require-wavefront-mode":
+            record["reconstruct_after_clobber_with_current_wrapper_only"] = True
+            record["blocker"] = None
+        else:
+            record["blocker"] = "unclassified-wrapper-source-gap"
+
+        blocker = record.get("blocker")
+        if blocker:
+            blockers.append(str(blocker))
+        action_analysis.append(record)
+
+    unique_blockers: list[str] = []
+    for blocker in blockers:
+        if blocker not in unique_blockers:
+            unique_blockers.append(blocker)
+
+    return {
+        "model": "direct-entry-wrapper-v1",
+        "direct_branch_supported": True,
+        "reconstruction_after_clobber_supported": False,
+        "reconstruction_after_clobber_blockers": unique_blockers,
+        "action_analysis": action_analysis,
+    }
+
+
+def build_entry_supplemental_handoff_contract(
+    *,
+    function_name: str,
+    supported_class: str | None,
+    analysis: dict,
+    actions: list[dict],
+) -> dict:
+    validation_requirements: list[dict] = [
+        {
+            "name": "wavefront_size",
+            "kind": "u32",
+            "required": True,
+            "source_class": "descriptor_derived",
+            "variability": "dispatch_constant",
+            "producer": "descriptor-and-launch-validation",
+            "purpose": "validate wrapper launch mode before branch-to-body handoff",
+            "satisfies_actions": ["require-wavefront-mode"],
+        }
+    ]
+    fields: list[dict] = [
+        {
+            "name": "original_kernarg_pointer",
+            "kind": "u64",
+            "required": True,
+            "source_class": "dispatch_carried",
+            "variability": "dispatch_constant",
+            "producer": "runtime-dispatch-rewrite",
+            "purpose": "re-materialize the original kernarg base pair after wrapper-side clobber",
+            "satisfies_actions": ["materialize-kernarg-base-pair"],
+        },
+        {
+            "name": "workgroup_id_x",
+            "kind": "u32",
+            "required": True,
+            "source_class": "entry_captured",
+            "variability": "workgroup_variant",
+            "producer": "wrapper-entry-snapshot",
+            "purpose": "restore entry system SGPR role workgroup_id_x",
+            "satisfies_actions": ["materialize-system-sgpr"],
+            "role": "workgroup_id_x",
+        },
+        {
+            "name": "workgroup_id_y",
+            "kind": "u32",
+            "required": True,
+            "source_class": "entry_captured",
+            "variability": "workgroup_variant",
+            "producer": "wrapper-entry-snapshot",
+            "purpose": "restore entry system SGPR role workgroup_id_y",
+            "satisfies_actions": ["materialize-system-sgpr"],
+            "role": "workgroup_id_y",
+        },
+        {
+            "name": "workgroup_id_z",
+            "kind": "u32",
+            "required": True,
+            "source_class": "entry_captured",
+            "variability": "workgroup_variant",
+            "producer": "wrapper-entry-snapshot",
+            "purpose": "restore entry system SGPR role workgroup_id_z",
+            "satisfies_actions": ["materialize-system-sgpr"],
+            "role": "workgroup_id_z",
+        },
+        {
+            "name": "private_segment_wave_offset",
+            "kind": "u32",
+            "required": True,
+            "source_class": "entry_captured",
+            "variability": "wave_variant",
+            "producer": "wrapper-entry-snapshot",
+            "purpose": "restore the entry private-segment wave offset live-in",
+            "satisfies_actions": ["materialize-system-sgpr", "materialize-private-segment-state"],
+            "role": "private_segment_wave_offset",
+        },
+        {
+            "name": "entry_workitem_id_x",
+            "kind": "u32",
+            "required": True,
+            "source_class": "entry_captured",
+            "variability": "lane_variant",
+            "producer": "wrapper-entry-snapshot",
+            "purpose": "restore the canonical x workitem-id component into the expected entry VGPR contract",
+            "satisfies_actions": ["materialize-entry-workitem-vgprs"],
+        },
+        {
+            "name": "entry_workitem_id_y",
+            "kind": "u32",
+            "required": True,
+            "source_class": "entry_captured",
+            "variability": "lane_variant",
+            "producer": "wrapper-entry-snapshot",
+            "purpose": "restore the canonical y workitem-id component into the expected entry VGPR contract",
+            "satisfies_actions": ["materialize-entry-workitem-vgprs"],
+        },
+        {
+            "name": "entry_workitem_id_z",
+            "kind": "u32",
+            "required": True,
+            "source_class": "entry_captured",
+            "variability": "lane_variant",
+            "producer": "wrapper-entry-snapshot",
+            "purpose": "restore the canonical z workitem-id component into the expected entry VGPR contract",
+            "satisfies_actions": ["materialize-entry-workitem-vgprs"],
+        },
+    ]
+
+    private_pattern = (
+        analysis.get("observed_private_segment_materialization", {}) or {}
+    ).get("pattern_class")
+    if private_pattern in {"setreg_flat_scratch_init", "flat_scratch_alias_init", "src_private_base"}:
+        fields.extend(
+            [
+                {
+                    "name": "entry_private_base_lo",
+                    "kind": "u32",
+                    "required": True,
+                    "source_class": "entry_captured",
+                    "variability": "wave_variant",
+                    "producer": "wrapper-entry-snapshot-or-private-state-reconstruction",
+                    "purpose": "supply the low dword of the original private base materialization source",
+                    "satisfies_actions": ["materialize-private-segment-state"],
+                },
+                {
+                    "name": "entry_private_base_hi",
+                    "kind": "u32",
+                    "required": True,
+                    "source_class": "entry_captured",
+                    "variability": "wave_variant",
+                    "producer": "wrapper-entry-snapshot-or-private-state-reconstruction",
+                    "purpose": "supply the high dword of the original private base materialization source",
+                    "satisfies_actions": ["materialize-private-segment-state"],
+                },
+            ]
+        )
+
+    if supported_class is None:
+        fields = []
+        validation_requirements = []
+
+    dispatch_payload_fields = [
+        entry for entry in fields if str(entry.get("source_class", "")) == "dispatch_carried"
+    ]
+    entry_snapshot_fields = [
+        entry for entry in fields if str(entry.get("source_class", "")) == "entry_captured"
+    ]
+
+    return {
+        "schema": "omniprobe.entry_handoff.hidden_v1",
+        "original_kernel": function_name,
+        "supported_class": supported_class,
+        "required": supported_class is not None,
+        "fields": fields,
+        "validation_requirements": validation_requirements,
+        "runtime_objects": {
+            "dispatch_payload": {
+                "name": "hidden_handoff_dispatch_payload_v1",
+                "producer": "runtime-dispatch-rewrite",
+                "transport": "wrapper-only hidden pointer or suffix carrier",
+                "fields": dispatch_payload_fields,
+            },
+            "entry_snapshot": {
+                "name": "entry_snapshot_v1",
+                "producer": "wrapper-entry-snapshot",
+                "transport": "wrapper-captured before helper execution",
+                "fields": entry_snapshot_fields,
+            },
+            "validation": {
+                "name": "launch_validation_v1",
+                "producer": "descriptor-and-launch-validation",
+                "fields": validation_requirements,
+            },
+        },
+        "transport_classes": {
+            "dispatch_carried": "Populated by the runtime/interceptor once per dispatch and valid for the whole grid.",
+            "entry_captured": "Captured by the wrapper from original entry live-ins before helper execution perturbs the ABI state.",
+            "descriptor_derived": "Validated or derived from descriptor/launch state rather than carried in the hidden payload.",
+        },
+        "notes": [
+            "This contract is for the Omniprobe-owned wrapper dispatch ABI, not the original imported body ABI.",
+            "The wrapper may run helpers against this canonical handoff state before reconstructing the original entry ABI and branching to the imported body.",
+            "Only dispatch-carried fields are general host-populatable hidden-payload inputs. Workgroup-, wave-, and lane-variant fields must be preserved or snapshotted inside the wrapper itself.",
+        ],
+        "future_runtime_integration": {
+            "producer": "interceptor/runtime dispatch rewrite",
+            "consumer": "entry wrapper reconstructor",
+            "transport": "hidden wrapper-only handoff pointer or suffix-ABI carrier",
+        },
+    }
+
+
+def build_entry_wrapper_handoff_recipe(
+    *,
+    function_name: str,
+    analysis: dict,
+    descriptor: dict,
+    kernel_metadata: dict | None,
+    scratch_pair: tuple[int, int],
+) -> dict:
+    supported_class, blockers = classify_entry_handoff_supported_class(analysis)
+    reconstruction_actions = build_entry_handoff_reconstruction_actions(analysis)
+    return {
+        "function": function_name,
+        "arch": analysis.get("arch"),
+        "supported_class": supported_class,
+        "supported": supported_class is not None,
+        "blockers": blockers,
+        "descriptor_summary": {
+            "kernarg_size": int(descriptor.get("kernarg_size", 0) or 0),
+            "user_sgpr_count": int(
+                (descriptor.get("compute_pgm_rsrc2", {}) or {}).get("user_sgpr_count", 0) or 0
+            ),
+            "private_segment_fixed_size": int(descriptor.get("private_segment_fixed_size", 0) or 0),
+            "wavefront_size": int(analysis.get("wavefront_size", 0) or 0),
+        },
+        "kernel_metadata_summary": {
+            "sgpr_count": int((kernel_metadata or {}).get("sgpr_count", 0) or 0),
+            "vgpr_count": int((kernel_metadata or {}).get("vgpr_count", 0) or 0),
+            "kernarg_segment_size": int((kernel_metadata or {}).get("kernarg_segment_size", 0) or 0),
+        },
+        "entry_requirements": {
+            "entry_livein_sgprs": analysis.get("entry_livein_sgprs", []),
+            "entry_system_sgpr_roles": analysis.get("entry_system_sgpr_roles", []),
+            "entry_workitem_vgpr_count": int(analysis.get("entry_workitem_vgpr_count", 0) or 0),
+            "inferred_kernarg_base": analysis.get("inferred_kernarg_base"),
+            "observed_workitem_id_materialization": analysis.get("observed_workitem_id_materialization"),
+            "observed_private_segment_materialization": analysis.get("observed_private_segment_materialization"),
+        },
+        "reconstruction_actions": reconstruction_actions,
+        "wrapper_source_analysis": build_entry_wrapper_source_analysis(analysis, reconstruction_actions),
+        "supplemental_handoff_contract": build_entry_supplemental_handoff_contract(
+            function_name=function_name,
+            supported_class=supported_class,
+            analysis=analysis,
+            actions=reconstruction_actions,
+        ),
+        "wrapper_strategy": {
+            "kind": "pc-relative-entry-wrapper",
+            "scratch_pair": [int(scratch_pair[0]), int(scratch_pair[1])],
+            "branch_transfer_kind": "s_setpc_b64",
+            "branch_target_symbol": function_name,
+        },
+        "handoff_constraints": {
+            "must_match_wavefront_mode": True,
+            "must_preserve_kernarg_layout": True,
+            "must_preserve_private_segment_state": True,
+            "must_preserve_entry_workitem_vgprs": True,
+        },
+    }
+
+
+def validate_entry_wrapper_proof_preconditions(
+    manifest: dict,
+    ir: dict,
+    *,
+    kernel_name: str,
+) -> tuple[dict, dict, dict, dict | None, tuple[int, int]]:
+    ir_arch = str(ir.get("arch", "") or "")
+    metadata_target = str(
+        (
+            manifest.get("kernels", {})
+            .get("metadata", {})
+            .get("target", "")
+        )
+        or ""
+    )
+    arch_ok = (
+        ir_arch == ENTRY_WRAPPER_PROOF_ARCH
+        or metadata_target.endswith(f"--{ENTRY_WRAPPER_PROOF_ARCH}")
+    )
+    if not arch_ok:
+        raise SystemExit(
+            "entry-wrapper proof is currently constrained to "
+            f"{ENTRY_WRAPPER_PROOF_ARCH}; found ir.arch={ir_arch!r}, metadata.target={metadata_target!r}"
+        )
+    function = find_ir_function(ir, kernel_name)
+    descriptor = next(
+        (
+            entry
+            for entry in manifest.get("kernels", {}).get("descriptors", [])
+            if entry.get("kernel_name") == kernel_name or entry.get("name") == f"{kernel_name}.kd"
+        ),
+        None,
+    )
+    kernel_metadata = next(
+        (
+            entry
+            for entry in manifest.get("kernels", {}).get("metadata", {}).get("kernels", [])
+            if isinstance(entry, dict)
+            and (entry.get("name") == kernel_name or entry.get("symbol") == f"{kernel_name}.kd")
+        ),
+        None,
+    )
+    analysis = analyze_kernel_entry_abi(
+        function=function,
+        descriptor=descriptor,
+        kernel_metadata=kernel_metadata,
+    )
+    liveins = set(int(value) for value in analysis.get("entry_livein_sgprs", []) if isinstance(value, int))
+    supported_class, blockers = classify_entry_handoff_supported_class(analysis)
+    if not blockers:
+        supported_class = ENTRY_WRAPPER_PROOF_SUPPORTED_CLASS
+    if supported_class != ENTRY_WRAPPER_PROOF_SUPPORTED_CLASS or descriptor is None:
+        raise SystemExit(
+            "entry-wrapper proof requires the validated entry-handoff class "
+            f"{ENTRY_WRAPPER_PROOF_SUPPORTED_CLASS}; blockers: {', '.join(blockers) or 'unknown'}"
+        )
+
+    pair_candidates = analysis.get("entry_dead_sgpr_pair_candidates", [])
+    if not isinstance(pair_candidates, list) or not pair_candidates:
+        raise SystemExit(
+            "entry-wrapper proof requires at least one analyzed dead SGPR pair candidate for the branch scratch"
+        )
+    selected_pair = pair_candidates[0]
+    pair = selected_pair.get("pair", [])
+    if not isinstance(pair, list) or len(pair) != 2:
+        raise SystemExit("entry-wrapper proof candidate pair was malformed")
+    low, high = int(pair[0]), int(pair[1])
+    if low in liveins or high in liveins:
+        raise SystemExit(
+            "entry-wrapper proof candidate scratch pair intersects declared live-ins: "
+            f"s{low}:s{high}"
+        )
+    overwrite_details = [
+        {
+            "register": low,
+            "operand_text": selected_pair.get("first_def_operand_texts", [None, None])[0],
+            "address": selected_pair.get("first_def_instruction_addresses", [None, None])[0],
+            "instruction_index": selected_pair.get("first_def_instruction_indices", [None, None])[0],
+        },
+        {
+            "register": high,
+            "operand_text": selected_pair.get("first_def_operand_texts", [None, None])[1],
+            "address": selected_pair.get("first_def_instruction_addresses", [None, None])[1],
+            "instruction_index": selected_pair.get("first_def_instruction_indices", [None, None])[1],
+        },
+    ]
+    analysis["entry_wrapper_supported_class"] = supported_class
+    analysis["entry_wrapper_scratch_pair"] = [low, high]
+    analysis["entry_wrapper_entry_overwrites"] = overwrite_details
+    recipe = build_entry_wrapper_handoff_recipe(
+        function_name=kernel_name,
+        analysis=analysis,
+        descriptor=descriptor,
+        kernel_metadata=kernel_metadata,
+        scratch_pair=(low, high),
+    )
+    return function, analysis, recipe, kernel_metadata, (low, high)
+
+
+def add_entry_wrapper_proof_intent(
+    manifest: dict,
+    ir: dict,
+    model: CodeObjectModel,
+    kernel_name: str,
+    *,
+    include_hidden_handoff: bool = False,
+    restore_kernarg_base_from_handoff: bool = False,
+    restore_workgroup_x_from_handoff: bool = False,
+) -> dict:
+    source_kernel = model.metadata_by_kernel_name(kernel_name)
+    if source_kernel is None:
+        raise SystemExit(f"kernel metadata for {kernel_name!r} not found")
+    source_descriptor = model.descriptor_by_kernel_name(kernel_name)
+    if source_descriptor is None:
+        raise SystemExit(f"descriptor for kernel {kernel_name!r} not found")
+
+    original_function, entry_analysis, handoff_recipe, kernel_metadata, scratch_pair = validate_entry_wrapper_proof_preconditions(
+        manifest,
+        ir,
+        kernel_name=kernel_name,
+    )
+    body_name = f"{ENTRY_WRAPPER_PROOF_BODY_PREFIX}{kernel_name}"
+    if any(function.get("name") == body_name for function in ir.get("functions", [])):
+        raise SystemExit(f"entry-wrapper proof body name {body_name!r} already exists")
+    hidden_handoff_plan = None
+    hidden_ctx_offset = None
+    hidden_handoff_field_loads: list[dict] = []
+    kernarg_base = entry_analysis.get("inferred_kernarg_base") or {}
+    kernarg_base_pair = kernarg_base.get("base_pair") or []
+    if include_hidden_handoff:
+        if len(kernarg_base_pair) != 2:
+            raise SystemExit("entry-wrapper hidden-handoff proof requires an inferred kernarg base SGPR pair")
+        hidden_handoff_plan = build_kernel_plan(
+            source_kernel,
+            pointer_size=ENTRY_WRAPPER_HIDDEN_HANDOFF_POINTER_SIZE,
+            alignment=ENTRY_WRAPPER_HIDDEN_HANDOFF_ALIGNMENT,
+        )
+        hidden_ctx_offset = int(hidden_handoff_plan["hidden_omniprobe_ctx"]["offset"])
+        hidden_handoff_field_loads = []
+        if restore_workgroup_x_from_handoff:
+            workgroup_x_sgpr = next(
+                (
+                    int(entry.get("sgpr"))
+                    for entry in entry_analysis.get("entry_system_sgpr_roles", [])
+                    if isinstance(entry, dict) and entry.get("role") == "workgroup_id_x"
+                ),
+                None,
+            )
+            if workgroup_x_sgpr is None:
+                raise SystemExit("entry-wrapper workgroup-x restore proof requires a workgroup_id_x SGPR role")
+            hidden_handoff_field_loads.append(
+                {
+                    "name": "workgroup_id_x",
+                    "offset": 8,
+                    "kind": "u32",
+                    "target_sgpr": int(workgroup_x_sgpr),
+                    "clobber_target_before_load": True,
+                    "purpose": "restore workgroup_id_x under the single-workgroup proof launch",
+                }
+            )
+        hidden_handoff_field = {
+            "name": "original_kernarg_pointer",
+            "offset": 0,
+            "kind": "u64",
+            "purpose": (
+                "restore the original kernarg base pair after wrapper-side clobber"
+                if restore_kernarg_base_from_handoff
+                else "prove wrapper-side dereference of the handoff struct payload"
+            ),
+        }
+        if restore_kernarg_base_from_handoff:
+            hidden_handoff_field["target_pair"] = [int(kernarg_base_pair[0]), int(kernarg_base_pair[1])]
+            hidden_handoff_field["clobber_target_before_load"] = True
+        hidden_handoff_field_loads.append(hidden_handoff_field)
+
+        manifest_metadata = manifest.setdefault("kernels", {}).setdefault("metadata", {})
+        source_identity = (source_kernel.get("name"), source_kernel.get("symbol"))
+        mutated_kernels = []
+        for kernel in manifest_metadata.get("kernels", []):
+            if not isinstance(kernel, dict):
+                mutated_kernels.append(kernel)
+                continue
+            identity = (kernel.get("name"), kernel.get("symbol"))
+            if identity == source_identity:
+                mutated_kernels.append(
+                    mutate_kernel_record_in_place(kernel, hidden_handoff_plan)
+                )
+            else:
+                mutated_kernels.append(deepcopy(kernel))
+        manifest_metadata["kernels"] = mutated_kernels
+        manifest_metadata["rendered"] = build_metadata_document_with_inplace_update(
+            manifest,
+            source_kernel=source_kernel,
+            pointer_size=ENTRY_WRAPPER_HIDDEN_HANDOFF_POINTER_SIZE,
+            alignment=ENTRY_WRAPPER_HIDDEN_HANDOFF_ALIGNMENT,
+        )
+        manifest_metadata["raw"] = manifest_metadata["rendered"]
+        if metadata_output_format(manifest) == "msgpack":
+            manifest_metadata["object"] = build_metadata_object_with_inplace_update(
+                manifest,
+                source_kernel=source_kernel,
+                pointer_size=ENTRY_WRAPPER_HIDDEN_HANDOFF_POINTER_SIZE,
+                alignment=ENTRY_WRAPPER_HIDDEN_HANDOFF_ALIGNMENT,
+            )
+        manifest["kernels"].pop("metadata_note", None)
+
+        source_descriptor["kernarg_size"] = int(hidden_handoff_plan["instrumented_kernarg_length"])
+        source_descriptor["bytes_hex"] = patch_descriptor_bytes_hex(
+            str(source_descriptor.get("bytes_hex", "")),
+            int(hidden_handoff_plan["instrumented_kernarg_length"]),
+        )
+
+    text_section = next(
+        (section for section in manifest.get("sections", []) if section.get("name") == ".text"),
+        None,
+    )
+    original_kernel_symbol = next(
+        (entry for entry in manifest.get("kernels", {}).get("function_symbols", []) if entry.get("name") == kernel_name),
+        None,
+    )
+    if original_kernel_symbol is None:
+        raise SystemExit(f"kernel function symbol for {kernel_name!r} not found")
+
+    rename_function_ir(ir, kernel_name, body_name)
+    wrapper_address = wrapper_start_address(ir, manifest)
+    wrapper_function = build_entry_wrapper_ir(
+        wrapper_name=kernel_name,
+        body_name=body_name,
+        start_address=wrapper_address,
+        scratch_pair=scratch_pair,
+        hidden_ctx_offset=hidden_ctx_offset,
+        hidden_ctx_source_pair=(
+            (int(kernarg_base_pair[0]), int(kernarg_base_pair[1]))
+            if len(kernarg_base_pair) == 2
+            else None
+        ),
+        hidden_handoff_field_loads=hidden_handoff_field_loads,
+    )
+    ir.setdefault("functions", []).append(wrapper_function)
+
+    renamed_all_symbols = rename_symbol(manifest["functions"]["all_symbols"], kernel_name, body_name)
+    renamed_symbols = rename_symbol(manifest["symbols"], kernel_name, body_name)
+    for entry in [*renamed_all_symbols, *renamed_symbols]:
+        entry["binding"] = "Local"
+        entry["visibility"] = []
+
+    remove_symbol(manifest["kernels"]["function_symbols"], kernel_name)
+    remove_symbol(manifest["functions"]["helper_symbols"], body_name)
+
+    body_helper_symbol = next(
+        (entry for entry in manifest["functions"]["all_symbols"] if entry.get("name") == body_name),
+        None,
+    )
+    if body_helper_symbol is None:
+        raise SystemExit(f"renamed body helper symbol {body_name!r} was not materialized")
+    manifest["functions"]["helper_symbols"].append(deepcopy(body_helper_symbol))
+
+    wrapper_symbol = build_text_function_symbol(
+        original_kernel_symbol,
+        name=kernel_name,
+        value=wrapper_address,
+        size=int(wrapper_function.get("end_address", wrapper_address) - wrapper_address),
+        text_section=text_section,
+    )
+    manifest["functions"]["all_symbols"].append(deepcopy(wrapper_symbol))
+    manifest["kernels"]["function_symbols"].append(deepcopy(wrapper_symbol))
+    manifest["symbols"].append(deepcopy(wrapper_symbol))
+
+    manifest.setdefault("descriptor_patch_intents", []).append(
+        {
+            "mode": "entry-wrapper-proof",
+            "source_kernel": kernel_name,
+            "clone_kernel": kernel_name,
+            "clone_descriptor": str(source_descriptor.get("name") or f"{kernel_name}.kd"),
+            "body_symbol": body_name,
+            "wrapper_symbol": kernel_name,
+            "descriptor_patch_policy": "patch-linked-entry-only",
+        }
+    )
+
+    return {
+        "mode": (
+            "entry-wrapper-workgroup-x-restore-proof"
+            if restore_workgroup_x_from_handoff
+            else (
+            "entry-wrapper-kernarg-restore-proof"
+            if restore_kernarg_base_from_handoff
+            else ("entry-wrapper-hidden-handoff-proof" if include_hidden_handoff else "entry-wrapper-proof")
+            )
+        ),
+        "source_kernel": kernel_name,
+        "body_symbol": body_name,
+        "wrapper_symbol": kernel_name,
+        "wrapper_start_address": wrapper_address,
+        "wrapper_size": int(wrapper_function.get("end_address", wrapper_address) - wrapper_address),
+        "descriptor": str(source_descriptor.get("name") or f"{kernel_name}.kd"),
+        "scratch_pair": list(scratch_pair),
+        "supported_class": entry_analysis.get("entry_wrapper_supported_class"),
+        "entry_handoff_recipe": handoff_recipe,
+        "preconditions": {
+            "arch": str(ir.get("arch") or manifest.get("arch") or ""),
+            "entry_overwrites": entry_analysis.get("entry_wrapper_entry_overwrites", []),
+            "entry_livein_sgprs": entry_analysis.get("entry_livein_sgprs", []),
+            "original_entry_start_address": int(original_function.get("start_address", 0) or 0),
+        },
+        "wrapper_hidden_handoff": (
+            {
+                "enabled": True,
+                "arg_name": str(hidden_handoff_plan["hidden_omniprobe_ctx"]["name"]),
+                "arg_value_kind": str(hidden_handoff_plan["hidden_omniprobe_ctx"]["value_kind"]),
+                "offset": int(hidden_handoff_plan["hidden_omniprobe_ctx"]["offset"]),
+                "size": int(hidden_handoff_plan["hidden_omniprobe_ctx"]["size"]),
+                "instrumented_kernarg_length": int(hidden_handoff_plan["instrumented_kernarg_length"]),
+                "load_source_pair": [int(kernarg_base_pair[0]), int(kernarg_base_pair[1])],
+                "pointer_load_opcode": "s_load_dwordx2",
+                "consumed_fields": [
+                    {
+                        "name": str(field["name"]),
+                        "offset": int(field["offset"]),
+                        "kind": str(field["kind"]),
+                        "load_opcode": "s_load_dwordx2" if field["kind"] == "u64" else "s_load_dword",
+                        "target_pair": [int(field["target_pair"][0]), int(field["target_pair"][1])]
+                        if isinstance(field.get("target_pair"), list) and len(field["target_pair"]) == 2
+                        else None,
+                        "target_sgpr": int(field["target_sgpr"]) if field.get("target_sgpr") is not None else None,
+                        "clobber_target_before_load": bool(field.get("clobber_target_before_load", False)),
+                    }
+                    for field in hidden_handoff_field_loads
+                ],
+                "restored_actions": (
+                    (
+                        (["materialize-system-sgpr:workgroup_id_x"] if restore_workgroup_x_from_handoff else [])
+                        + (["materialize-kernarg-base-pair"] if restore_kernarg_base_from_handoff else [])
+                    )
+                ),
+            }
+            if hidden_handoff_plan is not None
+            else {"enabled": False}
+        ),
     }
 
 
@@ -1130,7 +2230,13 @@ def patch_output_clone_descriptors(
     temp_dir_path: Path,
 ) -> None:
     clone_intents = manifest.get("clone_intents", [])
-    if not isinstance(clone_intents, list) or not clone_intents:
+    descriptor_patch_intents = manifest.get("descriptor_patch_intents", [])
+    intents = []
+    if isinstance(clone_intents, list):
+        intents.extend(clone_intents)
+    if isinstance(descriptor_patch_intents, list):
+        intents.extend(descriptor_patch_intents)
+    if not intents:
         return
 
     inspect_tool = tool_dir / "inspect_code_object.py"
@@ -1151,7 +2257,7 @@ def patch_output_clone_descriptors(
     output_function_symbols = output_manifest.get("kernels", {}).get("function_symbols", [])
     data = bytearray(output_path.read_bytes())
 
-    for intent in clone_intents:
+    for intent in intents:
         if not isinstance(intent, dict):
             continue
         clone_kernel = intent.get("clone_kernel")
@@ -1222,11 +2328,28 @@ def main() -> int:
         model = CodeObjectModel.from_manifest(load_json(working_manifest_path))
         kernel_name, primary_kernel_count = choose_kernel(model, args.kernel)
         clone_result = None
+        entry_wrapper_result = None
         extra_link_objects: list[Path] = []
         binary_probe_mode: str | None = None
         binary_probe_abi_delta: dict | None = None
         support_wrapper_footprint_report: dict | None = None
         support_object_footprint_report: dict | None = None
+        mutation_modes = [
+            bool(args.add_hidden_abi_clone),
+            bool(args.add_noop_clone),
+            bool(args.add_entry_wrapper_proof),
+            bool(args.add_entry_wrapper_hidden_handoff_proof),
+            bool(args.add_entry_wrapper_kernarg_restore_proof),
+            bool(args.add_entry_wrapper_workgroup_x_restore_proof),
+        ]
+        if sum(1 for enabled in mutation_modes if enabled) > 1:
+            raise SystemExit(
+                "choose at most one mutation mode: "
+                "--add-hidden-abi-clone, --add-noop-clone, --add-entry-wrapper-proof, "
+                "--add-entry-wrapper-hidden-handoff-proof, or "
+                "--add-entry-wrapper-kernarg-restore-proof, or "
+                "--add-entry-wrapper-workgroup-x-restore-proof"
+            )
 
         ir_path = temp_dir_path / "input.ir.json"
         asm_path = temp_dir_path / "output.s"
@@ -1240,7 +2363,129 @@ def main() -> int:
             args=args,
             tool_dir=tool_dir,
         )
-        if args.add_hidden_abi_clone:
+        if args.add_entry_wrapper_proof:
+            manifest_payload = load_json(working_manifest_path)
+            ir_payload = load_json(ir_path)
+            entry_wrapper_result = add_entry_wrapper_proof_intent(
+                manifest_payload,
+                ir_payload,
+                model,
+                kernel_name,
+            )
+            working_manifest_path.write_text(
+                json.dumps(manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            ir_path.write_text(
+                json.dumps(ir_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        elif args.add_entry_wrapper_hidden_handoff_proof:
+            original_manifest_payload = load_json(working_manifest_path)
+            manifest_payload = load_json(working_manifest_path)
+            ir_payload = load_json(ir_path)
+            entry_wrapper_result = add_entry_wrapper_proof_intent(
+                manifest_payload,
+                ir_payload,
+                model,
+                kernel_name,
+                include_hidden_handoff=True,
+            )
+            working_manifest_path.write_text(
+                json.dumps(manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            asm_manifest_payload = deepcopy(manifest_payload)
+            asm_manifest_metadata = asm_manifest_payload.setdefault("kernels", {}).setdefault(
+                "metadata", {}
+            )
+            original_metadata = original_manifest_payload.get("kernels", {}).get("metadata", {})
+            for key in ("raw", "rendered", "object", "target"):
+                if key in original_metadata:
+                    asm_manifest_metadata[key] = deepcopy(original_metadata[key])
+                else:
+                    asm_manifest_metadata.pop(key, None)
+            asm_manifest_path = temp_dir_path / "input.asm.manifest.json"
+            asm_manifest_path.write_text(
+                json.dumps(asm_manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            ir_path.write_text(
+                json.dumps(ir_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        elif args.add_entry_wrapper_kernarg_restore_proof:
+            original_manifest_payload = load_json(working_manifest_path)
+            manifest_payload = load_json(working_manifest_path)
+            ir_payload = load_json(ir_path)
+            entry_wrapper_result = add_entry_wrapper_proof_intent(
+                manifest_payload,
+                ir_payload,
+                model,
+                kernel_name,
+                include_hidden_handoff=True,
+                restore_kernarg_base_from_handoff=True,
+            )
+            working_manifest_path.write_text(
+                json.dumps(manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            asm_manifest_payload = deepcopy(manifest_payload)
+            asm_manifest_metadata = asm_manifest_payload.setdefault("kernels", {}).setdefault(
+                "metadata", {}
+            )
+            original_metadata = original_manifest_payload.get("kernels", {}).get("metadata", {})
+            for key in ("raw", "rendered", "object", "target"):
+                if key in original_metadata:
+                    asm_manifest_metadata[key] = deepcopy(original_metadata[key])
+                else:
+                    asm_manifest_metadata.pop(key, None)
+            asm_manifest_path = temp_dir_path / "input.asm.manifest.json"
+            asm_manifest_path.write_text(
+                json.dumps(asm_manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            ir_path.write_text(
+                json.dumps(ir_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        elif args.add_entry_wrapper_workgroup_x_restore_proof:
+            original_manifest_payload = load_json(working_manifest_path)
+            manifest_payload = load_json(working_manifest_path)
+            ir_payload = load_json(ir_path)
+            entry_wrapper_result = add_entry_wrapper_proof_intent(
+                manifest_payload,
+                ir_payload,
+                model,
+                kernel_name,
+                include_hidden_handoff=True,
+                restore_kernarg_base_from_handoff=True,
+                restore_workgroup_x_from_handoff=True,
+            )
+            working_manifest_path.write_text(
+                json.dumps(manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            asm_manifest_payload = deepcopy(manifest_payload)
+            asm_manifest_metadata = asm_manifest_payload.setdefault("kernels", {}).setdefault(
+                "metadata", {}
+            )
+            original_metadata = original_manifest_payload.get("kernels", {}).get("metadata", {})
+            for key in ("raw", "rendered", "object", "target"):
+                if key in original_metadata:
+                    asm_manifest_metadata[key] = deepcopy(original_metadata[key])
+                else:
+                    asm_manifest_metadata.pop(key, None)
+            asm_manifest_path = temp_dir_path / "input.asm.manifest.json"
+            asm_manifest_path.write_text(
+                json.dumps(asm_manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            ir_path.write_text(
+                json.dumps(ir_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        elif args.add_hidden_abi_clone:
             original_manifest_payload = load_json(working_manifest_path)
             manifest_payload = load_json(working_manifest_path)
             ir_payload = load_json(ir_path)
@@ -1565,9 +2810,14 @@ def main() -> int:
             args=args,
             tool_dir=tool_dir,
         )
-        if args.add_hidden_abi_clone:
+        if (
+            args.add_hidden_abi_clone
+            or args.add_entry_wrapper_hidden_handoff_proof
+            or args.add_entry_wrapper_kernarg_restore_proof
+            or args.add_entry_wrapper_workgroup_x_restore_proof
+        ):
             patch_output_metadata_note(output_path, load_json(working_manifest_path))
-        if clone_result is not None:
+        if clone_result is not None or entry_wrapper_result is not None:
             patch_output_clone_descriptors(
                 output_path=output_path,
                 manifest=load_json(working_manifest_path),
@@ -1595,6 +2845,8 @@ def main() -> int:
         }
         if clone_result is not None:
             report["clone_result"] = clone_result
+        if entry_wrapper_result is not None:
+            report["entry_wrapper_result"] = entry_wrapper_result
         if binary_probe_mode is not None:
             report["binary_probe"] = {
                 "instrumentation_mode": binary_probe_mode,
