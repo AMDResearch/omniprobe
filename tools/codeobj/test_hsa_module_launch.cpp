@@ -19,7 +19,7 @@
 namespace {
 
 constexpr uint32_t kQueueSize = 64;
-constexpr uint32_t kWorkgroupSize = 64;
+constexpr uint32_t kDefaultWorkgroupSize = 64;
 constexpr size_t kDefaultElementCount = 256;
 constexpr size_t kHiddenBlockCountXOffset = 16;
 constexpr size_t kHiddenBlockCountYOffset = 20;
@@ -266,7 +266,8 @@ void wait_for_queue_slot(const hsa_queue_t* queue, uint64_t write_index) {
 }
 
 void dispatch_kernel(hsa_queue_t* queue, const SymbolInfo& symbol,
-                     const void* kernarg, size_t element_count) {
+                     const void* kernarg, size_t element_count,
+                     uint16_t workgroup_size_x) {
   hsa_signal_t completion{};
   check(hsa_signal_create(1, 0, nullptr, &completion), "hsa_signal_create");
 
@@ -279,7 +280,7 @@ void dispatch_kernel(hsa_queue_t* queue, const SymbolInfo& symbol,
   std::memset(packet, 0, sizeof(*packet));
 
   packet->setup = 1u << HSA_KERNEL_DISPATCH_PACKET_SETUP_DIMENSIONS;
-  packet->workgroup_size_x = kWorkgroupSize;
+  packet->workgroup_size_x = workgroup_size_x;
   packet->workgroup_size_y = 1;
   packet->workgroup_size_z = 1;
   packet->grid_size_x = static_cast<uint32_t>(element_count);
@@ -310,14 +311,15 @@ void dispatch_kernel(hsa_queue_t* queue, const SymbolInfo& symbol,
   check(hsa_signal_destroy(completion), "hsa_signal_destroy");
 }
 
-void populate_opencl_hidden_args(std::vector<std::byte>& kernarg, size_t element_count) {
+void populate_opencl_hidden_args(std::vector<std::byte>& kernarg, size_t element_count,
+                                 uint16_t workgroup_size_x) {
   const uint32_t block_count_x =
-      static_cast<uint32_t>(element_count / kWorkgroupSize);
+      static_cast<uint32_t>(element_count / workgroup_size_x);
   const uint16_t remainder_x =
-      static_cast<uint16_t>(element_count % kWorkgroupSize);
+      static_cast<uint16_t>(element_count % workgroup_size_x);
   const uint32_t block_count_y = 1;
   const uint32_t block_count_z = 1;
-  const uint16_t group_size_x = static_cast<uint16_t>(kWorkgroupSize);
+  const uint16_t group_size_x = workgroup_size_x;
   const uint16_t group_size_y = 1;
   const uint16_t group_size_z = 1;
   const uint16_t remainder_y = 1;
@@ -359,10 +361,13 @@ int main(int argc, char** argv) {
   bool use_hidden_ctx = false;
   bool populate_original_kernarg_pointer = false;
   bool single_workgroup = false;
+  bool single_wave = false;
   bool populate_workgroup_id_x = false;
   size_t hidden_ctx_offset = 0;
   uint32_t workgroup_id_x_value = 0;
   std::vector<std::pair<size_t, uint32_t>> verify_hidden_u32_checks;
+  std::vector<size_t> verify_hidden_u32_nonzero_checks;
+  uint16_t workgroup_size_x = static_cast<uint16_t>(kDefaultWorkgroupSize);
   for (int index = 4; index < argc; ++index) {
     const std::string arg = argv[index];
     if (arg == "--hidden-ctx-offset") {
@@ -391,6 +396,10 @@ int main(int argc, char** argv) {
       single_workgroup = true;
       continue;
     }
+    if (arg == "--single-wave") {
+      single_wave = true;
+      continue;
+    }
     if (arg == "--verify-hidden-u32") {
       if (index + 2 >= argc) {
         std::cerr << "missing values for --verify-hidden-u32" << std::endl;
@@ -404,18 +413,33 @@ int main(int argc, char** argv) {
                                             verify_hidden_u32_value);
       continue;
     }
+    if (arg == "--verify-hidden-u32-nonzero") {
+      if (index + 1 >= argc) {
+        std::cerr << "missing value for --verify-hidden-u32-nonzero" << std::endl;
+        return 2;
+      }
+      const size_t verify_hidden_u32_offset =
+          static_cast<size_t>(std::stoull(argv[++index]));
+      verify_hidden_u32_nonzero_checks.push_back(verify_hidden_u32_offset);
+      continue;
+    }
     std::cerr << "unknown argument: " << arg << std::endl;
     return 2;
   }
   if ((populate_original_kernarg_pointer || populate_workgroup_id_x ||
-       !verify_hidden_u32_checks.empty()) &&
+       !verify_hidden_u32_checks.empty() ||
+       !verify_hidden_u32_nonzero_checks.empty()) &&
       !use_hidden_ctx) {
     std::cerr << "hidden handoff population requires --hidden-ctx-offset"
               << std::endl;
     return 2;
   }
-  const size_t element_count = single_workgroup ? static_cast<size_t>(kWorkgroupSize)
-                                                : kDefaultElementCount;
+  if (single_wave) {
+    single_workgroup = true;
+    workgroup_size_x = 32;
+  }
+  const size_t element_count =
+      single_workgroup ? static_cast<size_t>(workgroup_size_x) : kDefaultElementCount;
 
   check(hsa_init(), "hsa_init");
 
@@ -497,7 +521,7 @@ int main(int argc, char** argv) {
   const size_t size_value = host_data.size();
   std::memcpy(kernarg.data(), &device_data, sizeof(device_data));
   std::memcpy(kernarg.data() + sizeof(device_data), &size_value, sizeof(size_value));
-  populate_opencl_hidden_args(kernarg, element_count);
+  populate_opencl_hidden_args(kernarg, element_count, workgroup_size_x);
   if (use_hidden_ctx) {
     if (hidden_ctx_offset + sizeof(void*) > kernarg.size()) {
       std::cerr << "hidden ctx offset exceeds kernarg size" << std::endl;
@@ -526,7 +550,7 @@ int main(int argc, char** argv) {
   check(hsa_queue_create(agents.gpu, kQueueSize, HSA_QUEUE_TYPE_SINGLE, nullptr,
                          nullptr, UINT32_MAX, UINT32_MAX, &queue),
         "hsa_queue_create");
-  dispatch_kernel(queue, symbol, kernarg_buffer, element_count);
+  dispatch_kernel(queue, symbol, kernarg_buffer, element_count, workgroup_size_x);
 
   check(hsa_memory_copy(host_data.data(), device_data,
                         host_data.size() * sizeof(host_data[0])),
@@ -546,6 +570,20 @@ int main(int argc, char** argv) {
       std::cerr << "hidden ctx mismatch offset=" << verify_hidden_u32_offset
                 << " expected=" << verify_hidden_u32_value
                 << " got=" << observed << std::endl;
+      ok = false;
+    }
+  }
+  for (const size_t verify_hidden_u32_offset : verify_hidden_u32_nonzero_checks) {
+    uint32_t observed = 0;
+    check(hsa_memory_copy(&observed,
+                          static_cast<std::byte*>(hidden_ctx) + verify_hidden_u32_offset,
+                          sizeof(observed)),
+          "hsa_memory_copy(hidden_ctx->host)");
+    std::cout << "hidden ctx u32[" << verify_hidden_u32_offset
+              << "]=" << observed << "\n";
+    if (observed == 0) {
+      std::cerr << "hidden ctx mismatch offset=" << verify_hidden_u32_offset
+                << " expected=nonzero got=0" << std::endl;
       ok = false;
     }
   }

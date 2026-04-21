@@ -161,6 +161,19 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--add-entry-wrapper-system-sgpr-capture-restore-proof",
+        action="store_true",
+        help=(
+            "Extend the entry-wrapper kernarg-restore proof by capturing all "
+            "supported entry system SGPR roles (workgroup_id_x/y/z and "
+            "private_segment_wave_offset) into hidden_omniprobe_ctx snapshot "
+            "storage, clobbering them, restoring them from the captured "
+            "snapshot fields, and then branching to the original body. "
+            "Current validation is constrained to a single-wave, "
+            "single-workgroup launch."
+        ),
+    )
+    parser.add_argument(
         "--python",
         default=sys.executable,
         help="Python interpreter to use for helper tools",
@@ -1648,8 +1661,10 @@ def add_entry_wrapper_proof_intent(
     restore_kernarg_base_from_handoff: bool = False,
     restore_workgroup_x_from_handoff: bool = False,
     restore_workgroup_xyz_from_handoff: bool = False,
+    restore_all_system_sgprs_from_handoff: bool = False,
     capture_workgroup_x_to_handoff: bool = False,
     capture_workgroup_xyz_to_handoff: bool = False,
+    capture_all_system_sgprs_to_handoff: bool = False,
 ) -> dict:
     source_kernel = model.metadata_by_kernel_name(kernel_name)
     if source_kernel is None:
@@ -1729,6 +1744,33 @@ def add_entry_wrapper_proof_intent(
                         "purpose": f"restore {role_name} from the wrapper-owned entry_snapshot storage",
                     }
                 )
+        if restore_all_system_sgprs_from_handoff:
+            for role_name, role_offset in (
+                ("workgroup_id_x", 8),
+                ("workgroup_id_y", 12),
+                ("workgroup_id_z", 16),
+                ("private_segment_wave_offset", 20),
+            ):
+                role_sgpr = next(
+                    (
+                        int(entry.get("sgpr"))
+                        for entry in entry_analysis.get("entry_system_sgpr_roles", [])
+                        if isinstance(entry, dict) and entry.get("role") == role_name
+                    ),
+                    None,
+                )
+                if role_sgpr is None:
+                    raise SystemExit(f"entry-wrapper restore proof requires a {role_name} SGPR role")
+                hidden_handoff_field_loads.append(
+                    {
+                        "name": role_name,
+                        "offset": int(role_offset),
+                        "kind": "u32",
+                        "target_sgpr": int(role_sgpr),
+                        "clobber_target_before_load": True,
+                        "purpose": f"restore {role_name} from the wrapper-owned entry_snapshot storage",
+                    }
+                )
         capture_roles: list[tuple[str, int]] = []
         if capture_workgroup_x_to_handoff:
             capture_roles.append(("workgroup_id_x", 8))
@@ -1738,6 +1780,15 @@ def add_entry_wrapper_proof_intent(
                     ("workgroup_id_x", 8),
                     ("workgroup_id_y", 12),
                     ("workgroup_id_z", 16),
+                ]
+            )
+        if capture_all_system_sgprs_to_handoff:
+            capture_roles.extend(
+                [
+                    ("workgroup_id_x", 8),
+                    ("workgroup_id_y", 12),
+                    ("workgroup_id_z", 16),
+                    ("private_segment_wave_offset", 20),
                 ]
             )
         emitted_capture_roles: set[str] = set()
@@ -1844,7 +1895,9 @@ def add_entry_wrapper_proof_intent(
         ),
         hidden_handoff_field_loads=hidden_handoff_field_loads,
         hidden_handoff_field_stores=hidden_handoff_field_stores,
-        hidden_handoff_store_before_loads=bool(restore_workgroup_xyz_from_handoff),
+        hidden_handoff_store_before_loads=bool(
+            restore_workgroup_xyz_from_handoff or restore_all_system_sgprs_from_handoff
+        ),
     )
     ir.setdefault("functions", []).append(wrapper_function)
 
@@ -1890,6 +1943,9 @@ def add_entry_wrapper_proof_intent(
 
     return {
         "mode": (
+            "entry-wrapper-system-sgpr-capture-restore-proof"
+            if restore_all_system_sgprs_from_handoff
+            else (
             "entry-wrapper-workgroup-xyz-capture-restore-proof"
             if restore_workgroup_xyz_from_handoff
             else (
@@ -1905,6 +1961,7 @@ def add_entry_wrapper_proof_intent(
             "entry-wrapper-kernarg-restore-proof"
             if restore_kernarg_base_from_handoff
             else ("entry-wrapper-hidden-handoff-proof" if include_hidden_handoff else "entry-wrapper-proof")
+            )
             )
             )
             )
@@ -1951,6 +2008,13 @@ def add_entry_wrapper_proof_intent(
                 ],
                 "restored_actions": (
                     (
+                        ([
+                            "materialize-system-sgpr:workgroup_id_x",
+                            "materialize-system-sgpr:workgroup_id_y",
+                            "materialize-system-sgpr:workgroup_id_z",
+                            "materialize-system-sgpr:private_segment_wave_offset",
+                        ] if restore_all_system_sgprs_from_handoff else [])
+                        +
                         ([
                             "materialize-system-sgpr:workgroup_id_x",
                             "materialize-system-sgpr:workgroup_id_y",
@@ -2571,6 +2635,7 @@ def main() -> int:
             bool(args.add_entry_wrapper_workgroup_x_capture_proof),
             bool(args.add_entry_wrapper_workgroup_xyz_capture_proof),
             bool(args.add_entry_wrapper_workgroup_xyz_capture_restore_proof),
+            bool(args.add_entry_wrapper_system_sgpr_capture_restore_proof),
         ]
         if sum(1 for enabled in mutation_modes if enabled) > 1:
             raise SystemExit(
@@ -2581,7 +2646,8 @@ def main() -> int:
                 "--add-entry-wrapper-workgroup-x-restore-proof, or "
                 "--add-entry-wrapper-workgroup-x-capture-proof, or "
                 "--add-entry-wrapper-workgroup-xyz-capture-proof, or "
-                "--add-entry-wrapper-workgroup-xyz-capture-restore-proof"
+                "--add-entry-wrapper-workgroup-xyz-capture-restore-proof, or "
+                "--add-entry-wrapper-system-sgpr-capture-restore-proof"
             )
 
         ir_path = temp_dir_path / "input.ir.json"
@@ -2803,6 +2869,43 @@ def main() -> int:
                 restore_kernarg_base_from_handoff=True,
                 restore_workgroup_xyz_from_handoff=True,
                 capture_workgroup_xyz_to_handoff=True,
+            )
+            working_manifest_path.write_text(
+                json.dumps(manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            asm_manifest_payload = deepcopy(manifest_payload)
+            asm_manifest_metadata = asm_manifest_payload.setdefault("kernels", {}).setdefault(
+                "metadata", {}
+            )
+            original_metadata = original_manifest_payload.get("kernels", {}).get("metadata", {})
+            for key in ("raw", "rendered", "object", "target"):
+                if key in original_metadata:
+                    asm_manifest_metadata[key] = deepcopy(original_metadata[key])
+                else:
+                    asm_manifest_metadata.pop(key, None)
+            asm_manifest_path = temp_dir_path / "input.asm.manifest.json"
+            asm_manifest_path.write_text(
+                json.dumps(asm_manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            ir_path.write_text(
+                json.dumps(ir_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        elif args.add_entry_wrapper_system_sgpr_capture_restore_proof:
+            original_manifest_payload = load_json(working_manifest_path)
+            manifest_payload = load_json(working_manifest_path)
+            ir_payload = load_json(ir_path)
+            entry_wrapper_result = add_entry_wrapper_proof_intent(
+                manifest_payload,
+                ir_payload,
+                model,
+                kernel_name,
+                include_hidden_handoff=True,
+                restore_kernarg_base_from_handoff=True,
+                restore_all_system_sgprs_from_handoff=True,
+                capture_all_system_sgprs_to_handoff=True,
             )
             working_manifest_path.write_text(
                 json.dumps(manifest_payload, indent=2) + "\n",
@@ -3160,6 +3263,7 @@ def main() -> int:
             or args.add_entry_wrapper_workgroup_x_capture_proof
             or args.add_entry_wrapper_workgroup_xyz_capture_proof
             or args.add_entry_wrapper_workgroup_xyz_capture_restore_proof
+            or args.add_entry_wrapper_system_sgpr_capture_restore_proof
         ):
             patch_output_metadata_note(output_path, load_json(working_manifest_path))
         if clone_result is not None or entry_wrapper_result is not None:
