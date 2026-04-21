@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import struct
 import shutil
 import subprocess
@@ -268,6 +269,10 @@ def granulated_sgpr_count(total_sgprs: int) -> int:
     return max(0, (round_up(max(1, total_sgprs), 8) // 8) - 1)
 
 
+def granulated_vgpr_count(total_vgprs: int) -> int:
+    return max(0, (round_up(max(1, total_vgprs), 8) // 8) - 1)
+
+
 def update_descriptor_sgpr_footprint(descriptor: dict, total_sgprs: int) -> None:
     rsrc1 = descriptor.setdefault("compute_pgm_rsrc1", {})
     granulated = granulated_sgpr_count(total_sgprs)
@@ -276,6 +281,16 @@ def update_descriptor_sgpr_footprint(descriptor: dict, total_sgprs: int) -> None
     raw_value |= (granulated & 0xF) << 6
     rsrc1["raw_value"] = raw_value
     rsrc1["granulated_wavefront_sgpr_count"] = granulated
+
+
+def update_descriptor_vgpr_footprint(descriptor: dict, total_vgprs: int) -> None:
+    rsrc1 = descriptor.setdefault("compute_pgm_rsrc1", {})
+    granulated = granulated_vgpr_count(total_vgprs)
+    raw_value = int(rsrc1.get("raw_value", 0) or 0)
+    raw_value &= ~0x3F
+    raw_value |= granulated & 0x3F
+    rsrc1["raw_value"] = raw_value
+    rsrc1["granulated_workitem_vgpr_count"] = granulated
 
 
 def apply_binary_probe_saved_sgpr_policy(
@@ -326,6 +341,54 @@ def apply_binary_probe_saved_sgpr_policy(
         metadata["raw"] = metadata["rendered"]
 
 
+def apply_binary_probe_vgpr_policy(
+    manifest: dict,
+    *,
+    clone_kernel: str,
+    total_vgprs: int,
+    refresh_rendered_metadata: bool = True,
+) -> None:
+    descriptors = manifest.get("kernels", {}).get("descriptors", [])
+    clone_descriptor = next(
+        (entry for entry in descriptors if entry.get("kernel_name") == clone_kernel),
+        None,
+    )
+    if clone_descriptor is None:
+        raise SystemExit(f"clone descriptor for {clone_kernel!r} not found")
+
+    update_descriptor_vgpr_footprint(clone_descriptor, total_vgprs)
+
+    metadata = manifest.get("kernels", {}).get("metadata", {})
+    for kernel_record in metadata.get("kernels", []):
+        if not isinstance(kernel_record, dict):
+            continue
+        if kernel_record.get("name") != clone_kernel:
+            continue
+        kernel_record["vgpr_count"] = total_vgprs
+        break
+
+    metadata_obj = metadata.get("object")
+    if isinstance(metadata_obj, dict):
+        for kernel_obj in metadata_obj.get("amdhsa.kernels", []):
+            if not isinstance(kernel_obj, dict):
+                continue
+            if kernel_obj.get(".name") != clone_kernel:
+                continue
+            kernel_obj[".vgpr_count"] = total_vgprs
+            break
+
+    rendered = metadata.get("rendered") or metadata.get("raw")
+    if refresh_rendered_metadata and rendered:
+        metadata["rendered"] = build_metadata_document(
+            manifest,
+            selected_kernels=[],
+            clones_only=False,
+            pointer_size=8,
+            alignment=8,
+        )
+        metadata["raw"] = metadata["rendered"]
+
+
 def apply_binary_probe_nonleaf_policy(
     manifest: dict,
     *,
@@ -343,6 +406,11 @@ def apply_binary_probe_nonleaf_policy(
 
     current_private = int(clone_descriptor.get("private_segment_fixed_size", 0) or 0)
     clone_descriptor["private_segment_fixed_size"] = current_private + private_segment_growth
+    rsrc2 = clone_descriptor.setdefault("compute_pgm_rsrc2", {})
+    rsrc2["enable_private_segment"] = 1
+    rsrc2_raw_value = rsrc2.get("raw_value")
+    if isinstance(rsrc2_raw_value, int):
+        rsrc2["raw_value"] = rsrc2_raw_value | 0x1
     properties = clone_descriptor.setdefault("kernel_code_properties", {})
     properties["uses_dynamic_stack"] = 1
     raw_value = properties.get("raw_value")
@@ -695,6 +763,259 @@ def compile_probe_support_object(
     run(command)
 
 
+def inspect_probe_support_wrapper_footprint(
+    *,
+    thunk_manifest_path: Path,
+    arch: str,
+    temp_dir: Path,
+    args: argparse.Namespace,
+    tool_dir: Path,
+) -> dict[str, int]:
+    thunk_manifest = load_json(thunk_manifest_path)
+    thunk_source_value = thunk_manifest.get("thunk_source")
+    if not isinstance(thunk_source_value, str) or not thunk_source_value:
+        raise SystemExit(f"thunk manifest {thunk_manifest_path} does not contain thunk_source")
+    thunk_source = Path(thunk_source_value).resolve()
+    thunks = thunk_manifest.get("thunks", [])
+    if not isinstance(thunks, list) or not thunks:
+        return {}
+
+    wrapper_source = temp_dir / "binary_probe_support_wrapper.hip"
+    wrapper_hsaco = temp_dir / "binary_probe_support_wrapper.hsaco"
+    wrapper_manifest = temp_dir / "binary_probe_support_wrapper.manifest.json"
+
+    lines = [
+        "#include <stdint.h>",
+        "#include <hip/hip_runtime.h>",
+        f'#include "{thunk_source}"',
+        "",
+    ]
+    for index, thunk in enumerate(thunks):
+        thunk_name = str(thunk.get("thunk", "") or "")
+        call_arguments = thunk.get("call_arguments", [])
+        if not thunk_name or not isinstance(call_arguments, list):
+            continue
+        arg_decls: list[str] = []
+        arg_names: list[str] = []
+        for arg_index, entry in enumerate(call_arguments):
+            if not isinstance(entry, dict):
+                continue
+            c_type = str(entry.get("c_type", "") or "").strip()
+            name = str(entry.get("name", "") or "").strip() or f"arg_{arg_index}"
+            if not c_type:
+                raise SystemExit(
+                    f"thunk manifest {thunk_manifest_path} is missing c_type for {thunk_name!r} argument {name!r}"
+                )
+            arg_decls.append(f"{c_type} {name}")
+            arg_names.append(name)
+        wrapper_name = f"__omniprobe_support_wrapper_{index}"
+        lines.extend(
+            [
+                f'extern "C" __global__ void {wrapper_name}({", ".join(arg_decls)}) {{',
+                f"  {thunk_name}({', '.join(arg_names)});",
+                "}",
+                "",
+            ]
+        )
+
+    wrapper_source.write_text("\n".join(lines), encoding="utf-8")
+
+    repo_root = tool_dir.parent.parent
+    hipcc = args.hipcc or str(Path("/opt/rocm/bin/hipcc"))
+    run(
+        [
+            hipcc,
+            "-x",
+            "hip",
+            "--offload-device-only",
+            "--no-gpu-bundle-output",
+            f"--offload-arch={arch}",
+            "-I",
+            str(repo_root / "external/dh_comms/include"),
+            "-I",
+            str(repo_root / "inc"),
+            "-I",
+            str(thunk_source.parent),
+            "-o",
+            str(wrapper_hsaco),
+            str(wrapper_source),
+        ]
+    )
+    run(
+        [
+            args.python,
+            str(tool_dir / "inspect_code_object.py"),
+            str(wrapper_hsaco),
+            "--output",
+            str(wrapper_manifest),
+        ]
+    )
+
+    manifest_payload = load_json(wrapper_manifest)
+    footprint: dict[str, int] = {}
+    footprint["abi_requirements"] = collect_wrapper_abi_requirements(manifest_payload)
+    for kernel in manifest_payload.get("kernels", {}).get("metadata", {}).get("kernels", []):
+        if not isinstance(kernel, dict):
+            continue
+        name = str(kernel.get("name", "") or "")
+        if not name.startswith("__omniprobe_support_wrapper_") and name != "__omniprobe_support_wrapper":
+            continue
+        footprint["total_sgprs"] = max(
+            int(footprint.get("total_sgprs", 0) or 0),
+            int(kernel.get("sgpr_count", 0) or 0),
+        )
+        footprint["total_vgprs"] = max(
+            int(footprint.get("total_vgprs", 0) or 0),
+            int(kernel.get("vgpr_count", 0) or 0),
+        )
+        footprint["private_segment_fixed_size"] = max(
+            int(footprint.get("private_segment_fixed_size", 0) or 0),
+            int(kernel.get("private_segment_fixed_size", 0) or 0),
+        )
+    return footprint
+
+
+REGISTER_PAIR_RE = re.compile(r"([vs])\[(\d+):(\d+)\]")
+REGISTER_SINGLE_RE = re.compile(r"([vs])(\d+)")
+
+ABI_SENSITIVE_RSRC2_BOOL_FIELDS = (
+    "enable_sgpr_workgroup_id_x",
+    "enable_sgpr_workgroup_id_y",
+    "enable_sgpr_workgroup_id_z",
+    "enable_sgpr_workgroup_info",
+)
+ABI_SENSITIVE_KERNEL_CODE_BOOL_FIELDS = (
+    "enable_sgpr_dispatch_ptr",
+    "enable_sgpr_queue_ptr",
+    "enable_sgpr_dispatch_id",
+)
+
+
+def descriptor_field_value(descriptor: dict, section: str, field: str) -> int:
+    section_obj = descriptor.get(section, {})
+    if not isinstance(section_obj, dict):
+        return 0
+    return int(section_obj.get(field, 0) or 0)
+
+
+def collect_wrapper_abi_requirements(manifest_payload: dict) -> dict[str, dict[str, int]]:
+    descriptors = manifest_payload.get("kernels", {}).get("descriptors", [])
+    requirements = {
+        "compute_pgm_rsrc2": {field: 0 for field in ABI_SENSITIVE_RSRC2_BOOL_FIELDS},
+        "kernel_code_properties": {field: 0 for field in ABI_SENSITIVE_KERNEL_CODE_BOOL_FIELDS},
+    }
+    requirements["compute_pgm_rsrc2"]["enable_vgpr_workitem_id"] = 0
+    for descriptor in descriptors:
+        if not isinstance(descriptor, dict):
+            continue
+        kernel_name = str(descriptor.get("kernel_name", "") or "")
+        if not kernel_name.startswith("__omniprobe_support_wrapper_") and kernel_name != "__omniprobe_support_wrapper":
+            continue
+        for field in ABI_SENSITIVE_RSRC2_BOOL_FIELDS:
+            requirements["compute_pgm_rsrc2"][field] = max(
+                requirements["compute_pgm_rsrc2"][field],
+                descriptor_field_value(descriptor, "compute_pgm_rsrc2", field),
+            )
+        requirements["compute_pgm_rsrc2"]["enable_vgpr_workitem_id"] = max(
+            requirements["compute_pgm_rsrc2"]["enable_vgpr_workitem_id"],
+            descriptor_field_value(descriptor, "compute_pgm_rsrc2", "enable_vgpr_workitem_id"),
+        )
+        for field in ABI_SENSITIVE_KERNEL_CODE_BOOL_FIELDS:
+            requirements["kernel_code_properties"][field] = max(
+                requirements["kernel_code_properties"][field],
+                descriptor_field_value(descriptor, "kernel_code_properties", field),
+            )
+    return requirements
+
+
+def validate_support_wrapper_abi_compatibility(
+    *,
+    source_descriptor: dict,
+    support_wrapper_footprint: dict[str, int],
+    clone_kernel: str,
+) -> None:
+    requirements = support_wrapper_footprint.get("abi_requirements")
+    if not isinstance(requirements, dict):
+        return
+
+    failures: list[str] = []
+    rsrc2_requirements = requirements.get("compute_pgm_rsrc2", {})
+    if isinstance(rsrc2_requirements, dict):
+        for field in ABI_SENSITIVE_RSRC2_BOOL_FIELDS:
+            required = int(rsrc2_requirements.get(field, 0) or 0)
+            available = descriptor_field_value(source_descriptor, "compute_pgm_rsrc2", field)
+            if required and not available:
+                failures.append(
+                    f"compute_pgm_rsrc2.{field} requires 1 but source descriptor provides 0"
+                )
+        required_workitem_id = int(rsrc2_requirements.get("enable_vgpr_workitem_id", 0) or 0)
+        available_workitem_id = descriptor_field_value(
+            source_descriptor, "compute_pgm_rsrc2", "enable_vgpr_workitem_id"
+        )
+        if required_workitem_id > available_workitem_id:
+            failures.append(
+                "compute_pgm_rsrc2.enable_vgpr_workitem_id requires "
+                f"{required_workitem_id} but source descriptor provides {available_workitem_id}"
+            )
+
+    kernel_code_requirements = requirements.get("kernel_code_properties", {})
+    if isinstance(kernel_code_requirements, dict):
+        for field in ABI_SENSITIVE_KERNEL_CODE_BOOL_FIELDS:
+            required = int(kernel_code_requirements.get(field, 0) or 0)
+            available = descriptor_field_value(source_descriptor, "kernel_code_properties", field)
+            if required and not available:
+                failures.append(
+                    f"kernel_code_properties.{field} requires 1 but source descriptor provides 0"
+                )
+
+    if failures:
+        failure_text = "; ".join(failures)
+        raise SystemExit(
+            "binary probe support wrapper requires initial-kernel ABI state that "
+            f"clone {clone_kernel!r} does not provide: {failure_text}. "
+            "This helper must be simplified or compiled against a contract that "
+            "does not request additional kernel-entry system registers."
+        )
+
+
+def resolve_llvm_objdump() -> str:
+    discovered = shutil.which("llvm-objdump")
+    if discovered:
+        return discovered
+    rocm_candidate = Path("/opt/rocm/llvm/bin/llvm-objdump")
+    if rocm_candidate.exists():
+        return str(rocm_candidate)
+    raise SystemExit("llvm-objdump is required to inspect binary probe support register usage")
+
+
+def inspect_amdgpu_object_register_footprint(object_path: Path) -> dict[str, int]:
+    command = [resolve_llvm_objdump(), "-d", str(object_path)]
+    completed = subprocess.run(command, check=True, capture_output=True, text=True)
+    max_vgpr = -1
+    max_sgpr = -1
+    for line in completed.stdout.splitlines():
+        for match in REGISTER_PAIR_RE.finditer(line):
+            kind = match.group(1)
+            end = int(match.group(3))
+            if kind == "v":
+                max_vgpr = max(max_vgpr, end)
+            else:
+                max_sgpr = max(max_sgpr, end)
+        for match in REGISTER_SINGLE_RE.finditer(line):
+            kind = match.group(1)
+            value = int(match.group(2))
+            if kind == "v":
+                max_vgpr = max(max_vgpr, value)
+            else:
+                max_sgpr = max(max_sgpr, value)
+    footprint: dict[str, int] = {}
+    if max_vgpr >= 0:
+        footprint["total_vgprs"] = max_vgpr + 1
+    if max_sgpr >= 0:
+        footprint["total_sgprs"] = max_sgpr + 1
+    return footprint
+
+
 def patch_output_metadata_note(output_path: Path, manifest: dict) -> None:
     metadata = manifest.get("kernels", {}).get("metadata", {})
     metadata_obj = metadata.get("object")
@@ -960,6 +1281,7 @@ def main() -> int:
                     or instrumentation_map.get("lifecycle_exit_stub", {})
                 )
                 total_probe_sgprs = int(instrumentation.get("total_sgprs", 0) or 0)
+                total_probe_vgprs = int(instrumentation.get("total_vgprs", 0) or 0)
                 private_segment_growth = int(instrumentation.get("private_segment_growth", 0) or 0)
                 lifecycle_when = str(instrumentation.get("when", "") or "")
                 instrumentation_mode = str(instrumentation.get("mode", "") or "")
@@ -979,6 +1301,8 @@ def main() -> int:
                             intent["nonleaf_private_segment_growth"] = private_segment_growth
                         if total_probe_sgprs:
                             intent["probe_total_sgprs"] = total_probe_sgprs
+                        if total_probe_vgprs:
+                            intent["probe_total_vgprs"] = total_probe_vgprs
                         break
                 if private_segment_growth:
                     apply_binary_probe_nonleaf_policy(
@@ -991,6 +1315,12 @@ def main() -> int:
                         manifest_payload,
                         clone_kernel=str(clone_result["clone_kernel"]),
                         total_sgprs=total_probe_sgprs,
+                    )
+                if total_probe_vgprs:
+                    apply_binary_probe_vgpr_policy(
+                        manifest_payload,
+                        clone_kernel=str(clone_result["clone_kernel"]),
+                        total_vgprs=total_probe_vgprs,
                     )
                 if asm_manifest_path != working_manifest_path and asm_manifest_path.exists():
                     asm_manifest_payload_updated = load_json(asm_manifest_path)
@@ -1006,6 +1336,13 @@ def main() -> int:
                             asm_manifest_payload_updated,
                             clone_kernel=str(clone_result["clone_kernel"]),
                             total_sgprs=total_probe_sgprs,
+                            refresh_rendered_metadata=False,
+                        )
+                    if total_probe_vgprs:
+                        apply_binary_probe_vgpr_policy(
+                            asm_manifest_payload_updated,
+                            clone_kernel=str(clone_result["clone_kernel"]),
+                            total_vgprs=total_probe_vgprs,
                             refresh_rendered_metadata=False,
                         )
                     asm_manifest_path.write_text(
@@ -1030,6 +1367,98 @@ def main() -> int:
                         output_path=support_object_path,
                         args=args,
                         tool_dir=tool_dir,
+                    )
+                    support_footprint = inspect_amdgpu_object_register_footprint(support_object_path)
+                    support_wrapper_footprint = inspect_probe_support_wrapper_footprint(
+                        thunk_manifest_path=Path(args.thunk_manifest).resolve(),
+                        arch=arch,
+                        temp_dir=temp_dir_path,
+                        args=args,
+                        tool_dir=tool_dir,
+                    )
+                    validate_support_wrapper_abi_compatibility(
+                        source_descriptor=find_descriptor(
+                            manifest_payload,
+                            str(clone_result["clone_descriptor"]),
+                        ),
+                        support_wrapper_footprint=support_wrapper_footprint,
+                        clone_kernel=str(clone_result["clone_kernel"]),
+                    )
+                    total_probe_sgprs = max(
+                        total_probe_sgprs,
+                        int(support_footprint.get("total_sgprs", 0) or 0),
+                        int(support_wrapper_footprint.get("total_sgprs", 0) or 0),
+                    )
+                    total_probe_vgprs = max(
+                        total_probe_vgprs,
+                        int(support_footprint.get("total_vgprs", 0) or 0),
+                        int(support_wrapper_footprint.get("total_vgprs", 0) or 0),
+                    )
+                    support_private_segment = int(
+                        support_wrapper_footprint.get("private_segment_fixed_size", 0) or 0
+                    )
+                    if support_private_segment:
+                        apply_binary_probe_nonleaf_policy(
+                            manifest_payload,
+                            clone_kernel=str(clone_result["clone_kernel"]),
+                            private_segment_growth=support_private_segment,
+                        )
+                    if total_probe_sgprs:
+                        apply_binary_probe_saved_sgpr_policy(
+                            manifest_payload,
+                            clone_kernel=str(clone_result["clone_kernel"]),
+                            total_sgprs=total_probe_sgprs,
+                        )
+                    if total_probe_vgprs:
+                        apply_binary_probe_vgpr_policy(
+                            manifest_payload,
+                            clone_kernel=str(clone_result["clone_kernel"]),
+                            total_vgprs=total_probe_vgprs,
+                        )
+                    if asm_manifest_path != working_manifest_path and asm_manifest_path.exists():
+                        asm_manifest_payload_updated = load_json(asm_manifest_path)
+                        if support_private_segment:
+                            apply_binary_probe_nonleaf_policy(
+                                asm_manifest_payload_updated,
+                                clone_kernel=str(clone_result["clone_kernel"]),
+                                private_segment_growth=support_private_segment,
+                                refresh_rendered_metadata=False,
+                            )
+                        if total_probe_sgprs:
+                            apply_binary_probe_saved_sgpr_policy(
+                                asm_manifest_payload_updated,
+                                clone_kernel=str(clone_result["clone_kernel"]),
+                                total_sgprs=total_probe_sgprs,
+                                refresh_rendered_metadata=False,
+                            )
+                        if total_probe_vgprs:
+                            apply_binary_probe_vgpr_policy(
+                                asm_manifest_payload_updated,
+                                clone_kernel=str(clone_result["clone_kernel"]),
+                                total_vgprs=total_probe_vgprs,
+                                refresh_rendered_metadata=False,
+                            )
+                        asm_manifest_path.write_text(
+                            json.dumps(asm_manifest_payload_updated, indent=2) + "\n",
+                            encoding="utf-8",
+                        )
+                    for intent in manifest_payload.get("clone_intents", []):
+                        if not isinstance(intent, dict):
+                            continue
+                        if intent.get("clone_kernel") != clone_result["clone_kernel"]:
+                            continue
+                        if total_probe_sgprs:
+                            intent["probe_total_sgprs"] = total_probe_sgprs
+                        if total_probe_vgprs:
+                            intent["probe_total_vgprs"] = total_probe_vgprs
+                        if support_private_segment:
+                            intent["nonleaf_private_segment_growth"] = int(
+                                intent.get("nonleaf_private_segment_growth", 0) or 0
+                            ) + support_private_segment
+                        break
+                    working_manifest_path.write_text(
+                        json.dumps(manifest_payload, indent=2) + "\n",
+                        encoding="utf-8",
                     )
                     extra_link_objects.append(support_object_path)
         elif args.add_noop_clone:

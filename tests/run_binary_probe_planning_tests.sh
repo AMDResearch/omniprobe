@@ -18,6 +18,7 @@ LIFECYCLE_SPEC="${SCRIPT_DIR}/probe_specs/kernel_timing_v1.yaml"
 MEMORY_SPEC="${SCRIPT_DIR}/probe_specs/memory_trace_v1.yaml"
 BASIC_BLOCK_SPEC="${SCRIPT_DIR}/probe_specs/basic_block_timing_v1.yaml"
 CALL_SPEC="${SCRIPT_DIR}/probe_specs/call_trace_v1.yaml"
+MEMORY_HELPER_SOURCE="${SCRIPT_DIR}/probe_specs/helpers/memory_trace.hip"
 
 echo ""
 echo "================================================================================"
@@ -203,6 +204,129 @@ PY
     fi
 else
     echo -e "  ${RED}✗ FAIL${NC} - Memory-op planner unexpectedly failed"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="binary_probe_plan_memory_op_local_and_global"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+MIXED_MEMORY_SPEC="$OUTPUT_DIR/${TEST_NAME}.yaml"
+MIXED_MEMORY_IR="$OUTPUT_DIR/${TEST_NAME}.ir.json"
+MIXED_MEMORY_BUNDLE_DIR="$OUTPUT_DIR/${TEST_NAME}_bundle"
+MIXED_MEMORY_BUNDLE_JSON="$MIXED_MEMORY_BUNDLE_DIR/generated_probe_bundle.json"
+MIXED_MEMORY_PLAN="$OUTPUT_DIR/${TEST_NAME}.json"
+rm -rf "$MIXED_MEMORY_BUNDLE_DIR"
+mkdir -p "$MIXED_MEMORY_BUNDLE_DIR"
+
+cat > "$MIXED_MEMORY_SPEC" <<YAML
+version: 1
+
+helpers:
+  source: ${MEMORY_HELPER_SOURCE}
+  namespace: omniprobe_user
+
+defaults:
+  emission: vector
+  lane_headers: true
+  state: none
+
+probes:
+  - id: mixed_memory_trace
+    target:
+      kernels: ["simple_kernel"]
+      match:
+        kind: isa_mnemonic
+        values: [ds_load, ds_store, global_store]
+    inject:
+      when: memory_op
+      helper: memory_trace_probe
+      contract: memory_op_v1
+    payload:
+      mode: vector
+      message: address
+    capture:
+      instruction: [address, bytes, addr_space, access_kind]
+YAML
+
+cat > "$MIXED_MEMORY_IR" <<'JSON'
+{
+  "input_file": "binary_probe_sites_local_global.s",
+  "arch": "gfx1100",
+  "functions": [
+    {
+      "name": "simple_kernel",
+      "start_address": 4096,
+      "instructions": [
+        {
+          "address": 4096,
+          "mnemonic": "ds_store_b32",
+          "operand_text": "v1, v0",
+          "operands": ["v1", "v0"],
+          "control_flow": "linear",
+          "encoding_words": ["0xd81a0000"]
+        },
+        {
+          "address": 4100,
+          "mnemonic": "ds_load_b32",
+          "operand_text": "v0, v1",
+          "operands": ["v0", "v1"],
+          "control_flow": "linear",
+          "encoding_words": ["0xd86c0000"]
+        },
+        {
+          "address": 4104,
+          "mnemonic": "global_store_b32",
+          "operand_text": "v2, v0, s[0:1]",
+          "operands": ["v2", "v0", "s[0:1]"],
+          "control_flow": "linear",
+          "encoding_words": ["0xdc7c0000"]
+        },
+        {
+          "address": 4108,
+          "mnemonic": "s_endpgm",
+          "operand_text": "",
+          "operands": [],
+          "control_flow": "return",
+          "encoding_words": ["0xbf810000"]
+        }
+      ]
+    }
+  ]
+}
+JSON
+
+if python3 "$PREPARE_BUNDLE" "$MIXED_MEMORY_SPEC" \
+    --output-dir "$MIXED_MEMORY_BUNDLE_DIR" \
+    --skip-compile > "$OUTPUT_DIR/${TEST_NAME}.bundle.out" && \
+   python3 "$PLANNER" "$FIXTURE_MANIFEST" \
+      --ir "$MIXED_MEMORY_IR" \
+      --probe-bundle "$MIXED_MEMORY_BUNDLE_JSON" \
+      --kernel simple_kernel \
+      --output "$MIXED_MEMORY_PLAN" > "$OUTPUT_DIR/${TEST_NAME}.out"; then
+    if python3 - "$MIXED_MEMORY_PLAN" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["supported"] is True
+assert payload["planned_site_count"] == 3
+assert payload["unsupported_site_count"] == 0
+kernel = payload["kernels"][0]
+sites = kernel["planned_sites"]
+assert [site["injection_point"]["instruction_address"] for site in sites] == [4096, 4100, 4104]
+assert [site["event_materialization"]["bytes"]["value"] for site in sites] == [4, 4, 4]
+assert [site["event_materialization"]["access_kind"]["value"] for site in sites] == ["store", "load", "store"]
+assert [site["event_materialization"]["address_space"]["value"] for site in sites] == ["local", "local", "global"]
+PY
+    then
+        echo -e "  ${GREEN}✓ PASS${NC} - Memory-op planning recognizes LDS and global instruction families with correct widths"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Mixed LDS/global memory-op plan content was incorrect"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Mixed LDS/global memory-op planner unexpectedly failed"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 

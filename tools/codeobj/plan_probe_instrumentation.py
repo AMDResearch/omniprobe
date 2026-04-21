@@ -16,6 +16,8 @@ MEMORY_ACCESS_PREFIXES = (
     ("flat_store", "store", "flat"),
     ("buffer_load", "load", "global"),
     ("buffer_store", "store", "global"),
+    ("ds_load", "load", "local"),
+    ("ds_store", "store", "local"),
     ("ds_read", "load", "local"),
     ("ds_write", "store", "local"),
     ("scratch_load", "load", "scratch"),
@@ -302,6 +304,20 @@ def memory_width_bytes(mnemonic: str) -> int | None:
             return 8 * int(digits)
     if "qword" in lowered:
         return 8
+    for marker in ("_b", "b"):
+        if marker not in lowered:
+            continue
+        suffix = lowered.split(marker, 1)[1]
+        digits = ""
+        for ch in suffix:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        if digits:
+            bits = int(digits)
+            if bits % 8 == 0:
+                return bits // 8
     return None
 
 

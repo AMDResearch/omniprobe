@@ -1330,6 +1330,12 @@ def reserve_mid_kernel_scalar_arguments(
     hidden_offset: int,
 ) -> dict[str, Any]:
     current_sgprs = allocated_sgpr_count(kernel_metadata=kernel_metadata, descriptor=descriptor)
+    # Mid-kernel binary stubs call out to separately-compiled helper thunks.
+    # If we place our caller-side restore state immediately after the source
+    # kernel's original SGPR allocation, the callee may legally reuse and
+    # clobber those SGPR numbers. Keep the stub's private SGPR workspace above
+    # a conservative floor so it does not overlap the helper's own footprint.
+    current_sgprs = max(current_sgprs, 64)
     staged_arguments: list[dict] = []
     next_sgpr = current_sgprs
     saved_kernarg_pair = [next_sgpr, next_sgpr + 1]
@@ -1385,7 +1391,14 @@ def reserve_mid_kernel_vgpr_spill(
     descriptor: dict | None,
     entry_analysis: dict[str, Any] | None,
     call_dword_count: int,
+    persistent_sgprs: list[int] | None = None,
 ) -> dict[str, Any]:
+    rsrc2 = (descriptor or {}).get("compute_pgm_rsrc2", {})
+    if not int(rsrc2.get("enable_private_segment", 0) or 0):
+        raise SystemExit(
+            "mid-kernel binary probe rewrite currently requires kernels that already enable "
+            "private-segment wave offsets; hidden-context-backed spill storage is not implemented"
+        )
     original_vgpr_count = descriptor_allocated_vgpr_count(descriptor)
     if original_vgpr_count is None:
         source_vgprs = list(range(max(0, call_dword_count)))
@@ -1400,6 +1413,15 @@ def reserve_mid_kernel_vgpr_spill(
         for reg in range(2, original_sgpr_count)
         if reg not in {30, 31}
     ]
+    if isinstance(persistent_sgprs, list):
+        for reg in persistent_sgprs:
+            if not isinstance(reg, int):
+                continue
+            if reg < 0 or reg in {30, 31}:
+                continue
+            if reg not in source_sgprs:
+                source_sgprs.append(reg)
+        source_sgprs.sort()
     private_segment_size = int((descriptor or {}).get("private_segment_fixed_size", 0) or 0)
     if private_segment_size < 0:
         raise SystemExit("kernel private-segment size cannot be negative")
@@ -1547,7 +1569,12 @@ def emit_mid_kernel_private_segment_address_setup(
                     ),
                 ]
             )
-    elif private_pattern_class in {None, "setreg_flat_scratch_init", "flat_scratch_alias_init", "scalar_pair_update_only"}:
+    elif private_pattern_class in {"setreg_flat_scratch_init", "flat_scratch_alias_init", "scalar_pair_update_only"}:
+        # These patterns already materialize the wave-private scratch resource
+        # in s0:s1 at the insertion point, so reapplying the wave offset would
+        # double-bias the spill address.
+        return instructions
+    elif private_pattern_class is None:
         effective_offset_sgpr = private_offset_source_sgpr
         if isinstance(private_offset_restore_sgpr, int):
             effective_offset_sgpr = private_offset_restore_sgpr
@@ -1898,6 +1925,10 @@ def memory_address_source_vgprs(instruction: dict) -> list[int]:
         operand_index = 0
     elif mnemonic.startswith(("flat_load", "global_load")):
         operand_index = 1
+    elif mnemonic.startswith(("ds_store", "ds_write")):
+        operand_index = 0
+    elif mnemonic.startswith(("ds_load", "ds_read")):
+        operand_index = 1
     else:
         raise SystemExit(
             "binary memory_op rewrite does not yet support address extraction for instruction "
@@ -1910,9 +1941,9 @@ def memory_address_source_vgprs(instruction: dict) -> list[int]:
         )
 
     address_vgprs = parse_vgpr_operand(str(operands[operand_index]))
-    if address_vgprs is None or len(address_vgprs) != 2:
+    if address_vgprs is None or len(address_vgprs) not in {1, 2}:
         raise SystemExit(
-            f"memory_op instruction {mnemonic!r} did not expose a 64-bit VGPR address operand: {operands[operand_index]!r}"
+            f"memory_op instruction {mnemonic!r} did not expose a supported VGPR address operand: {operands[operand_index]!r}"
         )
     return address_vgprs
 
@@ -1939,22 +1970,32 @@ def emit_memory_event_arguments(
     if len(address_vgprs) != 2:
         raise SystemExit(f"memory_op address must occupy two VGPRs, got {address_vgprs!r}")
     source_address_vgprs = memory_address_source_vgprs(instruction)
-    instructions.extend(
-        [
-            make_instruction(
-                anchor_address,
-                "v_mov_b32_e32",
-                f"v{address_vgprs[0]}, v{source_address_vgprs[0]}",
-                [f"v{address_vgprs[0]}", f"v{source_address_vgprs[0]}"],
-            ),
+    instructions.append(
+        make_instruction(
+            anchor_address,
+            "v_mov_b32_e32",
+            f"v{address_vgprs[0]}, v{source_address_vgprs[0]}",
+            [f"v{address_vgprs[0]}", f"v{source_address_vgprs[0]}"],
+        )
+    )
+    if len(source_address_vgprs) == 2:
+        instructions.append(
             make_instruction(
                 anchor_address,
                 "v_mov_b32_e32",
                 f"v{address_vgprs[1]}, v{source_address_vgprs[1]}",
                 [f"v{address_vgprs[1]}", f"v{source_address_vgprs[1]}"],
-            ),
-        ]
-    )
+            )
+        )
+    else:
+        instructions.append(
+            make_instruction(
+                anchor_address,
+                "v_mov_b32_e32",
+                f"v{address_vgprs[1]}, 0",
+                [f"v{address_vgprs[1]}", "0"],
+            )
+        )
 
     bytes_materialization = event_materialization.get("bytes", {})
     if (
@@ -2275,11 +2316,14 @@ def inject_memory_stubs(
         scalar_plan["total_sgprs"] = int(builtin_snapshot_plan["total_sgprs"])
     else:
         builtin_liveins = None
+    persistent_sgprs = list(scalar_plan["saved_kernarg_pair"])
+    persistent_sgprs.extend(int(value) for value in builtin_snapshot_plan["saved_sources"].values())
     spill_plan = reserve_mid_kernel_vgpr_spill(
         kernel_metadata=kernel_metadata,
         descriptor=descriptor,
         entry_analysis=entry_analysis,
         call_dword_count=call_layout["total_dwords"],
+        persistent_sgprs=persistent_sgprs,
     )
 
     original_instructions = function.get("instructions", [])
@@ -2684,11 +2728,14 @@ def inject_basic_block_stubs(
         scalar_plan["total_sgprs"] = int(builtin_snapshot_plan["total_sgprs"])
     else:
         builtin_liveins = None
+    persistent_sgprs = list(scalar_plan["saved_kernarg_pair"])
+    persistent_sgprs.extend(int(value) for value in builtin_snapshot_plan["saved_sources"].values())
     spill_plan = reserve_mid_kernel_vgpr_spill(
         kernel_metadata=kernel_metadata,
         descriptor=descriptor,
         entry_analysis=entry_analysis,
         call_dword_count=call_layout["total_dwords"],
+        persistent_sgprs=persistent_sgprs,
     )
 
     original_instructions = function.get("instructions", [])
