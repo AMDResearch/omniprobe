@@ -266,8 +266,10 @@ void wait_for_queue_slot(const hsa_queue_t* queue, uint64_t write_index) {
 }
 
 void dispatch_kernel(hsa_queue_t* queue, const SymbolInfo& symbol,
-                     const void* kernarg, size_t element_count,
-                     uint16_t workgroup_size_x) {
+                     const void* kernarg, uint32_t grid_size_x,
+                     uint32_t grid_size_y, uint32_t grid_size_z,
+                     uint16_t workgroup_size_x, uint16_t workgroup_size_y,
+                     uint16_t workgroup_size_z) {
   hsa_signal_t completion{};
   check(hsa_signal_create(1, 0, nullptr, &completion), "hsa_signal_create");
 
@@ -279,13 +281,16 @@ void dispatch_kernel(hsa_queue_t* queue, const SymbolInfo& symbol,
                  packet_id;
   std::memset(packet, 0, sizeof(*packet));
 
+  const uint16_t dimensions =
+      grid_size_z > 1 ? 3 : (grid_size_y > 1 ? 2 : 1);
   packet->setup = 1u << HSA_KERNEL_DISPATCH_PACKET_SETUP_DIMENSIONS;
+  packet->setup = dimensions << HSA_KERNEL_DISPATCH_PACKET_SETUP_DIMENSIONS;
   packet->workgroup_size_x = workgroup_size_x;
-  packet->workgroup_size_y = 1;
-  packet->workgroup_size_z = 1;
-  packet->grid_size_x = static_cast<uint32_t>(element_count);
-  packet->grid_size_y = 1;
-  packet->grid_size_z = 1;
+  packet->workgroup_size_y = workgroup_size_y;
+  packet->workgroup_size_z = workgroup_size_z;
+  packet->grid_size_x = grid_size_x;
+  packet->grid_size_y = grid_size_y;
+  packet->grid_size_z = grid_size_z;
   packet->private_segment_size = symbol.private_segment_size;
   packet->group_segment_size = symbol.group_segment_size;
   packet->kernel_object = symbol.kernel_object;
@@ -311,21 +316,38 @@ void dispatch_kernel(hsa_queue_t* queue, const SymbolInfo& symbol,
   check(hsa_signal_destroy(completion), "hsa_signal_destroy");
 }
 
-void populate_opencl_hidden_args(std::vector<std::byte>& kernarg, size_t element_count,
-                                 uint16_t workgroup_size_x) {
+uint16_t derive_grid_dims(uint32_t grid_size_y, uint32_t grid_size_z) {
+  if (grid_size_z > 1) {
+    return 3;
+  }
+  if (grid_size_y > 1) {
+    return 2;
+  }
+  return 1;
+}
+
+void populate_opencl_hidden_args(std::vector<std::byte>& kernarg, uint32_t grid_size_x,
+                                 uint32_t grid_size_y, uint32_t grid_size_z,
+                                 uint16_t workgroup_size_x,
+                                 uint16_t workgroup_size_y,
+                                 uint16_t workgroup_size_z) {
   const uint32_t block_count_x =
-      static_cast<uint32_t>(element_count / workgroup_size_x);
+      workgroup_size_x ? (grid_size_x / workgroup_size_x) : 0;
   const uint16_t remainder_x =
-      static_cast<uint16_t>(element_count % workgroup_size_x);
-  const uint32_t block_count_y = 1;
-  const uint32_t block_count_z = 1;
+      workgroup_size_x ? static_cast<uint16_t>(grid_size_x % workgroup_size_x) : 0;
+  const uint32_t block_count_y =
+      workgroup_size_y ? (grid_size_y / workgroup_size_y) : 0;
+  const uint32_t block_count_z =
+      workgroup_size_z ? (grid_size_z / workgroup_size_z) : 0;
   const uint16_t group_size_x = workgroup_size_x;
-  const uint16_t group_size_y = 1;
-  const uint16_t group_size_z = 1;
-  const uint16_t remainder_y = 1;
-  const uint16_t remainder_z = 1;
+  const uint16_t group_size_y = workgroup_size_y;
+  const uint16_t group_size_z = workgroup_size_z;
+  const uint16_t remainder_y =
+      workgroup_size_y ? static_cast<uint16_t>(grid_size_y % workgroup_size_y) : 0;
+  const uint16_t remainder_z =
+      workgroup_size_z ? static_cast<uint16_t>(grid_size_z % workgroup_size_z) : 0;
   const uint64_t global_offset = 0;
-  const uint16_t grid_dims = 1;
+  const uint16_t grid_dims = derive_grid_dims(grid_size_y, grid_size_z);
 
   write_scalar(kernarg, kHiddenBlockCountXOffset, block_count_x);
   write_scalar(kernarg, kHiddenBlockCountYOffset, block_count_y);
@@ -349,7 +371,9 @@ int main(int argc, char** argv) {
     std::cerr << "usage: " << argv[0]
               << " <hsaco> <kernel-symbol> <index|zero|first-block-only|untouched>"
               << " [--hidden-ctx-offset <bytes> [--populate-original-kernarg-pointer]"
-              << " [--populate-workgroup-id-x <value>] [--single-workgroup]]"
+              << " [--populate-workgroup-id-x <value>] [--single-workgroup]"
+              << " [--single-wave]"
+              << " [--workgroup-size-x <n>] [--workgroup-size-y <n>] [--workgroup-size-z <n>]]"
               << std::endl;
     return 2;
   }
@@ -368,6 +392,8 @@ int main(int argc, char** argv) {
   std::vector<std::pair<size_t, uint32_t>> verify_hidden_u32_checks;
   std::vector<size_t> verify_hidden_u32_nonzero_checks;
   uint16_t workgroup_size_x = static_cast<uint16_t>(kDefaultWorkgroupSize);
+  uint16_t workgroup_size_y = 1;
+  uint16_t workgroup_size_z = 1;
   for (int index = 4; index < argc; ++index) {
     const std::string arg = argv[index];
     if (arg == "--hidden-ctx-offset") {
@@ -398,6 +424,30 @@ int main(int argc, char** argv) {
     }
     if (arg == "--single-wave") {
       single_wave = true;
+      continue;
+    }
+    if (arg == "--workgroup-size-x") {
+      if (index + 1 >= argc) {
+        std::cerr << "missing value for --workgroup-size-x" << std::endl;
+        return 2;
+      }
+      workgroup_size_x = static_cast<uint16_t>(std::stoul(argv[++index]));
+      continue;
+    }
+    if (arg == "--workgroup-size-y") {
+      if (index + 1 >= argc) {
+        std::cerr << "missing value for --workgroup-size-y" << std::endl;
+        return 2;
+      }
+      workgroup_size_y = static_cast<uint16_t>(std::stoul(argv[++index]));
+      continue;
+    }
+    if (arg == "--workgroup-size-z") {
+      if (index + 1 >= argc) {
+        std::cerr << "missing value for --workgroup-size-z" << std::endl;
+        return 2;
+      }
+      workgroup_size_z = static_cast<uint16_t>(std::stoul(argv[++index]));
       continue;
     }
     if (arg == "--verify-hidden-u32") {
@@ -437,9 +487,14 @@ int main(int argc, char** argv) {
   if (single_wave) {
     single_workgroup = true;
     workgroup_size_x = 32;
+    workgroup_size_y = 1;
+    workgroup_size_z = 1;
   }
+  const uint32_t grid_size_x = single_workgroup ? workgroup_size_x : static_cast<uint32_t>(kDefaultElementCount);
+  const uint32_t grid_size_y = single_workgroup ? workgroup_size_y : 1;
+  const uint32_t grid_size_z = single_workgroup ? workgroup_size_z : 1;
   const size_t element_count =
-      single_workgroup ? static_cast<size_t>(workgroup_size_x) : kDefaultElementCount;
+      static_cast<size_t>(grid_size_x) * static_cast<size_t>(grid_size_y) * static_cast<size_t>(grid_size_z);
 
   check(hsa_init(), "hsa_init");
 
@@ -521,7 +576,9 @@ int main(int argc, char** argv) {
   const size_t size_value = host_data.size();
   std::memcpy(kernarg.data(), &device_data, sizeof(device_data));
   std::memcpy(kernarg.data() + sizeof(device_data), &size_value, sizeof(size_value));
-  populate_opencl_hidden_args(kernarg, element_count, workgroup_size_x);
+  populate_opencl_hidden_args(
+      kernarg, grid_size_x, grid_size_y, grid_size_z,
+      workgroup_size_x, workgroup_size_y, workgroup_size_z);
   if (use_hidden_ctx) {
     if (hidden_ctx_offset + sizeof(void*) > kernarg.size()) {
       std::cerr << "hidden ctx offset exceeds kernarg size" << std::endl;
@@ -550,7 +607,9 @@ int main(int argc, char** argv) {
   check(hsa_queue_create(agents.gpu, kQueueSize, HSA_QUEUE_TYPE_SINGLE, nullptr,
                          nullptr, UINT32_MAX, UINT32_MAX, &queue),
         "hsa_queue_create");
-  dispatch_kernel(queue, symbol, kernarg_buffer, element_count, workgroup_size_x);
+  dispatch_kernel(queue, symbol, kernarg_buffer,
+                  grid_size_x, grid_size_y, grid_size_z,
+                  workgroup_size_x, workgroup_size_y, workgroup_size_z);
 
   check(hsa_memory_copy(host_data.data(), device_data,
                         host_data.size() * sizeof(host_data[0])),

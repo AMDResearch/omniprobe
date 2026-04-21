@@ -174,6 +174,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--add-entry-wrapper-workitem-vgpr-capture-restore-proof",
+        action="store_true",
+        help=(
+            "Extend the entry-wrapper proof by spilling the original entry "
+            "workitem VGPR state into a grown private-segment tail, clobbering "
+            "that state in the wrapper, restoring it from the private tail, "
+            "and then branching to the original body. This is a fail-closed "
+            "proof path for kernels whose bodies actually consume the entry "
+            "workitem VGPR contract."
+        ),
+    )
+    parser.add_argument(
         "--python",
         default=sys.executable,
         help="Python interpreter to use for helper tools",
@@ -835,6 +847,7 @@ def build_entry_wrapper_ir(
     body_name: str,
     start_address: int,
     scratch_pair: tuple[int, int],
+    workitem_spill_restore_plan: dict | None = None,
     hidden_ctx_offset: int | None = None,
     hidden_ctx_source_pair: tuple[int, int] | None = None,
     hidden_handoff_field_loads: list[dict] | None = None,
@@ -844,6 +857,267 @@ def build_entry_wrapper_ir(
     scratch_lo, scratch_hi = scratch_pair
     next_address = start_address
     instructions = []
+
+    if isinstance(workitem_spill_restore_plan, dict):
+        source_vgprs = [int(value) for value in workitem_spill_restore_plan.get("source_vgprs", [])]
+        spill_offset = int(workitem_spill_restore_plan.get("spill_offset", 0) or 0)
+        save_pair = workitem_spill_restore_plan.get("save_pair")
+        if not (
+            isinstance(save_pair, list)
+            and len(save_pair) == 2
+            and all(isinstance(value, int) for value in save_pair)
+        ):
+            raise SystemExit("entry wrapper workitem spill/restore requires a save_pair")
+        save_lo, save_hi = int(save_pair[0]), int(save_pair[1])
+        soffset_sgpr = workitem_spill_restore_plan.get("soffset_sgpr")
+        if not isinstance(soffset_sgpr, int):
+            raise SystemExit("entry wrapper workitem spill/restore requires soffset_sgpr")
+        private_pattern_class = str(
+            workitem_spill_restore_plan.get("private_segment_pattern_class", "") or ""
+        )
+        private_offset_source_sgpr = workitem_spill_restore_plan.get("private_segment_offset_source_sgpr")
+        if private_pattern_class in {
+            "",
+            "setreg_flat_scratch_init",
+            "flat_scratch_alias_init",
+            "scalar_pair_update_only",
+            "None",
+        }:
+            if not isinstance(private_offset_source_sgpr, int):
+                raise SystemExit(
+                    "entry wrapper workitem spill/restore requires a private segment offset SGPR"
+                )
+            def emit_private_address_setup() -> None:
+                nonlocal next_address
+                instructions.extend(
+                    [
+                        {
+                            "address": next_address,
+                            "mnemonic": "s_add_u32",
+                            "operand_text": f"s0, s0, s{private_offset_source_sgpr}",
+                            "operands": ["s0", "s0", f"s{private_offset_source_sgpr}"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 4,
+                            "mnemonic": "s_addc_u32",
+                            "operand_text": "s1, s1, 0",
+                            "operands": ["s1", "s1", "0"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                    ]
+                )
+                next_address += 8
+        elif private_pattern_class == "src_private_base":
+            def emit_private_address_setup() -> None:
+                nonlocal next_address
+                instructions.append(
+                    {
+                        "address": next_address,
+                        "mnemonic": "s_mov_b64",
+                        "operand_text": "s[0:1], src_private_base",
+                        "operands": ["s[0:1]", "src_private_base"],
+                        "control_flow": "linear",
+                        "target": None,
+                        "is_padding": False,
+                    }
+                )
+                next_address += 4
+                if isinstance(private_offset_source_sgpr, int):
+                    instructions.extend(
+                        [
+                            {
+                                "address": next_address,
+                                "mnemonic": "s_add_u32",
+                                "operand_text": f"s0, s0, s{private_offset_source_sgpr}",
+                                "operands": ["s0", "s0", f"s{private_offset_source_sgpr}"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 4,
+                                "mnemonic": "s_addc_u32",
+                                "operand_text": "s1, s1, 0",
+                                "operands": ["s1", "s1", "0"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                        ]
+                    )
+                    next_address += 8
+        else:
+            raise SystemExit(
+                f"entry wrapper workitem spill/restore does not support private pattern {private_pattern_class!r}"
+            )
+
+        if source_vgprs:
+            instructions.extend(
+                [
+                    {
+                        "address": next_address,
+                        "mnemonic": "s_mov_b32",
+                        "operand_text": f"s{save_lo}, s0",
+                        "operands": [f"s{save_lo}", "s0"],
+                        "control_flow": "linear",
+                        "target": None,
+                        "is_padding": False,
+                    },
+                    {
+                        "address": next_address + 4,
+                        "mnemonic": "s_mov_b32",
+                        "operand_text": f"s{save_hi}, s1",
+                        "operands": [f"s{save_hi}", "s1"],
+                        "control_flow": "linear",
+                        "target": None,
+                        "is_padding": False,
+                    },
+                ]
+            )
+            next_address += 8
+            emit_private_address_setup()
+            instructions.append(
+                {
+                    "address": next_address,
+                    "mnemonic": "s_mov_b32",
+                    "operand_text": f"s{soffset_sgpr}, 0",
+                    "operands": [f"s{soffset_sgpr}", "0"],
+                    "control_flow": "linear",
+                    "target": None,
+                    "is_padding": False,
+                }
+            )
+            next_address += 4
+            for index, source_vgpr in enumerate(source_vgprs):
+                current_offset = spill_offset + (index * 4)
+                instructions.append(
+                    {
+                        "address": next_address,
+                        "mnemonic": "buffer_store_dword",
+                        "operand_text": (
+                            f"v{source_vgpr}, off, s[0:3], s{soffset_sgpr} offset:{current_offset}"
+                        ),
+                        "operands": [
+                            f"v{source_vgpr}",
+                            "off",
+                            "s[0:3]",
+                            f"s{soffset_sgpr}",
+                            f"offset:{current_offset}",
+                        ],
+                        "control_flow": "linear",
+                        "target": None,
+                        "is_padding": False,
+                    }
+                )
+                next_address += 8
+            instructions.extend(
+                [
+                    {
+                        "address": next_address,
+                        "mnemonic": "s_mov_b32",
+                        "operand_text": "s0, s{}".format(save_lo),
+                        "operands": ["s0", f"s{save_lo}"],
+                        "control_flow": "linear",
+                        "target": None,
+                        "is_padding": False,
+                    },
+                    {
+                        "address": next_address + 4,
+                        "mnemonic": "s_mov_b32",
+                        "operand_text": "s1, s{}".format(save_hi),
+                        "operands": ["s1", f"s{save_hi}"],
+                        "control_flow": "linear",
+                        "target": None,
+                        "is_padding": False,
+                    },
+                ]
+            )
+            next_address += 8
+            for source_vgpr in source_vgprs:
+                instructions.append(
+                    {
+                        "address": next_address,
+                        "mnemonic": "v_mov_b32_e32",
+                        "operand_text": f"v{source_vgpr}, 0",
+                        "operands": [f"v{source_vgpr}", "0"],
+                        "control_flow": "linear",
+                        "target": None,
+                        "is_padding": False,
+                    }
+                )
+                next_address += 4
+            emit_private_address_setup()
+            instructions.append(
+                {
+                    "address": next_address,
+                    "mnemonic": "s_mov_b32",
+                    "operand_text": f"s{soffset_sgpr}, 0",
+                    "operands": [f"s{soffset_sgpr}", "0"],
+                    "control_flow": "linear",
+                    "target": None,
+                    "is_padding": False,
+                }
+            )
+            next_address += 4
+            for index, source_vgpr in enumerate(source_vgprs):
+                current_offset = spill_offset + (index * 4)
+                instructions.append(
+                    {
+                        "address": next_address,
+                        "mnemonic": "buffer_load_dword",
+                        "operand_text": (
+                            f"v{source_vgpr}, off, s[0:3], s{soffset_sgpr} offset:{current_offset}"
+                        ),
+                        "operands": [
+                            f"v{source_vgpr}",
+                            "off",
+                            "s[0:3]",
+                            f"s{soffset_sgpr}",
+                            f"offset:{current_offset}",
+                        ],
+                        "control_flow": "linear",
+                        "target": None,
+                        "is_padding": False,
+                    }
+                )
+                next_address += 8
+            instructions.extend(
+                [
+                    {
+                        "address": next_address,
+                        "mnemonic": "s_waitcnt",
+                        "operand_text": "vmcnt(0)",
+                        "operands": ["vmcnt(0)"],
+                        "control_flow": "linear",
+                        "target": None,
+                        "is_padding": False,
+                    },
+                    {
+                        "address": next_address + 4,
+                        "mnemonic": "s_mov_b32",
+                        "operand_text": "s0, s{}".format(save_lo),
+                        "operands": ["s0", f"s{save_lo}"],
+                        "control_flow": "linear",
+                        "target": None,
+                        "is_padding": False,
+                    },
+                    {
+                        "address": next_address + 8,
+                        "mnemonic": "s_mov_b32",
+                        "operand_text": "s1, s{}".format(save_hi),
+                        "operands": ["s1", f"s{save_hi}"],
+                        "control_flow": "linear",
+                        "target": None,
+                        "is_padding": False,
+                    },
+                ]
+            )
+            next_address += 12
 
     if hidden_ctx_offset is not None:
         if hidden_ctx_source_pair is None:
@@ -1552,6 +1826,93 @@ def build_entry_wrapper_handoff_recipe(
     }
 
 
+def infer_private_segment_offset_source_sgpr(analysis: dict) -> int | None:
+    private_materialization = analysis.get("observed_private_segment_materialization")
+    if not isinstance(private_materialization, dict):
+        return None
+    details = private_materialization.get("details", {})
+    if not isinstance(details, dict):
+        return None
+    pair_updates = details.get("pair_updates", [])
+    if not isinstance(pair_updates, list):
+        return None
+    first_pair_update = next(
+        (
+            entry
+            for entry in pair_updates
+            if isinstance(entry, dict)
+            and entry.get("pair") == [0, 1]
+            and isinstance(entry.get("offset_sgpr"), int)
+        ),
+        None,
+    )
+    if first_pair_update is None:
+        return None
+    return int(first_pair_update["offset_sgpr"])
+
+
+def build_entry_wrapper_workitem_spill_restore_plan(
+    *,
+    analysis: dict,
+    descriptor: dict,
+    save_pair: tuple[int, int],
+    branch_pair: tuple[int, int],
+) -> dict:
+    workitem_vgpr_count = int(analysis.get("entry_workitem_vgpr_count", 0) or 0)
+    if workitem_vgpr_count <= 0:
+        raise SystemExit("entry wrapper workitem proof requires entry workitem VGPRs")
+    workitem_pattern = analysis.get("observed_workitem_id_materialization")
+    pattern_class = (
+        str(workitem_pattern.get("pattern_class"))
+        if isinstance(workitem_pattern, dict)
+        else None
+    )
+    if pattern_class == "packed_v0_10_10_10_unpack":
+        source_vgprs = [0]
+    elif pattern_class == "single_vgpr_workitem_id":
+        source_vgprs = [0]
+    elif pattern_class in {None, "direct_vgpr_xyz"}:
+        source_vgprs = list(range(workitem_vgpr_count))
+    else:
+        raise SystemExit(
+            "entry wrapper workitem proof does not support workitem materialization "
+            f"pattern {pattern_class!r}"
+        )
+
+    private_pattern_class = (
+        (analysis.get("observed_private_segment_materialization", {}) or {}).get("pattern_class")
+    )
+    if private_pattern_class not in {
+        "setreg_flat_scratch_init",
+        "flat_scratch_alias_init",
+        "src_private_base",
+        "scalar_pair_update_only",
+        None,
+    }:
+        raise SystemExit(
+            "entry wrapper workitem proof does not support private materialization "
+            f"pattern {private_pattern_class!r}"
+        )
+
+    private_segment_size = int(descriptor.get("private_segment_fixed_size", 0) or 0)
+    if private_segment_size < 0:
+        raise SystemExit("kernel private-segment size cannot be negative")
+    spill_bytes = max(0, len(source_vgprs) * 4)
+    private_segment_growth = align_up(spill_bytes, 16)
+    return {
+        "source_vgprs": source_vgprs,
+        "pattern_class": pattern_class,
+        "spill_offset": private_segment_size,
+        "spill_bytes": spill_bytes,
+        "private_segment_growth": private_segment_growth,
+        "private_segment_pattern_class": private_pattern_class,
+        "private_segment_offset_source_sgpr": infer_private_segment_offset_source_sgpr(analysis),
+        "save_pair": [int(save_pair[0]), int(save_pair[1])],
+        "branch_pair": [int(branch_pair[0]), int(branch_pair[1])],
+        "soffset_sgpr": int(branch_pair[0]),
+    }
+
+
 def validate_entry_wrapper_proof_preconditions(
     manifest: dict,
     ir: dict,
@@ -1662,6 +2023,7 @@ def add_entry_wrapper_proof_intent(
     restore_workgroup_x_from_handoff: bool = False,
     restore_workgroup_xyz_from_handoff: bool = False,
     restore_all_system_sgprs_from_handoff: bool = False,
+    capture_restore_entry_workitem_vgprs: bool = False,
     capture_workgroup_x_to_handoff: bool = False,
     capture_workgroup_xyz_to_handoff: bool = False,
     capture_all_system_sgprs_to_handoff: bool = False,
@@ -1678,6 +2040,36 @@ def add_entry_wrapper_proof_intent(
         ir,
         kernel_name=kernel_name,
     )
+    branch_scratch_pair = scratch_pair
+    workitem_spill_restore_plan = None
+    if capture_restore_entry_workitem_vgprs:
+        pair_candidates = entry_analysis.get("entry_dead_sgpr_pair_candidates", [])
+        if not isinstance(pair_candidates, list) or len(pair_candidates) < 2:
+            raise SystemExit(
+                "entry-wrapper workitem proof requires at least two analyzed dead SGPR pair candidates"
+            )
+        secondary_pair = pair_candidates[1].get("pair", [])
+        if not (
+            isinstance(secondary_pair, list)
+            and len(secondary_pair) == 2
+            and all(isinstance(value, int) for value in secondary_pair)
+        ):
+            raise SystemExit("entry-wrapper workitem proof secondary scratch pair was malformed")
+        branch_scratch_pair = (int(secondary_pair[0]), int(secondary_pair[1]))
+        entry_analysis["entry_wrapper_secondary_scratch_pair"] = list(branch_scratch_pair)
+        workitem_spill_restore_plan = build_entry_wrapper_workitem_spill_restore_plan(
+            analysis=entry_analysis,
+            descriptor=source_descriptor,
+            save_pair=scratch_pair,
+            branch_pair=branch_scratch_pair,
+        )
+        apply_binary_probe_nonleaf_policy(
+            manifest,
+            clone_kernel=kernel_name,
+            private_segment_growth=int(
+                workitem_spill_restore_plan.get("private_segment_growth", 0) or 0
+            ),
+        )
     body_name = f"{ENTRY_WRAPPER_PROOF_BODY_PREFIX}{kernel_name}"
     if any(function.get("name") == body_name for function in ir.get("functions", [])):
         raise SystemExit(f"entry-wrapper proof body name {body_name!r} already exists")
@@ -1886,7 +2278,8 @@ def add_entry_wrapper_proof_intent(
         wrapper_name=kernel_name,
         body_name=body_name,
         start_address=wrapper_address,
-        scratch_pair=scratch_pair,
+        scratch_pair=branch_scratch_pair,
+        workitem_spill_restore_plan=workitem_spill_restore_plan,
         hidden_ctx_offset=hidden_ctx_offset,
         hidden_ctx_source_pair=(
             (int(kernarg_base_pair[0]), int(kernarg_base_pair[1]))
@@ -1943,6 +2336,9 @@ def add_entry_wrapper_proof_intent(
 
     return {
         "mode": (
+            "entry-wrapper-workitem-vgpr-capture-restore-proof"
+            if capture_restore_entry_workitem_vgprs
+            else (
             "entry-wrapper-system-sgpr-capture-restore-proof"
             if restore_all_system_sgprs_from_handoff
             else (
@@ -1966,6 +2362,7 @@ def add_entry_wrapper_proof_intent(
             )
             )
             )
+            )
         ),
         "source_kernel": kernel_name,
         "body_symbol": body_name,
@@ -1973,7 +2370,7 @@ def add_entry_wrapper_proof_intent(
         "wrapper_start_address": wrapper_address,
         "wrapper_size": int(wrapper_function.get("end_address", wrapper_address) - wrapper_address),
         "descriptor": str(source_descriptor.get("name") or f"{kernel_name}.kd"),
-        "scratch_pair": list(scratch_pair),
+        "scratch_pair": list(branch_scratch_pair),
         "supported_class": entry_analysis.get("entry_wrapper_supported_class"),
         "entry_handoff_recipe": handoff_recipe,
         "preconditions": {
@@ -1981,7 +2378,29 @@ def add_entry_wrapper_proof_intent(
             "entry_overwrites": entry_analysis.get("entry_wrapper_entry_overwrites", []),
             "entry_livein_sgprs": entry_analysis.get("entry_livein_sgprs", []),
             "original_entry_start_address": int(original_function.get("start_address", 0) or 0),
+            "secondary_scratch_pair": entry_analysis.get("entry_wrapper_secondary_scratch_pair"),
         },
+        "workitem_spill_restore": (
+            {
+                "enabled": True,
+                "source_vgprs": list(workitem_spill_restore_plan.get("source_vgprs", [])),
+                "spill_offset": int(workitem_spill_restore_plan.get("spill_offset", 0) or 0),
+                "spill_bytes": int(workitem_spill_restore_plan.get("spill_bytes", 0) or 0),
+                "private_segment_growth": int(
+                    workitem_spill_restore_plan.get("private_segment_growth", 0) or 0
+                ),
+                "save_pair": list(workitem_spill_restore_plan.get("save_pair", [])),
+                "soffset_sgpr": int(workitem_spill_restore_plan.get("soffset_sgpr", 0) or 0),
+                "private_segment_pattern_class": workitem_spill_restore_plan.get(
+                    "private_segment_pattern_class"
+                ),
+                "private_segment_offset_source_sgpr": workitem_spill_restore_plan.get(
+                    "private_segment_offset_source_sgpr"
+                ),
+            }
+            if workitem_spill_restore_plan is not None
+            else {"enabled": False}
+        ),
         "wrapper_hidden_handoff": (
             {
                 "enabled": True,
@@ -2636,6 +3055,7 @@ def main() -> int:
             bool(args.add_entry_wrapper_workgroup_xyz_capture_proof),
             bool(args.add_entry_wrapper_workgroup_xyz_capture_restore_proof),
             bool(args.add_entry_wrapper_system_sgpr_capture_restore_proof),
+            bool(args.add_entry_wrapper_workitem_vgpr_capture_restore_proof),
         ]
         if sum(1 for enabled in mutation_modes if enabled) > 1:
             raise SystemExit(
@@ -2647,7 +3067,8 @@ def main() -> int:
                 "--add-entry-wrapper-workgroup-x-capture-proof, or "
                 "--add-entry-wrapper-workgroup-xyz-capture-proof, or "
                 "--add-entry-wrapper-workgroup-xyz-capture-restore-proof, or "
-                "--add-entry-wrapper-system-sgpr-capture-restore-proof"
+                "--add-entry-wrapper-system-sgpr-capture-restore-proof, or "
+                "--add-entry-wrapper-workitem-vgpr-capture-restore-proof"
             )
 
         ir_path = temp_dir_path / "input.ir.json"
@@ -2906,6 +3327,40 @@ def main() -> int:
                 restore_kernarg_base_from_handoff=True,
                 restore_all_system_sgprs_from_handoff=True,
                 capture_all_system_sgprs_to_handoff=True,
+            )
+            working_manifest_path.write_text(
+                json.dumps(manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            asm_manifest_payload = deepcopy(manifest_payload)
+            asm_manifest_metadata = asm_manifest_payload.setdefault("kernels", {}).setdefault(
+                "metadata", {}
+            )
+            original_metadata = original_manifest_payload.get("kernels", {}).get("metadata", {})
+            for key in ("raw", "rendered", "object", "target"):
+                if key in original_metadata:
+                    asm_manifest_metadata[key] = deepcopy(original_metadata[key])
+                else:
+                    asm_manifest_metadata.pop(key, None)
+            asm_manifest_path = temp_dir_path / "input.asm.manifest.json"
+            asm_manifest_path.write_text(
+                json.dumps(asm_manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            ir_path.write_text(
+                json.dumps(ir_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        elif args.add_entry_wrapper_workitem_vgpr_capture_restore_proof:
+            original_manifest_payload = load_json(working_manifest_path)
+            manifest_payload = load_json(working_manifest_path)
+            ir_payload = load_json(ir_path)
+            entry_wrapper_result = add_entry_wrapper_proof_intent(
+                manifest_payload,
+                ir_payload,
+                model,
+                kernel_name,
+                capture_restore_entry_workitem_vgprs=True,
             )
             working_manifest_path.write_text(
                 json.dumps(manifest_payload, indent=2) + "\n",
@@ -3264,6 +3719,7 @@ def main() -> int:
             or args.add_entry_wrapper_workgroup_xyz_capture_proof
             or args.add_entry_wrapper_workgroup_xyz_capture_restore_proof
             or args.add_entry_wrapper_system_sgpr_capture_restore_proof
+            or args.add_entry_wrapper_workitem_vgpr_capture_restore_proof
         ):
             patch_output_metadata_note(output_path, load_json(working_manifest_path))
         if clone_result is not None or entry_wrapper_result is not None:

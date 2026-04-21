@@ -18,3 +18,14 @@ extern "C" __global__ void mlk_d(int* data, size_t size) {
         data[idx] = static_cast<int>(idx);
     }
 }
+
+extern "C" __global__ void mlk_xyz(int* data, size_t size) {
+    const size_t local_linear =
+        static_cast<size_t>(threadIdx.x) +
+        static_cast<size_t>(blockDim.x) *
+            (static_cast<size_t>(threadIdx.y) +
+             static_cast<size_t>(blockDim.y) * static_cast<size_t>(threadIdx.z));
+    if (local_linear < size) {
+        data[local_linear] = static_cast<int>(local_linear);
+    }
+}
