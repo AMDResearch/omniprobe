@@ -130,6 +130,37 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--add-entry-wrapper-workgroup-x-capture-proof",
+        action="store_true",
+        help=(
+            "Extend the entry-wrapper kernarg-restore proof by capturing "
+            "workgroup_id_x into hidden_omniprobe_ctx entry_snapshot storage "
+            "before branching to the original body. Current validation is "
+            "constrained to a single-workgroup launch."
+        ),
+    )
+    parser.add_argument(
+        "--add-entry-wrapper-workgroup-xyz-capture-proof",
+        action="store_true",
+        help=(
+            "Extend the entry-wrapper kernarg-restore proof by capturing "
+            "workgroup_id_x/y/z into hidden_omniprobe_ctx entry_snapshot "
+            "storage before branching to the original body. Current validation "
+            "is constrained to a single-workgroup launch."
+        ),
+    )
+    parser.add_argument(
+        "--add-entry-wrapper-workgroup-xyz-capture-restore-proof",
+        action="store_true",
+        help=(
+            "Extend the entry-wrapper kernarg-restore proof by capturing "
+            "workgroup_id_x/y/z into hidden_omniprobe_ctx entry_snapshot "
+            "storage, clobbering those SGPRs, restoring them from the captured "
+            "snapshot fields, and then branching to the original body. Current "
+            "validation is constrained to a single-workgroup launch."
+        ),
+    )
+    parser.add_argument(
         "--python",
         default=sys.executable,
         help="Python interpreter to use for helper tools",
@@ -794,6 +825,8 @@ def build_entry_wrapper_ir(
     hidden_ctx_offset: int | None = None,
     hidden_ctx_source_pair: tuple[int, int] | None = None,
     hidden_handoff_field_loads: list[dict] | None = None,
+    hidden_handoff_field_stores: list[dict] | None = None,
+    hidden_handoff_store_before_loads: bool = False,
 ) -> dict:
     scratch_lo, scratch_hi = scratch_pair
     next_address = start_address
@@ -803,66 +836,102 @@ def build_entry_wrapper_ir(
         if hidden_ctx_source_pair is None:
             raise SystemExit("entry wrapper hidden handoff load requires a source kernarg SGPR pair")
         source_lo, source_hi = hidden_ctx_source_pair
-        instructions.extend(
-            [
-                {
-                    "address": next_address,
-                    "mnemonic": "s_load_dwordx2",
-                    "operand_text": (
-                        f"s[{scratch_lo}:{scratch_hi}], "
-                        f"s[{source_lo}:{source_hi}], 0x{int(hidden_ctx_offset):x}"
-                    ),
-                    "operands": [
-                        f"s[{scratch_lo}:{scratch_hi}]",
-                        f"s[{source_lo}:{source_hi}]",
-                        f"0x{int(hidden_ctx_offset):x}",
-                    ],
-                    "control_flow": "linear",
-                    "target": None,
-                    "is_padding": False,
-                },
-                {
-                    "address": next_address + 4,
-                    "mnemonic": "s_waitcnt",
-                    "operand_text": "lgkmcnt(0)",
-                    "operands": ["lgkmcnt(0)"],
-                    "control_flow": "linear",
-                    "target": None,
-                    "is_padding": False,
-                },
-            ]
-        )
-        next_address += 8
-        for field_load in hidden_handoff_field_loads or []:
-            kind = str(field_load.get("kind", "") or "")
-            field_offset = int(field_load.get("offset", 0) or 0)
-            if kind == "u64":
-                target_pair_value = field_load.get("target_pair")
-                if (
-                    isinstance(target_pair_value, list)
-                    and len(target_pair_value) == 2
-                    and all(isinstance(entry, int) for entry in target_pair_value)
-                ):
-                    target_lo, target_hi = int(target_pair_value[0]), int(target_pair_value[1])
-                else:
-                    target_lo, target_hi = scratch_lo, scratch_hi
-                if bool(field_load.get("clobber_target_before_load", False)):
+        def emit_hidden_ctx_pointer_load() -> None:
+            nonlocal next_address
+            instructions.extend(
+                [
+                    {
+                        "address": next_address,
+                        "mnemonic": "s_load_dwordx2",
+                        "operand_text": (
+                            f"s[{scratch_lo}:{scratch_hi}], "
+                            f"s[{source_lo}:{source_hi}], 0x{int(hidden_ctx_offset):x}"
+                        ),
+                        "operands": [
+                            f"s[{scratch_lo}:{scratch_hi}]",
+                            f"s[{source_lo}:{source_hi}]",
+                            f"0x{int(hidden_ctx_offset):x}",
+                        ],
+                        "control_flow": "linear",
+                        "target": None,
+                        "is_padding": False,
+                    },
+                    {
+                        "address": next_address + 4,
+                        "mnemonic": "s_waitcnt",
+                        "operand_text": "lgkmcnt(0)",
+                        "operands": ["lgkmcnt(0)"],
+                        "control_flow": "linear",
+                        "target": None,
+                        "is_padding": False,
+                    },
+                ]
+            )
+            next_address += 8
+
+        def emit_hidden_handoff_field_loads() -> None:
+            nonlocal next_address
+            emit_hidden_ctx_pointer_load()
+            for field_load in hidden_handoff_field_loads or []:
+                kind = str(field_load.get("kind", "") or "")
+                field_offset = int(field_load.get("offset", 0) or 0)
+                if kind == "u64":
+                    target_pair_value = field_load.get("target_pair")
+                    if (
+                        isinstance(target_pair_value, list)
+                        and len(target_pair_value) == 2
+                        and all(isinstance(entry, int) for entry in target_pair_value)
+                    ):
+                        target_lo, target_hi = int(target_pair_value[0]), int(target_pair_value[1])
+                    else:
+                        target_lo, target_hi = scratch_lo, scratch_hi
+                    if bool(field_load.get("clobber_target_before_load", False)):
+                        instructions.extend(
+                            [
+                                {
+                                    "address": next_address,
+                                    "mnemonic": "s_mov_b32",
+                                    "operand_text": f"s{target_lo}, 0",
+                                    "operands": [f"s{target_lo}", "0"],
+                                    "control_flow": "linear",
+                                    "target": None,
+                                    "is_padding": False,
+                                },
+                                {
+                                    "address": next_address + 4,
+                                    "mnemonic": "s_mov_b32",
+                                    "operand_text": f"s{target_hi}, 0",
+                                    "operands": [f"s{target_hi}", "0"],
+                                    "control_flow": "linear",
+                                    "target": None,
+                                    "is_padding": False,
+                                },
+                            ]
+                        )
+                        next_address += 8
                     instructions.extend(
                         [
                             {
                                 "address": next_address,
-                                "mnemonic": "s_mov_b32",
-                                "operand_text": f"s{target_lo}, 0",
-                                "operands": [f"s{target_lo}", "0"],
+                                "mnemonic": "s_load_dwordx2",
+                                "operand_text": (
+                                    f"s[{target_lo}:{target_hi}], "
+                                    f"s[{scratch_lo}:{scratch_hi}], 0x{field_offset:x}"
+                                ),
+                                "operands": [
+                                    f"s[{target_lo}:{target_hi}]",
+                                    f"s[{scratch_lo}:{scratch_hi}]",
+                                    f"0x{field_offset:x}",
+                                ],
                                 "control_flow": "linear",
                                 "target": None,
                                 "is_padding": False,
                             },
                             {
                                 "address": next_address + 4,
-                                "mnemonic": "s_mov_b32",
-                                "operand_text": f"s{target_hi}, 0",
-                                "operands": [f"s{target_hi}", "0"],
+                                "mnemonic": "s_waitcnt",
+                                "operand_text": "lgkmcnt(0)",
+                                "operands": ["lgkmcnt(0)"],
                                 "control_flow": "linear",
                                 "target": None,
                                 "is_padding": False,
@@ -870,84 +939,143 @@ def build_entry_wrapper_ir(
                         ]
                     )
                     next_address += 8
-                instructions.extend(
-                    [
-                        {
-                            "address": next_address,
-                            "mnemonic": "s_load_dwordx2",
-                            "operand_text": (
-                                f"s[{target_lo}:{target_hi}], "
-                                f"s[{scratch_lo}:{scratch_hi}], 0x{field_offset:x}"
-                            ),
-                            "operands": [
-                                f"s[{target_lo}:{target_hi}]",
-                                f"s[{scratch_lo}:{scratch_hi}]",
-                                f"0x{field_offset:x}",
-                            ],
-                            "control_flow": "linear",
-                            "target": None,
-                            "is_padding": False,
-                        },
-                        {
-                            "address": next_address + 4,
-                            "mnemonic": "s_waitcnt",
-                            "operand_text": "lgkmcnt(0)",
-                            "operands": ["lgkmcnt(0)"],
-                            "control_flow": "linear",
-                            "target": None,
-                            "is_padding": False,
-                        },
-                    ]
-                )
-                next_address += 8
-            elif kind == "u32":
-                target_sgpr = field_load.get("target_sgpr")
-                target_sgpr_value = int(target_sgpr) if target_sgpr is not None else scratch_lo
-                if bool(field_load.get("clobber_target_before_load", False)):
-                    instructions.append(
-                        {
-                            "address": next_address,
-                            "mnemonic": "s_mov_b32",
-                            "operand_text": f"s{target_sgpr_value}, 0",
-                            "operands": [f"s{target_sgpr_value}", "0"],
-                            "control_flow": "linear",
-                            "target": None,
-                            "is_padding": False,
-                        }
+                elif kind == "u32":
+                    target_sgpr = field_load.get("target_sgpr")
+                    target_sgpr_value = int(target_sgpr) if target_sgpr is not None else scratch_lo
+                    if bool(field_load.get("clobber_target_before_load", False)):
+                        instructions.append(
+                            {
+                                "address": next_address,
+                                "mnemonic": "s_mov_b32",
+                                "operand_text": f"s{target_sgpr_value}, 0",
+                                "operands": [f"s{target_sgpr_value}", "0"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            }
+                        )
+                        next_address += 4
+                    instructions.extend(
+                        [
+                            {
+                                "address": next_address,
+                                "mnemonic": "s_load_dword",
+                                "operand_text": (
+                                    f"s{target_sgpr_value}, "
+                                    f"s[{scratch_lo}:{scratch_hi}], 0x{field_offset:x}"
+                                ),
+                                "operands": [
+                                    f"s{target_sgpr_value}",
+                                    f"s[{scratch_lo}:{scratch_hi}]",
+                                    f"0x{field_offset:x}",
+                                ],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 4,
+                                "mnemonic": "s_waitcnt",
+                                "operand_text": "lgkmcnt(0)",
+                                "operands": ["lgkmcnt(0)"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                        ]
                     )
-                    next_address += 4
+                    next_address += 8
+                else:
+                    raise SystemExit(f"unsupported hidden handoff field load kind {kind!r}")
+
+        def emit_hidden_handoff_field_stores() -> None:
+            nonlocal next_address
+            for field_store in hidden_handoff_field_stores or []:
+                kind = str(field_store.get("kind", "") or "")
+                field_offset = int(field_store.get("offset", 0) or 0)
+                if kind != "u32_from_sgpr":
+                    raise SystemExit(f"unsupported hidden handoff field store kind {kind!r}")
+                source_sgpr = field_store.get("source_sgpr")
+                if source_sgpr is None:
+                    raise SystemExit("hidden handoff u32 capture store requires source_sgpr")
+                address_vgprs = field_store.get("address_vgprs")
+                if not (
+                    isinstance(address_vgprs, list)
+                    and len(address_vgprs) == 2
+                    and all(isinstance(entry, int) for entry in address_vgprs)
+                ):
+                    raise SystemExit("hidden handoff u32 capture store requires address_vgprs pair")
+                data_vgpr = field_store.get("data_vgpr")
+                if not isinstance(data_vgpr, int):
+                    raise SystemExit("hidden handoff u32 capture store requires data_vgpr")
+                addr_lo_vgpr, addr_hi_vgpr = int(address_vgprs[0]), int(address_vgprs[1])
+                emit_hidden_ctx_pointer_load()
                 instructions.extend(
                     [
                         {
                             "address": next_address,
-                            "mnemonic": "s_load_dword",
-                            "operand_text": (
-                                f"s{target_sgpr_value}, "
-                                f"s[{scratch_lo}:{scratch_hi}], 0x{field_offset:x}"
-                            ),
-                            "operands": [
-                                f"s{target_sgpr_value}",
-                                f"s[{scratch_lo}:{scratch_hi}]",
-                                f"0x{field_offset:x}",
-                            ],
+                            "mnemonic": "s_add_u32",
+                            "operand_text": f"s{scratch_lo}, s{scratch_lo}, 0x{field_offset:x}",
+                            "operands": [f"s{scratch_lo}", f"s{scratch_lo}", f"0x{field_offset:x}"],
                             "control_flow": "linear",
                             "target": None,
                             "is_padding": False,
                         },
                         {
                             "address": next_address + 4,
-                            "mnemonic": "s_waitcnt",
-                            "operand_text": "lgkmcnt(0)",
-                            "operands": ["lgkmcnt(0)"],
+                            "mnemonic": "s_addc_u32",
+                            "operand_text": f"s{scratch_hi}, s{scratch_hi}, 0",
+                            "operands": [f"s{scratch_hi}", f"s{scratch_hi}", "0"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 8,
+                            "mnemonic": "v_mov_b32_e32",
+                            "operand_text": f"v{addr_lo_vgpr}, s{scratch_lo}",
+                            "operands": [f"v{addr_lo_vgpr}", f"s{scratch_lo}"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 12,
+                            "mnemonic": "v_mov_b32_e32",
+                            "operand_text": f"v{addr_hi_vgpr}, s{scratch_hi}",
+                            "operands": [f"v{addr_hi_vgpr}", f"s{scratch_hi}"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 16,
+                            "mnemonic": "v_mov_b32_e32",
+                            "operand_text": f"v{data_vgpr}, s{int(source_sgpr)}",
+                            "operands": [f"v{data_vgpr}", f"s{int(source_sgpr)}"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 20,
+                            "mnemonic": "flat_store_dword",
+                            "operand_text": f"v[{addr_lo_vgpr}:{addr_hi_vgpr}], v{data_vgpr}",
+                            "operands": [f"v[{addr_lo_vgpr}:{addr_hi_vgpr}]", f"v{data_vgpr}"],
                             "control_flow": "linear",
                             "target": None,
                             "is_padding": False,
                         },
                     ]
                 )
-                next_address += 8
-            else:
-                raise SystemExit(f"unsupported hidden handoff field load kind {kind!r}")
+                next_address += 24
+
+        if hidden_handoff_store_before_loads:
+            emit_hidden_handoff_field_stores()
+            emit_hidden_handoff_field_loads()
+        else:
+            emit_hidden_handoff_field_loads()
+            emit_hidden_handoff_field_stores()
 
     instructions.extend(
         [
@@ -1519,6 +1647,9 @@ def add_entry_wrapper_proof_intent(
     include_hidden_handoff: bool = False,
     restore_kernarg_base_from_handoff: bool = False,
     restore_workgroup_x_from_handoff: bool = False,
+    restore_workgroup_xyz_from_handoff: bool = False,
+    capture_workgroup_x_to_handoff: bool = False,
+    capture_workgroup_xyz_to_handoff: bool = False,
 ) -> dict:
     source_kernel = model.metadata_by_kernel_name(kernel_name)
     if source_kernel is None:
@@ -1538,6 +1669,7 @@ def add_entry_wrapper_proof_intent(
     hidden_handoff_plan = None
     hidden_ctx_offset = None
     hidden_handoff_field_loads: list[dict] = []
+    hidden_handoff_field_stores: list[dict] = []
     kernarg_base = entry_analysis.get("inferred_kernarg_base") or {}
     kernarg_base_pair = kernarg_base.get("base_pair") or []
     if include_hidden_handoff:
@@ -1571,6 +1703,69 @@ def add_entry_wrapper_proof_intent(
                     "purpose": "restore workgroup_id_x under the single-workgroup proof launch",
                 }
             )
+        if restore_workgroup_xyz_from_handoff:
+            for role_name, role_offset in (
+                ("workgroup_id_x", 8),
+                ("workgroup_id_y", 12),
+                ("workgroup_id_z", 16),
+            ):
+                role_sgpr = next(
+                    (
+                        int(entry.get("sgpr"))
+                        for entry in entry_analysis.get("entry_system_sgpr_roles", [])
+                        if isinstance(entry, dict) and entry.get("role") == role_name
+                    ),
+                    None,
+                )
+                if role_sgpr is None:
+                    raise SystemExit(f"entry-wrapper restore proof requires a {role_name} SGPR role")
+                hidden_handoff_field_loads.append(
+                    {
+                        "name": role_name,
+                        "offset": int(role_offset),
+                        "kind": "u32",
+                        "target_sgpr": int(role_sgpr),
+                        "clobber_target_before_load": True,
+                        "purpose": f"restore {role_name} from the wrapper-owned entry_snapshot storage",
+                    }
+                )
+        capture_roles: list[tuple[str, int]] = []
+        if capture_workgroup_x_to_handoff:
+            capture_roles.append(("workgroup_id_x", 8))
+        if capture_workgroup_xyz_to_handoff:
+            capture_roles.extend(
+                [
+                    ("workgroup_id_x", 8),
+                    ("workgroup_id_y", 12),
+                    ("workgroup_id_z", 16),
+                ]
+            )
+        emitted_capture_roles: set[str] = set()
+        for role_name, role_offset in capture_roles:
+            if role_name in emitted_capture_roles:
+                continue
+            role_sgpr = next(
+                (
+                    int(entry.get("sgpr"))
+                    for entry in entry_analysis.get("entry_system_sgpr_roles", [])
+                    if isinstance(entry, dict) and entry.get("role") == role_name
+                ),
+                None,
+            )
+            if role_sgpr is None:
+                raise SystemExit(f"entry-wrapper capture proof requires a {role_name} SGPR role")
+            hidden_handoff_field_stores.append(
+                {
+                    "name": role_name,
+                    "offset": int(role_offset),
+                    "kind": "u32_from_sgpr",
+                    "source_sgpr": int(role_sgpr),
+                    "address_vgprs": [4, 5],
+                    "data_vgpr": 6,
+                    "purpose": f"capture {role_name} into the wrapper-owned entry_snapshot storage",
+                }
+            )
+            emitted_capture_roles.add(role_name)
         hidden_handoff_field = {
             "name": "original_kernarg_pointer",
             "offset": 0,
@@ -1648,6 +1843,8 @@ def add_entry_wrapper_proof_intent(
             else None
         ),
         hidden_handoff_field_loads=hidden_handoff_field_loads,
+        hidden_handoff_field_stores=hidden_handoff_field_stores,
+        hidden_handoff_store_before_loads=bool(restore_workgroup_xyz_from_handoff),
     )
     ir.setdefault("functions", []).append(wrapper_function)
 
@@ -1693,12 +1890,24 @@ def add_entry_wrapper_proof_intent(
 
     return {
         "mode": (
+            "entry-wrapper-workgroup-xyz-capture-restore-proof"
+            if restore_workgroup_xyz_from_handoff
+            else (
+            "entry-wrapper-workgroup-xyz-capture-proof"
+            if capture_workgroup_xyz_to_handoff
+            else (
+            "entry-wrapper-workgroup-x-capture-proof"
+            if capture_workgroup_x_to_handoff
+            else (
             "entry-wrapper-workgroup-x-restore-proof"
             if restore_workgroup_x_from_handoff
             else (
             "entry-wrapper-kernarg-restore-proof"
             if restore_kernarg_base_from_handoff
             else ("entry-wrapper-hidden-handoff-proof" if include_hidden_handoff else "entry-wrapper-proof")
+            )
+            )
+            )
             )
         ),
         "source_kernel": kernel_name,
@@ -1742,10 +1951,28 @@ def add_entry_wrapper_proof_intent(
                 ],
                 "restored_actions": (
                     (
+                        ([
+                            "materialize-system-sgpr:workgroup_id_x",
+                            "materialize-system-sgpr:workgroup_id_y",
+                            "materialize-system-sgpr:workgroup_id_z",
+                        ] if restore_workgroup_xyz_from_handoff else [])
+                        +
                         (["materialize-system-sgpr:workgroup_id_x"] if restore_workgroup_x_from_handoff else [])
                         + (["materialize-kernarg-base-pair"] if restore_kernarg_base_from_handoff else [])
                     )
                 ),
+                "captured_entry_snapshot_fields": [
+                    {
+                        "name": str(field["name"]),
+                        "offset": int(field["offset"]),
+                        "kind": str(field["kind"]),
+                        "store_opcode": "flat_store_dword",
+                        "source_sgpr": int(field["source_sgpr"]),
+                        "address_vgprs": [int(field["address_vgprs"][0]), int(field["address_vgprs"][1])],
+                        "data_vgpr": int(field["data_vgpr"]),
+                    }
+                    for field in hidden_handoff_field_stores
+                ],
             }
             if hidden_handoff_plan is not None
             else {"enabled": False}
@@ -2341,6 +2568,9 @@ def main() -> int:
             bool(args.add_entry_wrapper_hidden_handoff_proof),
             bool(args.add_entry_wrapper_kernarg_restore_proof),
             bool(args.add_entry_wrapper_workgroup_x_restore_proof),
+            bool(args.add_entry_wrapper_workgroup_x_capture_proof),
+            bool(args.add_entry_wrapper_workgroup_xyz_capture_proof),
+            bool(args.add_entry_wrapper_workgroup_xyz_capture_restore_proof),
         ]
         if sum(1 for enabled in mutation_modes if enabled) > 1:
             raise SystemExit(
@@ -2348,7 +2578,10 @@ def main() -> int:
                 "--add-hidden-abi-clone, --add-noop-clone, --add-entry-wrapper-proof, "
                 "--add-entry-wrapper-hidden-handoff-proof, or "
                 "--add-entry-wrapper-kernarg-restore-proof, or "
-                "--add-entry-wrapper-workgroup-x-restore-proof"
+                "--add-entry-wrapper-workgroup-x-restore-proof, or "
+                "--add-entry-wrapper-workgroup-x-capture-proof, or "
+                "--add-entry-wrapper-workgroup-xyz-capture-proof, or "
+                "--add-entry-wrapper-workgroup-xyz-capture-restore-proof"
             )
 
         ir_path = temp_dir_path / "input.ir.json"
@@ -2461,6 +2694,115 @@ def main() -> int:
                 include_hidden_handoff=True,
                 restore_kernarg_base_from_handoff=True,
                 restore_workgroup_x_from_handoff=True,
+            )
+            working_manifest_path.write_text(
+                json.dumps(manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            asm_manifest_payload = deepcopy(manifest_payload)
+            asm_manifest_metadata = asm_manifest_payload.setdefault("kernels", {}).setdefault(
+                "metadata", {}
+            )
+            original_metadata = original_manifest_payload.get("kernels", {}).get("metadata", {})
+            for key in ("raw", "rendered", "object", "target"):
+                if key in original_metadata:
+                    asm_manifest_metadata[key] = deepcopy(original_metadata[key])
+                else:
+                    asm_manifest_metadata.pop(key, None)
+            asm_manifest_path = temp_dir_path / "input.asm.manifest.json"
+            asm_manifest_path.write_text(
+                json.dumps(asm_manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            ir_path.write_text(
+                json.dumps(ir_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        elif args.add_entry_wrapper_workgroup_x_capture_proof:
+            original_manifest_payload = load_json(working_manifest_path)
+            manifest_payload = load_json(working_manifest_path)
+            ir_payload = load_json(ir_path)
+            entry_wrapper_result = add_entry_wrapper_proof_intent(
+                manifest_payload,
+                ir_payload,
+                model,
+                kernel_name,
+                include_hidden_handoff=True,
+                restore_kernarg_base_from_handoff=True,
+                capture_workgroup_x_to_handoff=True,
+            )
+            working_manifest_path.write_text(
+                json.dumps(manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            asm_manifest_payload = deepcopy(manifest_payload)
+            asm_manifest_metadata = asm_manifest_payload.setdefault("kernels", {}).setdefault(
+                "metadata", {}
+            )
+            original_metadata = original_manifest_payload.get("kernels", {}).get("metadata", {})
+            for key in ("raw", "rendered", "object", "target"):
+                if key in original_metadata:
+                    asm_manifest_metadata[key] = deepcopy(original_metadata[key])
+                else:
+                    asm_manifest_metadata.pop(key, None)
+            asm_manifest_path = temp_dir_path / "input.asm.manifest.json"
+            asm_manifest_path.write_text(
+                json.dumps(asm_manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            ir_path.write_text(
+                json.dumps(ir_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        elif args.add_entry_wrapper_workgroup_xyz_capture_proof:
+            original_manifest_payload = load_json(working_manifest_path)
+            manifest_payload = load_json(working_manifest_path)
+            ir_payload = load_json(ir_path)
+            entry_wrapper_result = add_entry_wrapper_proof_intent(
+                manifest_payload,
+                ir_payload,
+                model,
+                kernel_name,
+                include_hidden_handoff=True,
+                restore_kernarg_base_from_handoff=True,
+                capture_workgroup_xyz_to_handoff=True,
+            )
+            working_manifest_path.write_text(
+                json.dumps(manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            asm_manifest_payload = deepcopy(manifest_payload)
+            asm_manifest_metadata = asm_manifest_payload.setdefault("kernels", {}).setdefault(
+                "metadata", {}
+            )
+            original_metadata = original_manifest_payload.get("kernels", {}).get("metadata", {})
+            for key in ("raw", "rendered", "object", "target"):
+                if key in original_metadata:
+                    asm_manifest_metadata[key] = deepcopy(original_metadata[key])
+                else:
+                    asm_manifest_metadata.pop(key, None)
+            asm_manifest_path = temp_dir_path / "input.asm.manifest.json"
+            asm_manifest_path.write_text(
+                json.dumps(asm_manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            ir_path.write_text(
+                json.dumps(ir_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        elif args.add_entry_wrapper_workgroup_xyz_capture_restore_proof:
+            original_manifest_payload = load_json(working_manifest_path)
+            manifest_payload = load_json(working_manifest_path)
+            ir_payload = load_json(ir_path)
+            entry_wrapper_result = add_entry_wrapper_proof_intent(
+                manifest_payload,
+                ir_payload,
+                model,
+                kernel_name,
+                include_hidden_handoff=True,
+                restore_kernarg_base_from_handoff=True,
+                restore_workgroup_xyz_from_handoff=True,
+                capture_workgroup_xyz_to_handoff=True,
             )
             working_manifest_path.write_text(
                 json.dumps(manifest_payload, indent=2) + "\n",
@@ -2815,6 +3157,9 @@ def main() -> int:
             or args.add_entry_wrapper_hidden_handoff_proof
             or args.add_entry_wrapper_kernarg_restore_proof
             or args.add_entry_wrapper_workgroup_x_restore_proof
+            or args.add_entry_wrapper_workgroup_x_capture_proof
+            or args.add_entry_wrapper_workgroup_xyz_capture_proof
+            or args.add_entry_wrapper_workgroup_xyz_capture_restore_proof
         ):
             patch_output_metadata_note(output_path, load_json(working_manifest_path))
         if clone_result is not None or entry_wrapper_result is not None:
