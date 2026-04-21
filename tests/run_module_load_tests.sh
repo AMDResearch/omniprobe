@@ -28,10 +28,18 @@ check_omniprobe
 ################################################################################
 
 MODULE_LOAD_TEST="${BUILD_DIR}/tests/test_kernels/module_load_test"
-MODULE_LOAD_HSACO="${BUILD_DIR}/tests/test_kernels/module_load_kernel.hsaco"
+
+# Detect GPU architecture and select the matching .hsaco
+GPU_ARCH=$(rocminfo 2>/dev/null | grep -oP 'gfx\w+' | head -1)
+if [ -z "$GPU_ARCH" ]; then
+    echo -e "${YELLOW}SKIP: Cannot detect GPU architecture via rocminfo${NC}"
+    export TESTS_RUN TESTS_PASSED TESTS_FAILED
+    return 0 2>/dev/null || exit 0
+fi
+MODULE_LOAD_HSACO="${BUILD_DIR}/tests/test_kernels/module_load_kernel_${GPU_ARCH}.hsaco"
 
 if [ ! -x "$MODULE_LOAD_TEST" ] || [ ! -f "$MODULE_LOAD_HSACO" ]; then
-    echo -e "${YELLOW}SKIP: Module-load test artifacts not built${NC}"
+    echo -e "${YELLOW}SKIP: Module-load test artifacts not built (arch: ${GPU_ARCH})${NC}"
     echo "  Expected: $MODULE_LOAD_TEST"
     echo "  Expected: $MODULE_LOAD_HSACO"
     echo "  Build with: cmake --build build --target module_load_test module_load_kernel_hsaco"

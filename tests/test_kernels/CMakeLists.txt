@@ -85,29 +85,33 @@ add_dependencies(block_filter_test copy_bitcode AMDGCNSubmitAddressMessages-rocm
 # Module-load test: kernel compiled to standalone .hsaco, loaded via hipModuleLoad at runtime.
 # This exercises the code path where instrumented kernels live in a dynamically-loaded code
 # object rather than being embedded in the executable's .hip_fatbin section.
+# One .hsaco per architecture (raw ELF, not a bundle) — the test script picks the right one
+# based on the GPU architecture detected at runtime.
 
-set(MODULE_LOAD_HSACO "${CMAKE_CURRENT_BINARY_DIR}/module_load_kernel.hsaco")
-
-# Compile kernel.hip → .hsaco with instrumentation plugin
-add_custom_command(
-    OUTPUT ${MODULE_LOAD_HSACO}
-    COMMAND ${CMAKE_HIP_COMPILER}
-        -x hip
-        --offload-device-only
-        --no-gpu-bundle-output
-        --offload-arch=${CMAKE_HIP_ARCHITECTURES}
-        -fpass-plugin=${INST_PLUGIN}
-        -Werror
-        -Wno-error=unused-parameter
-        -o ${MODULE_LOAD_HSACO}
-        ${CMAKE_CURRENT_SOURCE_DIR}/module_load_kernel.hip
-    DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/module_load_kernel.hip
-        copy_bitcode
-        AMDGCNSubmitAddressMessages-rocm
-    COMMENT "Compiling module_load_kernel.hip → .hsaco with instrumentation"
-)
-add_custom_target(module_load_kernel_hsaco ALL DEPENDS ${MODULE_LOAD_HSACO})
+set(MODULE_LOAD_HSACO_OUTPUTS "")
+foreach(ARCH IN LISTS CMAKE_HIP_ARCHITECTURES)
+    set(HSACO_FILE "${CMAKE_CURRENT_BINARY_DIR}/module_load_kernel_${ARCH}.hsaco")
+    add_custom_command(
+        OUTPUT ${HSACO_FILE}
+        COMMAND ${CMAKE_HIP_COMPILER}
+            -x hip
+            --offload-device-only
+            --no-gpu-bundle-output
+            --offload-arch=${ARCH}
+            -fpass-plugin=${INST_PLUGIN}
+            -Werror
+            -Wno-error=unused-parameter
+            -o ${HSACO_FILE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/module_load_kernel.hip
+        DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/module_load_kernel.hip
+            copy_bitcode
+            AMDGCNSubmitAddressMessages-rocm
+        COMMENT "Compiling module_load_kernel.hip → ${ARCH} .hsaco with instrumentation"
+    )
+    list(APPEND MODULE_LOAD_HSACO_OUTPUTS ${HSACO_FILE})
+endforeach()
+add_custom_target(module_load_kernel_hsaco ALL DEPENDS ${MODULE_LOAD_HSACO_OUTPUTS})
 
 # Host program: uses hipModuleLoad to load the .hsaco at runtime.
 # No -fgpu-rdc, no instrumentation plugin — this is a plain HIP host-only program.

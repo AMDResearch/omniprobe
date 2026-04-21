@@ -43,13 +43,14 @@ if [ ! -f "$KERNEL_SRC" ]; then
     exit 0
 fi
 
-# Detect GPU architecture from build
-GPU_ARCH="gfx90a"
-if [ -f "${BUILD_DIR}/CMakeCache.txt" ]; then
-    cached_arch=$(grep "^CMAKE_HIP_ARCHITECTURES" "${BUILD_DIR}/CMakeCache.txt" 2>/dev/null | cut -d= -f2)
-    if [ -n "$cached_arch" ]; then
-        GPU_ARCH="$cached_arch"
-    fi
+# Detect GPU architecture from the actual hardware (not CMake cache, which may
+# contain multiple architectures separated by semicolons — unusable as a single
+# --offload-arch value).
+GPU_ARCH=$(rocminfo 2>/dev/null | grep -oP 'gfx\w+' | head -1)
+if [ -z "$GPU_ARCH" ]; then
+    echo -e "${YELLOW}SKIP: Scope filter tests (cannot detect GPU architecture via rocminfo)${NC}"
+    export TESTS_RUN TESTS_PASSED TESTS_FAILED
+    return 0 2>/dev/null || exit 0
 fi
 
 # Discover SCOPE_MARKER lines dynamically from kernel source
