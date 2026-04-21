@@ -928,54 +928,83 @@ def collect_wrapper_abi_requirements(manifest_payload: dict) -> dict[str, dict[s
     return requirements
 
 
-def validate_support_wrapper_abi_compatibility(
+def collect_support_wrapper_abi_delta(
     *,
     source_descriptor: dict,
     support_wrapper_footprint: dict[str, int],
-    clone_kernel: str,
-) -> None:
+) -> dict:
     requirements = support_wrapper_footprint.get("abi_requirements")
+    delta = {
+        "source_descriptor_features": {
+            "compute_pgm_rsrc2": {},
+            "kernel_code_properties": {},
+        },
+        "required_wrapper_features": requirements if isinstance(requirements, dict) else {},
+        "missing_features": [],
+    }
     if not isinstance(requirements, dict):
-        return
+        return delta
 
-    failures: list[str] = []
     rsrc2_requirements = requirements.get("compute_pgm_rsrc2", {})
     if isinstance(rsrc2_requirements, dict):
         for field in ABI_SENSITIVE_RSRC2_BOOL_FIELDS:
-            required = int(rsrc2_requirements.get(field, 0) or 0)
             available = descriptor_field_value(source_descriptor, "compute_pgm_rsrc2", field)
+            required = int(rsrc2_requirements.get(field, 0) or 0)
+            delta["source_descriptor_features"]["compute_pgm_rsrc2"][field] = available
             if required and not available:
-                failures.append(
-                    f"compute_pgm_rsrc2.{field} requires 1 but source descriptor provides 0"
+                delta["missing_features"].append(
+                    {
+                        "field": f"compute_pgm_rsrc2.{field}",
+                        "required": 1,
+                        "available": available,
+                    }
                 )
-        required_workitem_id = int(rsrc2_requirements.get("enable_vgpr_workitem_id", 0) or 0)
         available_workitem_id = descriptor_field_value(
             source_descriptor, "compute_pgm_rsrc2", "enable_vgpr_workitem_id"
         )
+        required_workitem_id = int(rsrc2_requirements.get("enable_vgpr_workitem_id", 0) or 0)
+        delta["source_descriptor_features"]["compute_pgm_rsrc2"][
+            "enable_vgpr_workitem_id"
+        ] = available_workitem_id
         if required_workitem_id > available_workitem_id:
-            failures.append(
-                "compute_pgm_rsrc2.enable_vgpr_workitem_id requires "
-                f"{required_workitem_id} but source descriptor provides {available_workitem_id}"
+            delta["missing_features"].append(
+                {
+                    "field": "compute_pgm_rsrc2.enable_vgpr_workitem_id",
+                    "required": required_workitem_id,
+                    "available": available_workitem_id,
+                }
             )
 
     kernel_code_requirements = requirements.get("kernel_code_properties", {})
     if isinstance(kernel_code_requirements, dict):
         for field in ABI_SENSITIVE_KERNEL_CODE_BOOL_FIELDS:
-            required = int(kernel_code_requirements.get(field, 0) or 0)
             available = descriptor_field_value(source_descriptor, "kernel_code_properties", field)
+            required = int(kernel_code_requirements.get(field, 0) or 0)
+            delta["source_descriptor_features"]["kernel_code_properties"][field] = available
             if required and not available:
-                failures.append(
-                    f"kernel_code_properties.{field} requires 1 but source descriptor provides 0"
+                delta["missing_features"].append(
+                    {
+                        "field": f"kernel_code_properties.{field}",
+                        "required": 1,
+                        "available": available,
+                    }
                 )
+    return delta
 
-    if failures:
-        failure_text = "; ".join(failures)
-        raise SystemExit(
-            "binary probe support wrapper requires initial-kernel ABI state that "
-            f"clone {clone_kernel!r} does not provide: {failure_text}. "
-            "This helper must be simplified or compiled against a contract that "
-            "does not request additional kernel-entry system registers."
-        )
+
+def format_support_wrapper_abi_incompatibility(*, clone_kernel: str, abi_delta: dict) -> str:
+    failures = abi_delta.get("missing_features", []) if isinstance(abi_delta, dict) else []
+    failure_text = "; ".join(
+        f"{entry.get('field')} requires {entry.get('required')} but source descriptor provides {entry.get('available')}"
+        for entry in failures
+        if isinstance(entry, dict)
+    )
+    return (
+        "binary probe support wrapper requires initial-kernel ABI state that "
+        f"clone {clone_kernel!r} does not provide: {failure_text}. "
+        "This helper must be simplified or compiled against a contract that "
+        "does not request additional kernel-entry system registers."
+    )
 
 
 def resolve_llvm_objdump() -> str:
@@ -1194,6 +1223,10 @@ def main() -> int:
         kernel_name, primary_kernel_count = choose_kernel(model, args.kernel)
         clone_result = None
         extra_link_objects: list[Path] = []
+        binary_probe_mode: str | None = None
+        binary_probe_abi_delta: dict | None = None
+        support_wrapper_footprint_report: dict | None = None
+        support_object_footprint_report: dict | None = None
 
         ir_path = temp_dir_path / "input.ir.json"
         asm_path = temp_dir_path / "output.s"
@@ -1376,14 +1409,55 @@ def main() -> int:
                         args=args,
                         tool_dir=tool_dir,
                     )
-                    validate_support_wrapper_abi_compatibility(
+                    support_object_footprint_report = deepcopy(support_footprint)
+                    support_wrapper_footprint_report = deepcopy(support_wrapper_footprint)
+                    binary_probe_abi_delta = collect_support_wrapper_abi_delta(
                         source_descriptor=find_descriptor(
                             manifest_payload,
                             str(clone_result["clone_descriptor"]),
                         ),
                         support_wrapper_footprint=support_wrapper_footprint,
-                        clone_kernel=str(clone_result["clone_kernel"]),
                     )
+                    binary_probe_mode = (
+                        "binary-safe"
+                        if not binary_probe_abi_delta.get("missing_features")
+                        else "abi-changing-required"
+                    )
+                    if binary_probe_mode != "binary-safe":
+                        if report_path is not None:
+                            partial_report = {
+                                "operation": "whole-object-regeneration-scaffold",
+                                "scope": "single-kernel-noop",
+                                "input_code_object": str(input_path),
+                                "output_code_object": str(output_path),
+                                "mode": args.mode,
+                                "kernel_name": kernel_name,
+                                "kernel_count": len(model.kernel_names()),
+                                "primary_kernel_count": primary_kernel_count,
+                                "manifest": str(working_manifest_path),
+                                "asm_manifest": str(asm_manifest_path),
+                                "ir": str(ir_path),
+                                "asm": str(asm_path),
+                                "object": str(obj_path),
+                                "rebuild_report": str(rebuild_report_path),
+                                "temp_dir": str(temp_dir_path),
+                                "clone_result": clone_result,
+                                "binary_probe": {
+                                    "instrumentation_mode": binary_probe_mode,
+                                    "support_object_footprint": support_object_footprint_report,
+                                    "support_wrapper_footprint": support_wrapper_footprint_report,
+                                    "abi_delta": binary_probe_abi_delta,
+                                },
+                            }
+                            report_path.write_text(
+                                json.dumps(partial_report, indent=2) + "\n", encoding="utf-8"
+                            )
+                        raise SystemExit(
+                            format_support_wrapper_abi_incompatibility(
+                                clone_kernel=str(clone_result["clone_kernel"]),
+                                abi_delta=binary_probe_abi_delta,
+                            )
+                        )
                     total_probe_sgprs = max(
                         total_probe_sgprs,
                         int(support_footprint.get("total_sgprs", 0) or 0),
@@ -1521,6 +1595,13 @@ def main() -> int:
         }
         if clone_result is not None:
             report["clone_result"] = clone_result
+        if binary_probe_mode is not None:
+            report["binary_probe"] = {
+                "instrumentation_mode": binary_probe_mode,
+                "support_object_footprint": support_object_footprint_report,
+                "support_wrapper_footprint": support_wrapper_footprint_report,
+                "abi_delta": binary_probe_abi_delta,
+            }
         if extra_link_objects:
             report["extra_link_objects"] = [str(path) for path in extra_link_objects]
         if report_path is not None:

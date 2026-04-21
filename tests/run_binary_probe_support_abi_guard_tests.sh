@@ -244,7 +244,16 @@ extern "C" __device__ void memory_space_binary_probe_helper(
       args.runtime->dh_builtins);
 }
 HELPER
-if run_regen "$SIMPLE_DIR" >"$SIMPLE_DIR/regen.log" 2>&1; then
+if run_regen "$SIMPLE_DIR" >"$SIMPLE_DIR/regen.log" 2>&1 && \
+   python3 - "$SIMPLE_DIR/carrier.report.json" <<'CHECK'
+import json
+import sys
+report = json.load(open(sys.argv[1], encoding="utf-8"))
+binary_probe = report.get("binary_probe", {})
+assert binary_probe.get("instrumentation_mode") == "binary-safe"
+assert binary_probe.get("abi_delta", {}).get("missing_features") == []
+CHECK
+then
     echo -e "  ${GREEN}✓ PASS${NC} - Simple helper remained ABI-compatible with the source kernel"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
@@ -304,7 +313,17 @@ if run_regen "$HEAVY_DIR" >"$HEAVY_DIR/regen.log" 2>&1; then
     echo -e "  ${RED}✗ FAIL${NC} - Heavy helper regeneration unexpectedly succeeded"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 elif grep -q "binary probe support wrapper requires initial-kernel ABI state" "$HEAVY_DIR/regen.log" && \
-     grep -q "enable_vgpr_workitem_id" "$HEAVY_DIR/regen.log"; then
+     grep -q "enable_vgpr_workitem_id" "$HEAVY_DIR/regen.log" && \
+     python3 - "$HEAVY_DIR/carrier.report.json" <<'CHECK'
+import json
+import sys
+report = json.load(open(sys.argv[1], encoding="utf-8"))
+binary_probe = report.get("binary_probe", {})
+assert binary_probe.get("instrumentation_mode") == "abi-changing-required"
+missing = binary_probe.get("abi_delta", {}).get("missing_features", [])
+assert any(entry.get("field") == "compute_pgm_rsrc2.enable_vgpr_workitem_id" for entry in missing)
+CHECK
+then
     echo -e "  ${GREEN}✓ PASS${NC} - ABI guard rejected a helper that requested unsupported entry state"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
