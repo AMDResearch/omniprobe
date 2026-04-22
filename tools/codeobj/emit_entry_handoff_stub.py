@@ -9,6 +9,8 @@ from pathlib import Path
 
 SUPPORTED_CLASSES = {
     "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1",
+    "wave64-direct-vgpr-xyz-flat-scratch-alias-v1",
+    "wave64-direct-vgpr-xyz-src-private-base-v1",
     "wave64-packed-v0-10_10_10-flat-scratch-alias-v1",
     "wave64-packed-v0-10_10_10-src-private-base-v1",
 }

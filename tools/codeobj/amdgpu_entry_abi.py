@@ -62,6 +62,99 @@ def _operand_mentions_sgpr(operand: str, sgpr: int) -> bool:
     return False
 
 
+def _write_only_scalar_def(instruction: dict[str, Any]) -> list[int]:
+    mnemonic = str(instruction.get("mnemonic", "") or "")
+    operands = instruction.get("operands", [])
+    if not isinstance(operands, list) or not operands:
+        return []
+
+    if mnemonic in {"s_mov_b32", "s_movk_i32"}:
+        dst = parse_scalar_reg(str(operands[0]))
+        return [dst] if dst is not None else []
+
+    if mnemonic in {"s_mov_b64", "s_getpc_b64"}:
+        dst_pair = parse_scalar_reg_pair(str(operands[0]))
+        if dst_pair is not None:
+            return [dst_pair[0], dst_pair[1]]
+    return []
+
+
+def observe_entry_dead_sgpr_pairs(
+    function: dict[str, Any],
+    descriptor: dict[str, Any] | None,
+    search_window: int = 32,
+) -> list[dict[str, Any]]:
+    instructions = function.get("instructions", [])
+    if not isinstance(instructions, list):
+        return []
+
+    liveins = set(entry_livein_sgprs(descriptor))
+    first_access: dict[int, dict[str, Any]] = {}
+    candidates: list[dict[str, Any]] = []
+
+    for index, instruction in enumerate(instructions[:search_window]):
+        detail = _instruction_detail(instruction, index)
+        def_regs = _write_only_scalar_def(instruction)
+
+        for reg in def_regs:
+            if reg in first_access:
+                continue
+            first_access[reg] = {"kind": "write_only_def", "detail": detail}
+
+        operands = instruction.get("operands", [])
+        if not isinstance(operands, list):
+            continue
+        mentioned: set[int] = set()
+        for operand_index, operand in enumerate(operands):
+            text = str(operand)
+            pair = parse_scalar_reg_pair(text)
+            if pair is not None:
+                mentioned.update(range(pair[0], pair[1] + 1))
+                continue
+            scalar = parse_scalar_reg(text)
+            if scalar is not None:
+                mentioned.add(scalar)
+        for reg in sorted(mentioned):
+            if reg in def_regs:
+                continue
+            if reg in first_access:
+                continue
+            first_access[reg] = {"kind": "read_or_readwrite", "detail": detail}
+
+    sorted_regs = sorted(reg for reg, record in first_access.items() if record["kind"] == "write_only_def")
+    for reg in sorted_regs:
+        if reg % 2 != 0:
+            continue
+        mate = reg + 1
+        if mate not in first_access:
+            continue
+        if first_access[mate]["kind"] != "write_only_def":
+            continue
+        if reg in liveins or mate in liveins:
+            continue
+        lo_detail = first_access[reg]["detail"]
+        hi_detail = first_access[mate]["detail"]
+        candidates.append(
+            {
+                "pair": [reg, mate],
+                "registers": [reg, mate],
+                "first_def_instruction_indices": [
+                    lo_detail["instruction_index"],
+                    hi_detail["instruction_index"],
+                ],
+                "first_def_instruction_addresses": [
+                    lo_detail["instruction_address"],
+                    hi_detail["instruction_address"],
+                ],
+                "first_def_operand_texts": [
+                    lo_detail["operand_text"],
+                    hi_detail["operand_text"],
+                ],
+            }
+        )
+    return candidates
+
+
 def entry_livein_sgprs(descriptor: dict[str, Any] | None) -> list[int]:
     if not isinstance(descriptor, dict):
         return []
@@ -161,6 +254,10 @@ def observe_workitem_id_materialization(
     packed_x: dict[str, Any] | None = None
     direct_uses: list[dict[str, Any]] = []
 
+    tracked_workitem_vgprs = {
+        f"v{vgpr}" for vgpr in range(max(0, workitem_vgpr_count))
+    }
+
     for index, instruction in enumerate(instructions[:search_window]):
         mnemonic = str(instruction.get("mnemonic", "") or "")
         operands = [str(value) for value in instruction.get("operands", [])]
@@ -176,7 +273,9 @@ def observe_workitem_id_materialization(
         if mnemonic == "v_and_b32_e32" and len(operands) == 3 and operands[2] == "v0":
             if _parse_int_operand(operands[1]) == 0x3FF and packed_x is None:
                 packed_x = detail
-        if mnemonic.startswith("v_") and any(operand in {"v1", "v2"} for operand in operands[1:]):
+        if mnemonic.startswith("v_") and any(
+            operand in tracked_workitem_vgprs for operand in operands[1:]
+        ):
             direct_uses.append(detail)
 
     if workitem_vgpr_count >= 3 and packed_x and packed_y and packed_z:
@@ -384,6 +483,7 @@ def analyze_kernel_entry_abi(
     kernarg_base = infer_kernarg_base_pair(function)
     system_sgpr_uses = observe_entry_system_sgpr_uses(function, system_roles)
     workitem_materialization = observe_workitem_id_materialization(function, workitem_vgpr_count)
+    dead_sgpr_pairs = observe_entry_dead_sgpr_pairs(function, descriptor)
     current_stub_support = summarize_current_entry_stub_support(
         descriptor=descriptor,
         kernarg_base=kernarg_base,
@@ -409,6 +509,7 @@ def analyze_kernel_entry_abi(
         "inferred_kernarg_base": kernarg_base,
         "observed_workitem_id_materialization": workitem_materialization,
         "observed_private_segment_materialization": private_materialization,
+        "entry_dead_sgpr_pair_candidates": dead_sgpr_pairs,
         "current_entry_stub_support": current_stub_support,
         "supported_for_current_entry_stub": bool(current_stub_support["supported"]),
     }

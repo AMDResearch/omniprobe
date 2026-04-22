@@ -126,4 +126,48 @@ run_arch_test \
     "packed_v0_10_10_10_unpack" \
     "src_private_base"
 
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="amdgpu_entry_abi_wave64_direct_v0_regression"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+
+if python3 - "$REPO_ROOT" <<'PY'
+import sys
+from pathlib import Path
+
+repo_root = Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(repo_root / "tools" / "codeobj"))
+
+from amdgpu_entry_abi import observe_workitem_id_materialization  # type: ignore
+
+function = {
+    "instructions": [
+        {
+            "mnemonic": "v_mov_b32_e32",
+            "operands": ["v31", "v0"],
+            "operand_text": "v31, v0",
+            "address": 0x100,
+        },
+        {
+            "mnemonic": "v_accvgpr_write_b32",
+            "operands": ["a0", "v31"],
+            "operand_text": "a0, v31",
+            "address": 0x104,
+        },
+    ]
+}
+
+payload = observe_workitem_id_materialization(function, 3)
+assert payload is not None
+assert payload["pattern_class"] == "direct_vgpr_xyz", payload
+first_use = payload["details"]["first_direct_uses"][0]
+assert first_use["operand_text"] == "v31, v0", first_use
+PY
+then
+    echo -e "  ${GREEN}✓ PASS${NC} - Wave64 direct-VGPR detection now recognizes an early v0-only use"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Wave64 direct-VGPR detection regressed on the v0-only case"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 print_summary

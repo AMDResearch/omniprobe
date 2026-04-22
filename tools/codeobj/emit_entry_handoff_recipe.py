@@ -113,6 +113,14 @@ def classify_supported_class(analysis: dict) -> tuple[str | None, list[str]]:
         blockers.append(f"unsupported-wave64-private-pattern-{private_pattern}")
         return None, blockers
 
+    if wavefront_size == 64 and workitem_pattern == "direct_vgpr_xyz":
+        if private_pattern == "flat_scratch_alias_init":
+            return "wave64-direct-vgpr-xyz-flat-scratch-alias-v1", blockers
+        if private_pattern == "src_private_base":
+            return "wave64-direct-vgpr-xyz-src-private-base-v1", blockers
+        blockers.append(f"unsupported-wave64-private-pattern-{private_pattern}")
+        return None, blockers
+
     blockers.append(
         "unsupported-entry-shape-"
         f"wave{wavefront_size}-{workitem_pattern}-{private_pattern}"

@@ -797,6 +797,7 @@ ENTRY_WRAPPER_PROOF_ARCH = "gfx1030"
 ENTRY_WRAPPER_PROOF_BODY_PREFIX = "__omniprobe_original_body_"
 ENTRY_WRAPPER_PROOF_IMPLEMENTED_CLASSES = {
     "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1",
+    "wave64-direct-vgpr-xyz-flat-scratch-alias-v1",
 }
 ENTRY_WRAPPER_HIDDEN_HANDOFF_POINTER_SIZE = 8
 ENTRY_WRAPPER_HIDDEN_HANDOFF_ALIGNMENT = 8
@@ -1488,6 +1489,13 @@ def classify_entry_handoff_supported_class(analysis: dict) -> tuple[str | None, 
             return "wave64-packed-v0-10_10_10-src-private-base-v1", blockers
         return None, [f"unsupported-wave64-private-pattern-{private_pattern}"]
 
+    if wavefront_size == 64 and workitem_pattern == "direct_vgpr_xyz":
+        if private_pattern == "flat_scratch_alias_init":
+            return "wave64-direct-vgpr-xyz-flat-scratch-alias-v1", blockers
+        if private_pattern == "src_private_base":
+            return "wave64-direct-vgpr-xyz-src-private-base-v1", blockers
+        return None, [f"unsupported-wave64-private-pattern-{private_pattern}"]
+
     return None, [
         "unsupported-entry-shape-"
         f"wave{wavefront_size}-{workitem_pattern}-{private_pattern}"
@@ -1957,15 +1965,6 @@ def validate_entry_wrapper_proof_preconditions(
         )
         or ""
     )
-    arch_ok = (
-        ir_arch == ENTRY_WRAPPER_PROOF_ARCH
-        or metadata_target.endswith(f"--{ENTRY_WRAPPER_PROOF_ARCH}")
-    )
-    if not arch_ok:
-        raise SystemExit(
-            "entry-wrapper proof is currently constrained to "
-            f"{ENTRY_WRAPPER_PROOF_ARCH}; found ir.arch={ir_arch!r}, metadata.target={metadata_target!r}"
-        )
     function = find_ir_function(ir, kernel_name)
     descriptor = next(
         (
