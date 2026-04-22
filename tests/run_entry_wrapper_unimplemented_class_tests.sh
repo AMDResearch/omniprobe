@@ -139,11 +139,4 @@ run_unimplemented_class_test \
     "entry_abi_kernel" \
     "wave64-packed-v0-10_10_10-src-private-base-v1"
 
-run_unimplemented_class_test \
-    "gfx942_real_single_vgpr" \
-    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.ir.json" \
-    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.manifest.json" \
-    "Cijk_S_GA" \
-    "wave64-single-vgpr-x-workgroup-x-kernarg-only-v1"
-
 print_summary

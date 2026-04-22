@@ -798,6 +798,7 @@ ENTRY_WRAPPER_PROOF_BODY_PREFIX = "__omniprobe_original_body_"
 ENTRY_WRAPPER_PROOF_IMPLEMENTED_CLASSES = {
     "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1",
     "wave64-direct-vgpr-xyz-flat-scratch-alias-v1",
+    "wave64-single-vgpr-x-workgroup-x-kernarg-only-v1",
 }
 ENTRY_WRAPPER_HIDDEN_HANDOFF_POINTER_SIZE = 8
 ENTRY_WRAPPER_HIDDEN_HANDOFF_ALIGNMENT = 8
@@ -889,6 +890,7 @@ def build_entry_wrapper_ir(
         private_pattern_class = str(
             workitem_spill_restore_plan.get("private_segment_pattern_class", "") or ""
         )
+        address_vgprs = workitem_spill_restore_plan.get("address_vgprs")
         private_offset_source_sgpr = workitem_spill_restore_plan.get("private_segment_offset_source_sgpr")
         if private_pattern_class in {
             "",
@@ -997,41 +999,89 @@ def build_entry_wrapper_ir(
                 ]
             )
             next_address += 8
-            emit_private_address_setup()
-            instructions.append(
-                {
-                    "address": next_address,
-                    "mnemonic": "s_mov_b32",
-                    "operand_text": f"s{soffset_sgpr}, 0",
-                    "operands": [f"s{soffset_sgpr}", "0"],
-                    "control_flow": "linear",
-                    "target": None,
-                    "is_padding": False,
-                }
-            )
-            next_address += 4
-            for index, source_vgpr in enumerate(source_vgprs):
-                current_offset = spill_offset + (index * 4)
+            if private_pattern_class == "wrapper_owned_src_private_base":
+                if spill_offset != 0:
+                    raise SystemExit(
+                        "entry wrapper workitem spill/restore requires zero spill offset for wrapper-owned src_private_base"
+                    )
+                if not (
+                    isinstance(address_vgprs, list)
+                    and len(address_vgprs) == 2
+                    and all(isinstance(value, int) for value in address_vgprs)
+                ):
+                    raise SystemExit(
+                        "entry wrapper workitem spill/restore requires address_vgprs for wrapper-owned src_private_base"
+                    )
+                addr_lo_vgpr, addr_hi_vgpr = int(address_vgprs[0]), int(address_vgprs[1])
+                emit_private_address_setup()
+                instructions.extend(
+                    [
+                        {
+                            "address": next_address,
+                            "mnemonic": "v_mov_b32_e32",
+                            "operand_text": f"v{addr_lo_vgpr}, s0",
+                            "operands": [f"v{addr_lo_vgpr}", "s0"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 4,
+                            "mnemonic": "v_mov_b32_e32",
+                            "operand_text": f"v{addr_hi_vgpr}, s1",
+                            "operands": [f"v{addr_hi_vgpr}", "s1"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 8,
+                            "mnemonic": "flat_store_dword",
+                            "operand_text": f"v[{addr_lo_vgpr}:{addr_hi_vgpr}], v{source_vgprs[0]}",
+                            "operands": [f"v[{addr_lo_vgpr}:{addr_hi_vgpr}]", f"v{source_vgprs[0]}"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                    ]
+                )
+                next_address += 12
+            else:
+                emit_private_address_setup()
                 instructions.append(
                     {
                         "address": next_address,
-                        "mnemonic": "buffer_store_dword",
-                        "operand_text": (
-                            f"v{source_vgpr}, off, s[0:3], s{soffset_sgpr} offset:{current_offset}"
-                        ),
-                        "operands": [
-                            f"v{source_vgpr}",
-                            "off",
-                            "s[0:3]",
-                            f"s{soffset_sgpr}",
-                            f"offset:{current_offset}",
-                        ],
+                        "mnemonic": "s_mov_b32",
+                        "operand_text": f"s{soffset_sgpr}, 0",
+                        "operands": [f"s{soffset_sgpr}", "0"],
                         "control_flow": "linear",
                         "target": None,
                         "is_padding": False,
                     }
                 )
-                next_address += 8
+                next_address += 4
+                for index, source_vgpr in enumerate(source_vgprs):
+                    current_offset = spill_offset + (index * 4)
+                    instructions.append(
+                        {
+                            "address": next_address,
+                            "mnemonic": "buffer_store_dword",
+                            "operand_text": (
+                                f"v{source_vgpr}, off, s[0:3], s{soffset_sgpr} offset:{current_offset}"
+                            ),
+                            "operands": [
+                                f"v{source_vgpr}",
+                                "off",
+                                "s[0:3]",
+                                f"s{soffset_sgpr}",
+                                f"offset:{current_offset}",
+                            ],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        }
+                    )
+                    next_address += 8
             instructions.extend(
                 [
                     {
@@ -1068,73 +1118,136 @@ def build_entry_wrapper_ir(
                     }
                 )
                 next_address += 4
-            emit_private_address_setup()
-            instructions.append(
-                {
-                    "address": next_address,
-                    "mnemonic": "s_mov_b32",
-                    "operand_text": f"s{soffset_sgpr}, 0",
-                    "operands": [f"s{soffset_sgpr}", "0"],
-                    "control_flow": "linear",
-                    "target": None,
-                    "is_padding": False,
-                }
-            )
-            next_address += 4
-            for index, source_vgpr in enumerate(source_vgprs):
-                current_offset = spill_offset + (index * 4)
+            if private_pattern_class == "wrapper_owned_src_private_base":
+                addr_lo_vgpr, addr_hi_vgpr = int(address_vgprs[0]), int(address_vgprs[1])
+                emit_private_address_setup()
+                instructions.extend(
+                    [
+                        {
+                            "address": next_address,
+                            "mnemonic": "v_mov_b32_e32",
+                            "operand_text": f"v{addr_lo_vgpr}, s0",
+                            "operands": [f"v{addr_lo_vgpr}", "s0"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 4,
+                            "mnemonic": "v_mov_b32_e32",
+                            "operand_text": f"v{addr_hi_vgpr}, s1",
+                            "operands": [f"v{addr_hi_vgpr}", "s1"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 8,
+                            "mnemonic": "flat_load_dword",
+                            "operand_text": f"v{source_vgprs[0]}, v[{addr_lo_vgpr}:{addr_hi_vgpr}]",
+                            "operands": [f"v{source_vgprs[0]}", f"v[{addr_lo_vgpr}:{addr_hi_vgpr}]"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 12,
+                            "mnemonic": "s_waitcnt",
+                            "operand_text": "vmcnt(0)",
+                            "operands": ["vmcnt(0)"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 16,
+                            "mnemonic": "s_mov_b32",
+                            "operand_text": "s0, s{}".format(save_lo),
+                            "operands": ["s0", f"s{save_lo}"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 20,
+                            "mnemonic": "s_mov_b32",
+                            "operand_text": "s1, s{}".format(save_hi),
+                            "operands": ["s1", f"s{save_hi}"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                    ]
+                )
+                next_address += 24
+            else:
+                emit_private_address_setup()
                 instructions.append(
                     {
                         "address": next_address,
-                        "mnemonic": "buffer_load_dword",
-                        "operand_text": (
-                            f"v{source_vgpr}, off, s[0:3], s{soffset_sgpr} offset:{current_offset}"
-                        ),
-                        "operands": [
-                            f"v{source_vgpr}",
-                            "off",
-                            "s[0:3]",
-                            f"s{soffset_sgpr}",
-                            f"offset:{current_offset}",
-                        ],
+                        "mnemonic": "s_mov_b32",
+                        "operand_text": f"s{soffset_sgpr}, 0",
+                        "operands": [f"s{soffset_sgpr}", "0"],
                         "control_flow": "linear",
                         "target": None,
                         "is_padding": False,
                     }
                 )
-                next_address += 8
-            instructions.extend(
-                [
-                    {
-                        "address": next_address,
-                        "mnemonic": "s_waitcnt",
-                        "operand_text": "vmcnt(0)",
-                        "operands": ["vmcnt(0)"],
-                        "control_flow": "linear",
-                        "target": None,
-                        "is_padding": False,
-                    },
-                    {
-                        "address": next_address + 4,
-                        "mnemonic": "s_mov_b32",
-                        "operand_text": "s0, s{}".format(save_lo),
-                        "operands": ["s0", f"s{save_lo}"],
-                        "control_flow": "linear",
-                        "target": None,
-                        "is_padding": False,
-                    },
-                    {
-                        "address": next_address + 8,
-                        "mnemonic": "s_mov_b32",
-                        "operand_text": "s1, s{}".format(save_hi),
-                        "operands": ["s1", f"s{save_hi}"],
-                        "control_flow": "linear",
-                        "target": None,
-                        "is_padding": False,
-                    },
-                ]
-            )
-            next_address += 12
+                next_address += 4
+                for index, source_vgpr in enumerate(source_vgprs):
+                    current_offset = spill_offset + (index * 4)
+                    instructions.append(
+                        {
+                            "address": next_address,
+                            "mnemonic": "buffer_load_dword",
+                            "operand_text": (
+                                f"v{source_vgpr}, off, s[0:3], s{soffset_sgpr} offset:{current_offset}"
+                            ),
+                            "operands": [
+                                f"v{source_vgpr}",
+                                "off",
+                                "s[0:3]",
+                                f"s{soffset_sgpr}",
+                                f"offset:{current_offset}",
+                            ],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        }
+                    )
+                    next_address += 8
+                instructions.extend(
+                    [
+                        {
+                            "address": next_address,
+                            "mnemonic": "s_waitcnt",
+                            "operand_text": "vmcnt(0)",
+                            "operands": ["vmcnt(0)"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 4,
+                            "mnemonic": "s_mov_b32",
+                            "operand_text": "s0, s{}".format(save_lo),
+                            "operands": ["s0", f"s{save_lo}"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 8,
+                            "mnemonic": "s_mov_b32",
+                            "operand_text": "s1, s{}".format(save_hi),
+                            "operands": ["s1", f"s{save_hi}"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                    ]
+                )
+                next_address += 12
 
     if hidden_ctx_offset is not None:
         if hidden_ctx_source_pair is None:
@@ -1983,7 +2096,7 @@ def build_entry_wrapper_workitem_spill_restore_plan(
         raise SystemExit("kernel private-segment size cannot be negative")
     spill_bytes = max(0, len(source_vgprs) * 4)
     private_segment_growth = align_up(spill_bytes, 16)
-    return {
+    plan = {
         "source_vgprs": source_vgprs,
         "pattern_class": pattern_class,
         "spill_offset": private_segment_size,
@@ -1995,6 +2108,14 @@ def build_entry_wrapper_workitem_spill_restore_plan(
         "branch_pair": [int(branch_pair[0]), int(branch_pair[1])],
         "soffset_sgpr": int(branch_pair[0]),
     }
+    if private_pattern_class == "wrapper_owned_src_private_base":
+        if source_vgprs != [0]:
+            raise SystemExit(
+                "entry wrapper workitem proof currently supports wrapper-owned src_private_base "
+                "only for single-VGPR entry classes"
+            )
+        plan["address_vgprs"] = [2, 3]
+    return plan
 
 
 def validate_entry_wrapper_proof_preconditions(

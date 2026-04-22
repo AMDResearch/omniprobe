@@ -193,12 +193,12 @@ subprocess.run(
 payload = json.loads(output_json.read_text(encoding="utf-8"))
 kernels = {entry["kernel_name"]: entry for entry in payload["kernels"]}
 assert kernels["Cijk_S_GA"]["recognized_class"] == "wave64-single-vgpr-x-workgroup-x-kernarg-only-v1"
-assert kernels["Cijk_S_GA"]["implemented_in_runtime_wrapper"] is False
+assert kernels["Cijk_S_GA"]["implemented_in_runtime_wrapper"] is True
 assert kernels["Cijk_S_GA"]["workitem_pattern"] == "single_vgpr_workitem_id"
 assert kernels["Cijk_S_GA"]["private_pattern"] is None
 PY
 then
-    echo -e "  ${GREEN}✓ PASS${NC} - Audit tool recognizes the real gfx942 single-VGPR class while keeping runtime-wrapper support fail-closed"
+    echo -e "  ${GREEN}✓ PASS${NC} - Audit tool recognizes the real gfx942 single-VGPR class and marks runtime-wrapper support implemented"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
     echo -e "  ${RED}✗ FAIL${NC} - Audit tool did not report the expected real gfx942 single-VGPR class"

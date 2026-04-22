@@ -206,6 +206,7 @@ assert plan["spill_bytes"] == 4, plan
 assert plan["private_segment_growth"] == 16, plan
 assert plan["private_segment_pattern_class"] == "wrapper_owned_src_private_base", plan
 assert plan["private_segment_offset_source_sgpr"] == 3, plan
+assert plan["address_vgprs"] == [2, 3], plan
 assert plan["save_pair"] == [4, 5], plan
 assert plan["branch_pair"] == [6, 7], plan
 assert plan["soffset_sgpr"] == 6, plan
@@ -226,6 +227,7 @@ assert payload["plan"]["spill_offset"] == 0
 assert payload["plan"]["private_segment_growth"] == 16
 assert payload["plan"]["private_segment_pattern_class"] == "wrapper_owned_src_private_base"
 assert payload["plan"]["private_segment_offset_source_sgpr"] == 3
+assert payload["plan"]["address_vgprs"] == [2, 3]
 PY
     then
         echo -e "  ${GREEN}✓ PASS${NC} - Offline workitem spill/restore planning now derives a wrapper-owned private-tail carrier for the real gfx942 single-VGPR class"
@@ -322,24 +324,26 @@ save_hi = find_index("s_mov_b32", "s5, s1")
 private_base_0 = find_index("s_mov_b64", "s[0:1], src_private_base")
 private_add_0 = find_index("s_add_u32", "s0, s0, s3", private_base_0 + 1)
 private_addc_0 = find_index("s_addc_u32", "s1, s1, 0", private_add_0 + 1)
-soffset_0 = find_index("s_mov_b32", "s6, 0", private_addc_0 + 1)
-store_v0 = find_index("buffer_store_dword", "v0, off, s[0:3], s6 offset:0", soffset_0 + 1)
+addr_lo_0 = find_index("v_mov_b32_e32", "v2, s0", private_addc_0 + 1)
+addr_hi_0 = find_index("v_mov_b32_e32", "v3, s1", addr_lo_0 + 1)
+store_v0 = find_index("flat_store_dword", "v[2:3], v0", addr_hi_0 + 1)
 restore_lo_before_clobber = find_index("s_mov_b32", "s0, s4", store_v0 + 1)
 restore_hi_before_clobber = find_index("s_mov_b32", "s1, s5", restore_lo_before_clobber + 1)
 clobber_v0 = find_index("v_mov_b32_e32", "v0, 0", restore_hi_before_clobber + 1)
 private_base_1 = find_index("s_mov_b64", "s[0:1], src_private_base", clobber_v0 + 1)
 private_add_1 = find_index("s_add_u32", "s0, s0, s3", private_base_1 + 1)
 private_addc_1 = find_index("s_addc_u32", "s1, s1, 0", private_add_1 + 1)
-soffset_1 = find_index("s_mov_b32", "s6, 0", private_addc_1 + 1)
-load_v0 = find_index("buffer_load_dword", "v0, off, s[0:3], s6 offset:0", soffset_1 + 1)
+addr_lo_1 = find_index("v_mov_b32_e32", "v2, s0", private_addc_1 + 1)
+addr_hi_1 = find_index("v_mov_b32_e32", "v3, s1", addr_lo_1 + 1)
+load_v0 = find_index("flat_load_dword", "v0, v[2:3]", addr_hi_1 + 1)
 wait = find_index("s_waitcnt", "vmcnt(0)", load_v0 + 1)
 restore_lo_after_load = find_index("s_mov_b32", "s0, s4", wait + 1)
 restore_hi_after_load = find_index("s_mov_b32", "s1, s5", restore_lo_after_load + 1)
 branch = find_index("s_setpc_b64", "s[6:7]", restore_hi_after_load + 1)
 
-assert save_lo < save_hi < private_base_0 < private_add_0 < private_addc_0 < soffset_0 < store_v0
+assert save_lo < save_hi < private_base_0 < private_add_0 < private_addc_0 < addr_lo_0 < addr_hi_0 < store_v0
 assert store_v0 < restore_lo_before_clobber < restore_hi_before_clobber < clobber_v0
-assert clobber_v0 < private_base_1 < private_add_1 < private_addc_1 < soffset_1 < load_v0 < wait
+assert clobber_v0 < private_base_1 < private_add_1 < private_addc_1 < addr_lo_1 < addr_hi_1 < load_v0 < wait
 assert wait < restore_lo_after_load < restore_hi_after_load < branch
 
 print(json.dumps({"plan": plan, "instruction_count": len(instructions)}, indent=2))
@@ -353,6 +357,7 @@ from pathlib import Path
 payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 assert payload["plan"]["private_segment_pattern_class"] == "wrapper_owned_src_private_base"
 assert payload["plan"]["private_segment_offset_source_sgpr"] == 3
+assert payload["plan"]["address_vgprs"] == [2, 3]
 assert payload["instruction_count"] > 0
 PY
     then
