@@ -184,6 +184,66 @@ run_supported_fixture_test \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.manifest.json"
 
 TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="entry_handoff_recipe_fixture_gfx90a_mi210_direct"
+FIXTURE_OUTPUT="$OUTPUT_DIR/${TEST_NAME}.json"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+
+if python3 "$RECIPE_TOOL" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a_mi210_direct.ir.json" \
+    --manifest "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a_mi210_direct.manifest.json" \
+    --function mlk_xyz \
+    --output "$FIXTURE_OUTPUT" > "$OUTPUT_DIR/${TEST_NAME}.out"; then
+    if python3 - "$FIXTURE_OUTPUT" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["function"] == "mlk_xyz"
+assert payload["arch"] == "gfx90a"
+assert payload["supported"] is True
+assert payload["supported_class"] == "wave64-direct-vgpr-xyz-flat-scratch-alias-v1"
+assert payload["blockers"] == []
+assert payload["descriptor_summary"]["kernarg_size"] == 272
+assert payload["descriptor_summary"]["private_segment_fixed_size"] == 192
+assert payload["descriptor_summary"]["wavefront_size"] == 64
+actions = payload["reconstruction_actions"]
+assert actions[0]["action"] == "materialize-kernarg-base-pair"
+assert actions[0]["target_sgprs"] == [8, 9]
+workitem = next(entry for entry in actions if entry["action"] == "materialize-entry-workitem-vgprs")
+assert workitem["count"] == 3
+assert workitem["source_pattern"] == "direct_vgpr_xyz"
+private_action = next(
+    entry for entry in actions if entry["action"] == "materialize-private-segment-state"
+)
+assert private_action["pattern_class"] == "flat_scratch_alias_init"
+wrapper = payload["wrapper_source_analysis"]
+assert wrapper["model"] == "direct-entry-wrapper-v1"
+assert wrapper["direct_branch_supported"] is True
+assert wrapper["reconstruction_after_clobber_supported"] is False
+assert "no-independent-entry-workitem-vgpr-source" in wrapper["reconstruction_after_clobber_blockers"]
+handoff = payload["supplemental_handoff_contract"]
+assert handoff["schema"] == "omniprobe.entry_handoff.hidden_v1"
+assert handoff["required"] is True
+fields = {entry["name"]: entry for entry in handoff["fields"]}
+assert fields["original_kernarg_pointer"]["source_class"] == "dispatch_carried"
+assert fields["entry_workitem_id_x"]["source_class"] == "entry_captured"
+assert fields["private_segment_wave_offset"]["source_class"] == "entry_captured"
+validation = {entry["name"]: entry for entry in handoff["validation_requirements"]}
+assert validation["wavefront_size"]["source_class"] == "descriptor_derived"
+PY
+    then
+        echo -e "  ${GREEN}✓ PASS${NC} - Real MI210 fixture emits the expected wave64 direct-VGPR reconstruction recipe"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Real MI210 fixture recipe output was incorrect"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Real MI210 fixture recipe generation failed"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="entry_handoff_recipe_mlk_runtime"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
 

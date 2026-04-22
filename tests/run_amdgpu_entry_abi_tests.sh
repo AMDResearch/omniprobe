@@ -34,6 +34,9 @@ run_arch_test() {
     local expected_role_sgprs="$7"
     local expected_workitem_pattern="$8"
     local expected_private_pattern="$9"
+    local function_name="${10:-entry_abi_kernel}"
+    local expected_allocated_sgpr_count="${11:-}"
+    local expected_allocated_vgpr_count="${12:-8}"
 
     TESTS_RUN=$((TESTS_RUN + 1))
     local test_name="amdgpu_entry_abi_${arch}"
@@ -42,9 +45,9 @@ run_arch_test() {
 
     if python3 "$ANALYZER" "$fixture" \
         --manifest "$manifest" \
-        --function entry_abi_kernel \
+        --function "$function_name" \
         --output "$output_json" > "$OUTPUT_DIR/${test_name}.out"; then
-        if python3 - "$output_json" "$arch" "$expected_wavefront_size" "$expected_kernarg_pair" "$expected_liveins" "$expected_role_sgprs" "$expected_workitem_pattern" "$expected_private_pattern" <<'PY'
+        if python3 - "$output_json" "$arch" "$expected_wavefront_size" "$expected_kernarg_pair" "$expected_liveins" "$expected_role_sgprs" "$expected_workitem_pattern" "$expected_private_pattern" "$expected_allocated_sgpr_count" "$expected_allocated_vgpr_count" <<'PY'
 import json
 import sys
 
@@ -56,10 +59,14 @@ expected_liveins = [int(part) for part in sys.argv[5].split(",") if part]
 expected_role_sgprs = [int(part) for part in sys.argv[6].split(":")]
 expected_workitem_pattern = sys.argv[7]
 expected_private_pattern = sys.argv[8]
+expected_allocated_sgpr_count = int(sys.argv[9]) if sys.argv[9] else None
+expected_allocated_vgpr_count = int(sys.argv[10])
 
 assert payload["arch"] == expected_arch
 assert payload["descriptor_has_kernarg_segment_ptr"] is True
-assert payload["allocated_vgpr_count"] == 8
+if expected_allocated_sgpr_count is not None:
+    assert payload["allocated_sgpr_count"] == expected_allocated_sgpr_count
+assert payload["allocated_vgpr_count"] == expected_allocated_vgpr_count
 assert payload["wavefront_size"] == expected_wavefront_size
 assert payload["entry_livein_sgprs"] == expected_liveins
 roles = payload["entry_system_sgpr_roles"]
@@ -125,6 +132,20 @@ run_arch_test \
     "2:3:4:5" \
     "packed_v0_10_10_10_unpack" \
     "src_private_base"
+
+run_arch_test \
+    "gfx90a" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a_mi210_direct.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a_mi210_direct.manifest.json" \
+    "64" \
+    "8:9" \
+    "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17" \
+    "14:15:16:17" \
+    "direct_vgpr_xyz" \
+    "flat_scratch_alias_init" \
+    "mlk_xyz" \
+    "40" \
+    "40"
 
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="amdgpu_entry_abi_wave64_direct_v0_regression"

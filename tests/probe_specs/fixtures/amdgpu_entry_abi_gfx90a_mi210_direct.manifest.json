@@ -1,0 +1,1177 @@
+{
+  "input": "tests/probe_specs/fixtures/amdgpu_entry_abi_gfx90a_mi210_direct.hsaco",
+  "input_file": "tests/probe_specs/fixtures/amdgpu_entry_abi_gfx90a_mi210_direct.hsaco",
+  "kernels": {
+    "function_symbols": [
+      {
+        "name": "mlk_xyz",
+        "value": 45312,
+        "size": 1396,
+        "binding": "Global",
+        "type": "Function",
+        "visibility": [
+          "STV_PROTECTED"
+        ],
+        "section": ".text",
+        "section_offset": 35328
+      }
+    ],
+    "descriptors": [
+      {
+        "name": "mlk_xyz.kd",
+        "kernel_name": "mlk_xyz",
+        "section": ".rodata",
+        "size": 64,
+        "file_offset": 5568,
+        "bytes_hex": "00000000c00000001001000000000000409b0000000000000000000000000000000000000000000000000000070000000401af009d1300003f00000000000000",
+        "group_segment_fixed_size": 0,
+        "private_segment_fixed_size": 192,
+        "kernarg_size": 272,
+        "kernel_code_entry_byte_offset": 39744,
+        "compute_pgm_rsrc3": {
+          "raw_value": 7,
+          "shared_vgpr_count": 7,
+          "inst_pref_size": 0,
+          "trap_on_start": 0,
+          "trap_on_end": 0,
+          "image_op": 0
+        },
+        "compute_pgm_rsrc1": {
+          "raw_value": 11469060,
+          "granulated_workitem_vgpr_count": 4,
+          "granulated_wavefront_sgpr_count": 4,
+          "priority": 0,
+          "float_round_mode_32": 0,
+          "float_round_mode_16_64": 0,
+          "float_denorm_mode_32": 3,
+          "float_denorm_mode_16_64": 3,
+          "enable_dx10_clamp": 1,
+          "enable_ieee_mode": 1,
+          "fp16_overflow": 0,
+          "workgroup_processor_mode": 0,
+          "memory_ordered": 0,
+          "forward_progress": 0
+        },
+        "compute_pgm_rsrc2": {
+          "raw_value": 5021,
+          "enable_private_segment": 1,
+          "user_sgpr_count": 14,
+          "enable_trap_handler_or_dynamic_vgpr": 0,
+          "enable_sgpr_workgroup_id_x": 1,
+          "enable_sgpr_workgroup_id_y": 1,
+          "enable_sgpr_workgroup_id_z": 1,
+          "enable_sgpr_workgroup_info": 0,
+          "enable_vgpr_workitem_id": 2,
+          "exception_fp_ieee_invalid_op": 0,
+          "exception_fp_denorm_src": 0,
+          "exception_fp_ieee_div_zero": 0,
+          "exception_fp_ieee_overflow": 0,
+          "exception_fp_ieee_underflow": 0,
+          "exception_fp_ieee_inexact": 0,
+          "exception_int_div_zero": 0
+        },
+        "kernel_code_properties": {
+          "raw_value": 63,
+          "enable_sgpr_private_segment_buffer": 1,
+          "enable_sgpr_dispatch_ptr": 1,
+          "enable_sgpr_queue_ptr": 1,
+          "enable_sgpr_kernarg_segment_ptr": 1,
+          "enable_sgpr_dispatch_id": 1,
+          "enable_sgpr_flat_scratch_init": 1,
+          "enable_sgpr_private_segment_size": 0,
+          "enable_wavefront_size32": 0,
+          "uses_dynamic_stack": 0,
+          "kernarg_preload_spec_length": 0,
+          "kernarg_preload_spec_offset": 0
+        }
+      }
+    ],
+    "metadata": {
+      "object": {
+        "amdhsa.kernels": [
+          {
+            ".agpr_count": 4,
+            ".args": [
+              {
+                ".address_space": "global",
+                ".offset": 0,
+                ".size": 8,
+                ".value_kind": "global_buffer"
+              },
+              {
+                ".offset": 8,
+                ".size": 8,
+                ".value_kind": "by_value"
+              },
+              {
+                ".offset": 16,
+                ".size": 4,
+                ".value_kind": "hidden_block_count_x"
+              },
+              {
+                ".offset": 20,
+                ".size": 4,
+                ".value_kind": "hidden_block_count_y"
+              },
+              {
+                ".offset": 24,
+                ".size": 4,
+                ".value_kind": "hidden_block_count_z"
+              },
+              {
+                ".offset": 28,
+                ".size": 2,
+                ".value_kind": "hidden_group_size_x"
+              },
+              {
+                ".offset": 30,
+                ".size": 2,
+                ".value_kind": "hidden_group_size_y"
+              },
+              {
+                ".offset": 32,
+                ".size": 2,
+                ".value_kind": "hidden_group_size_z"
+              },
+              {
+                ".offset": 34,
+                ".size": 2,
+                ".value_kind": "hidden_remainder_x"
+              },
+              {
+                ".offset": 36,
+                ".size": 2,
+                ".value_kind": "hidden_remainder_y"
+              },
+              {
+                ".offset": 38,
+                ".size": 2,
+                ".value_kind": "hidden_remainder_z"
+              },
+              {
+                ".offset": 56,
+                ".size": 8,
+                ".value_kind": "hidden_global_offset_x"
+              },
+              {
+                ".offset": 64,
+                ".size": 8,
+                ".value_kind": "hidden_global_offset_y"
+              },
+              {
+                ".offset": 72,
+                ".size": 8,
+                ".value_kind": "hidden_global_offset_z"
+              },
+              {
+                ".offset": 80,
+                ".size": 2,
+                ".value_kind": "hidden_grid_dims"
+              },
+              {
+                ".offset": 96,
+                ".size": 8,
+                ".value_kind": "hidden_hostcall_buffer"
+              },
+              {
+                ".offset": 104,
+                ".size": 8,
+                ".value_kind": "hidden_multigrid_sync_arg"
+              },
+              {
+                ".offset": 112,
+                ".size": 8,
+                ".value_kind": "hidden_heap_v1"
+              },
+              {
+                ".offset": 120,
+                ".size": 8,
+                ".value_kind": "hidden_default_queue"
+              },
+              {
+                ".offset": 128,
+                ".size": 8,
+                ".value_kind": "hidden_completion_action"
+              },
+              {
+                ".offset": 216,
+                ".size": 8,
+                ".value_kind": "hidden_queue_ptr"
+              }
+            ],
+            ".group_segment_fixed_size": 0,
+            ".kernarg_segment_align": 8,
+            ".kernarg_segment_size": 272,
+            ".language": "OpenCL C",
+            ".language_version": [
+              2,
+              0
+            ],
+            ".max_flat_workgroup_size": 1024,
+            ".name": "mlk",
+            ".private_segment_fixed_size": 176,
+            ".sgpr_count": 40,
+            ".sgpr_spill_count": 17,
+            ".symbol": "mlk.kd",
+            ".uniform_work_group_size": 1,
+            ".uses_dynamic_stack": false,
+            ".vgpr_count": 36,
+            ".vgpr_spill_count": 4,
+            ".wavefront_size": 64
+          },
+          {
+            ".agpr_count": 4,
+            ".args": [
+              {
+                ".address_space": "global",
+                ".offset": 0,
+                ".size": 8,
+                ".value_kind": "global_buffer"
+              },
+              {
+                ".offset": 8,
+                ".size": 8,
+                ".value_kind": "by_value"
+              },
+              {
+                ".offset": 16,
+                ".size": 4,
+                ".value_kind": "hidden_block_count_x"
+              },
+              {
+                ".offset": 20,
+                ".size": 4,
+                ".value_kind": "hidden_block_count_y"
+              },
+              {
+                ".offset": 24,
+                ".size": 4,
+                ".value_kind": "hidden_block_count_z"
+              },
+              {
+                ".offset": 28,
+                ".size": 2,
+                ".value_kind": "hidden_group_size_x"
+              },
+              {
+                ".offset": 30,
+                ".size": 2,
+                ".value_kind": "hidden_group_size_y"
+              },
+              {
+                ".offset": 32,
+                ".size": 2,
+                ".value_kind": "hidden_group_size_z"
+              },
+              {
+                ".offset": 34,
+                ".size": 2,
+                ".value_kind": "hidden_remainder_x"
+              },
+              {
+                ".offset": 36,
+                ".size": 2,
+                ".value_kind": "hidden_remainder_y"
+              },
+              {
+                ".offset": 38,
+                ".size": 2,
+                ".value_kind": "hidden_remainder_z"
+              },
+              {
+                ".offset": 56,
+                ".size": 8,
+                ".value_kind": "hidden_global_offset_x"
+              },
+              {
+                ".offset": 64,
+                ".size": 8,
+                ".value_kind": "hidden_global_offset_y"
+              },
+              {
+                ".offset": 72,
+                ".size": 8,
+                ".value_kind": "hidden_global_offset_z"
+              },
+              {
+                ".offset": 80,
+                ".size": 2,
+                ".value_kind": "hidden_grid_dims"
+              },
+              {
+                ".offset": 96,
+                ".size": 8,
+                ".value_kind": "hidden_hostcall_buffer"
+              },
+              {
+                ".offset": 104,
+                ".size": 8,
+                ".value_kind": "hidden_multigrid_sync_arg"
+              },
+              {
+                ".offset": 112,
+                ".size": 8,
+                ".value_kind": "hidden_heap_v1"
+              },
+              {
+                ".offset": 120,
+                ".size": 8,
+                ".value_kind": "hidden_default_queue"
+              },
+              {
+                ".offset": 128,
+                ".size": 8,
+                ".value_kind": "hidden_completion_action"
+              },
+              {
+                ".offset": 216,
+                ".size": 8,
+                ".value_kind": "hidden_queue_ptr"
+              }
+            ],
+            ".group_segment_fixed_size": 0,
+            ".kernarg_segment_align": 8,
+            ".kernarg_segment_size": 272,
+            ".language": "OpenCL C",
+            ".language_version": [
+              2,
+              0
+            ],
+            ".max_flat_workgroup_size": 1024,
+            ".name": "mlk_d",
+            ".private_segment_fixed_size": 176,
+            ".sgpr_count": 40,
+            ".sgpr_spill_count": 17,
+            ".symbol": "mlk_d.kd",
+            ".uniform_work_group_size": 1,
+            ".uses_dynamic_stack": false,
+            ".vgpr_count": 36,
+            ".vgpr_spill_count": 4,
+            ".wavefront_size": 64
+          },
+          {
+            ".agpr_count": 8,
+            ".args": [
+              {
+                ".address_space": "global",
+                ".offset": 0,
+                ".size": 8,
+                ".value_kind": "global_buffer"
+              },
+              {
+                ".offset": 8,
+                ".size": 8,
+                ".value_kind": "by_value"
+              },
+              {
+                ".offset": 16,
+                ".size": 4,
+                ".value_kind": "hidden_block_count_x"
+              },
+              {
+                ".offset": 20,
+                ".size": 4,
+                ".value_kind": "hidden_block_count_y"
+              },
+              {
+                ".offset": 24,
+                ".size": 4,
+                ".value_kind": "hidden_block_count_z"
+              },
+              {
+                ".offset": 28,
+                ".size": 2,
+                ".value_kind": "hidden_group_size_x"
+              },
+              {
+                ".offset": 30,
+                ".size": 2,
+                ".value_kind": "hidden_group_size_y"
+              },
+              {
+                ".offset": 32,
+                ".size": 2,
+                ".value_kind": "hidden_group_size_z"
+              },
+              {
+                ".offset": 34,
+                ".size": 2,
+                ".value_kind": "hidden_remainder_x"
+              },
+              {
+                ".offset": 36,
+                ".size": 2,
+                ".value_kind": "hidden_remainder_y"
+              },
+              {
+                ".offset": 38,
+                ".size": 2,
+                ".value_kind": "hidden_remainder_z"
+              },
+              {
+                ".offset": 56,
+                ".size": 8,
+                ".value_kind": "hidden_global_offset_x"
+              },
+              {
+                ".offset": 64,
+                ".size": 8,
+                ".value_kind": "hidden_global_offset_y"
+              },
+              {
+                ".offset": 72,
+                ".size": 8,
+                ".value_kind": "hidden_global_offset_z"
+              },
+              {
+                ".offset": 80,
+                ".size": 2,
+                ".value_kind": "hidden_grid_dims"
+              },
+              {
+                ".offset": 96,
+                ".size": 8,
+                ".value_kind": "hidden_hostcall_buffer"
+              },
+              {
+                ".offset": 104,
+                ".size": 8,
+                ".value_kind": "hidden_multigrid_sync_arg"
+              },
+              {
+                ".offset": 112,
+                ".size": 8,
+                ".value_kind": "hidden_heap_v1"
+              },
+              {
+                ".offset": 120,
+                ".size": 8,
+                ".value_kind": "hidden_default_queue"
+              },
+              {
+                ".offset": 128,
+                ".size": 8,
+                ".value_kind": "hidden_completion_action"
+              },
+              {
+                ".offset": 216,
+                ".size": 8,
+                ".value_kind": "hidden_queue_ptr"
+              }
+            ],
+            ".group_segment_fixed_size": 0,
+            ".kernarg_segment_align": 8,
+            ".kernarg_segment_size": 272,
+            ".language": "OpenCL C",
+            ".language_version": [
+              2,
+              0
+            ],
+            ".max_flat_workgroup_size": 1024,
+            ".name": "mlk_xyz",
+            ".private_segment_fixed_size": 192,
+            ".sgpr_count": 40,
+            ".sgpr_spill_count": 23,
+            ".symbol": "mlk_xyz.kd",
+            ".uniform_work_group_size": 1,
+            ".uses_dynamic_stack": false,
+            ".vgpr_count": 40,
+            ".vgpr_spill_count": 8,
+            ".wavefront_size": 64
+          }
+        ],
+        "amdhsa.target": "amdgcn-amd-amdhsa--gfx90a",
+        "amdhsa.version": [
+          1,
+          2
+        ]
+      },
+      "target": "amdgcn-amd-amdhsa--gfx90a",
+      "rendered": "---\namdhsa.kernels:\n  - .agpr_count:     4\n    .args:\n      - .address_space:  global\n        .offset:         0\n        .size:           8\n        .value_kind:     global_buffer\n      - .offset:         8\n        .size:           8\n        .value_kind:     by_value\n      - .offset:         16\n        .size:           4\n        .value_kind:     hidden_block_count_x\n      - .offset:         20\n        .size:           4\n        .value_kind:     hidden_block_count_y\n      - .offset:         24\n        .size:           4\n        .value_kind:     hidden_block_count_z\n      - .offset:         28\n        .size:           2\n        .value_kind:     hidden_group_size_x\n      - .offset:         30\n        .size:           2\n        .value_kind:     hidden_group_size_y\n      - .offset:         32\n        .size:           2\n        .value_kind:     hidden_group_size_z\n      - .offset:         34\n        .size:           2\n        .value_kind:     hidden_remainder_x\n      - .offset:         36\n        .size:           2\n        .value_kind:     hidden_remainder_y\n      - .offset:         38\n        .size:           2\n        .value_kind:     hidden_remainder_z\n      - .offset:         56\n        .size:           8\n        .value_kind:     hidden_global_offset_x\n      - .offset:         64\n        .size:           8\n        .value_kind:     hidden_global_offset_y\n      - .offset:         72\n        .size:           8\n        .value_kind:     hidden_global_offset_z\n      - .offset:         80\n        .size:           2\n        .value_kind:     hidden_grid_dims\n      - .offset:         96\n        .size:           8\n        .value_kind:     hidden_hostcall_buffer\n      - .offset:         104\n        .size:           8\n        .value_kind:     hidden_multigrid_sync_arg\n      - .offset:         112\n        .size:           8\n        .value_kind:     hidden_heap_v1\n      - .offset:         120\n        .size:           8\n        .value_kind:     hidden_default_queue\n      - .offset:         128\n        .size:           8\n        .value_kind:     hidden_completion_action\n      - .offset:         216\n        .size:           8\n        .value_kind:     hidden_queue_ptr\n    .group_segment_fixed_size: 0\n    .kernarg_segment_align: 8\n    .kernarg_segment_size: 272\n    .language:       OpenCL C\n    .language_version:\n      - 2\n      - 0\n    .max_flat_workgroup_size: 1024\n    .name:           mlk\n    .private_segment_fixed_size: 176\n    .sgpr_count:     40\n    .sgpr_spill_count: 17\n    .symbol:         mlk.kd\n    .uniform_work_group_size: 1\n    .uses_dynamic_stack: false\n    .vgpr_count:     36\n    .vgpr_spill_count: 4\n    .wavefront_size: 64\n  - .agpr_count:     4\n    .args:\n      - .address_space:  global\n        .offset:         0\n        .size:           8\n        .value_kind:     global_buffer\n      - .offset:         8\n        .size:           8\n        .value_kind:     by_value\n      - .offset:         16\n        .size:           4\n        .value_kind:     hidden_block_count_x\n      - .offset:         20\n        .size:           4\n        .value_kind:     hidden_block_count_y\n      - .offset:         24\n        .size:           4\n        .value_kind:     hidden_block_count_z\n      - .offset:         28\n        .size:           2\n        .value_kind:     hidden_group_size_x\n      - .offset:         30\n        .size:           2\n        .value_kind:     hidden_group_size_y\n      - .offset:         32\n        .size:           2\n        .value_kind:     hidden_group_size_z\n      - .offset:         34\n        .size:           2\n        .value_kind:     hidden_remainder_x\n      - .offset:         36\n        .size:           2\n        .value_kind:     hidden_remainder_y\n      - .offset:         38\n        .size:           2\n        .value_kind:     hidden_remainder_z\n      - .offset:         56\n        .size:           8\n        .value_kind:     hidden_global_offset_x\n      - .offset:         64\n        .size:           8\n        .value_kind:     hidden_global_offset_y\n      - .offset:         72\n        .size:           8\n        .value_kind:     hidden_global_offset_z\n      - .offset:         80\n        .size:           2\n        .value_kind:     hidden_grid_dims\n      - .offset:         96\n        .size:           8\n        .value_kind:     hidden_hostcall_buffer\n      - .offset:         104\n        .size:           8\n        .value_kind:     hidden_multigrid_sync_arg\n      - .offset:         112\n        .size:           8\n        .value_kind:     hidden_heap_v1\n      - .offset:         120\n        .size:           8\n        .value_kind:     hidden_default_queue\n      - .offset:         128\n        .size:           8\n        .value_kind:     hidden_completion_action\n      - .offset:         216\n        .size:           8\n        .value_kind:     hidden_queue_ptr\n    .group_segment_fixed_size: 0\n    .kernarg_segment_align: 8\n    .kernarg_segment_size: 272\n    .language:       OpenCL C\n    .language_version:\n      - 2\n      - 0\n    .max_flat_workgroup_size: 1024\n    .name:           mlk_d\n    .private_segment_fixed_size: 176\n    .sgpr_count:     40\n    .sgpr_spill_count: 17\n    .symbol:         mlk_d.kd\n    .uniform_work_group_size: 1\n    .uses_dynamic_stack: false\n    .vgpr_count:     36\n    .vgpr_spill_count: 4\n    .wavefront_size: 64\n  - .agpr_count:     8\n    .args:\n      - .address_space:  global\n        .offset:         0\n        .size:           8\n        .value_kind:     global_buffer\n      - .offset:         8\n        .size:           8\n        .value_kind:     by_value\n      - .offset:         16\n        .size:           4\n        .value_kind:     hidden_block_count_x\n      - .offset:         20\n        .size:           4\n        .value_kind:     hidden_block_count_y\n      - .offset:         24\n        .size:           4\n        .value_kind:     hidden_block_count_z\n      - .offset:         28\n        .size:           2\n        .value_kind:     hidden_group_size_x\n      - .offset:         30\n        .size:           2\n        .value_kind:     hidden_group_size_y\n      - .offset:         32\n        .size:           2\n        .value_kind:     hidden_group_size_z\n      - .offset:         34\n        .size:           2\n        .value_kind:     hidden_remainder_x\n      - .offset:         36\n        .size:           2\n        .value_kind:     hidden_remainder_y\n      - .offset:         38\n        .size:           2\n        .value_kind:     hidden_remainder_z\n      - .offset:         56\n        .size:           8\n        .value_kind:     hidden_global_offset_x\n      - .offset:         64\n        .size:           8\n        .value_kind:     hidden_global_offset_y\n      - .offset:         72\n        .size:           8\n        .value_kind:     hidden_global_offset_z\n      - .offset:         80\n        .size:           2\n        .value_kind:     hidden_grid_dims\n      - .offset:         96\n        .size:           8\n        .value_kind:     hidden_hostcall_buffer\n      - .offset:         104\n        .size:           8\n        .value_kind:     hidden_multigrid_sync_arg\n      - .offset:         112\n        .size:           8\n        .value_kind:     hidden_heap_v1\n      - .offset:         120\n        .size:           8\n        .value_kind:     hidden_default_queue\n      - .offset:         128\n        .size:           8\n        .value_kind:     hidden_completion_action\n      - .offset:         216\n        .size:           8\n        .value_kind:     hidden_queue_ptr\n    .group_segment_fixed_size: 0\n    .kernarg_segment_align: 8\n    .kernarg_segment_size: 272\n    .language:       OpenCL C\n    .language_version:\n      - 2\n      - 0\n    .max_flat_workgroup_size: 1024\n    .name:           mlk_xyz\n    .private_segment_fixed_size: 192\n    .sgpr_count:     40\n    .sgpr_spill_count: 23\n    .symbol:         mlk_xyz.kd\n    .uniform_work_group_size: 1\n    .uses_dynamic_stack: false\n    .vgpr_count:     40\n    .vgpr_spill_count: 8\n    .wavefront_size: 64\namdhsa.target:   amdgcn-amd-amdhsa--gfx90a\namdhsa.version:\n  - 1\n  - 2\n...\n",
+      "kernels": [
+        {
+          "name": "mlk_xyz",
+          "symbol": "mlk_xyz.kd",
+          "sgpr_count": 40,
+          "vgpr_count": 40,
+          "kernarg_segment_size": 272,
+          "wavefront_size": 64,
+          "max_flat_workgroup_size": 1024,
+          "group_segment_fixed_size": 0,
+          "private_segment_fixed_size": 192,
+          "args": [
+            {
+              "name": null,
+              "size": 8,
+              "offset": 0,
+              "value_kind": "global_buffer",
+              "address_space": "global",
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 8,
+              "offset": 8,
+              "value_kind": "by_value",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 4,
+              "offset": 16,
+              "value_kind": "hidden_block_count_x",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 4,
+              "offset": 20,
+              "value_kind": "hidden_block_count_y",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 4,
+              "offset": 24,
+              "value_kind": "hidden_block_count_z",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 2,
+              "offset": 28,
+              "value_kind": "hidden_group_size_x",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 2,
+              "offset": 30,
+              "value_kind": "hidden_group_size_y",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 2,
+              "offset": 32,
+              "value_kind": "hidden_group_size_z",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 2,
+              "offset": 34,
+              "value_kind": "hidden_remainder_x",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 2,
+              "offset": 36,
+              "value_kind": "hidden_remainder_y",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 2,
+              "offset": 38,
+              "value_kind": "hidden_remainder_z",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 8,
+              "offset": 56,
+              "value_kind": "hidden_global_offset_x",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 8,
+              "offset": 64,
+              "value_kind": "hidden_global_offset_y",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 8,
+              "offset": 72,
+              "value_kind": "hidden_global_offset_z",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 2,
+              "offset": 80,
+              "value_kind": "hidden_grid_dims",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 8,
+              "offset": 96,
+              "value_kind": "hidden_hostcall_buffer",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 8,
+              "offset": 104,
+              "value_kind": "hidden_multigrid_sync_arg",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 8,
+              "offset": 112,
+              "value_kind": "hidden_heap_v1",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 8,
+              "offset": 120,
+              "value_kind": "hidden_default_queue",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 8,
+              "offset": 128,
+              "value_kind": "hidden_completion_action",
+              "address_space": null,
+              "type_name": null
+            },
+            {
+              "name": null,
+              "size": 8,
+              "offset": 216,
+              "value_kind": "hidden_queue_ptr",
+              "address_space": null,
+              "type_name": null
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "functions": {
+    "all_symbols": [
+      {
+        "name": "__ockl_hsa_signal_add",
+        "value": 10016,
+        "size": 2652,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 32
+      },
+      {
+        "name": "__ockl_hostcall_internal",
+        "value": 12668,
+        "size": 6084,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 2684
+      },
+      {
+        "name": "__ockl_hostcall_preview",
+        "value": 18752,
+        "size": 328,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 8768
+      },
+      {
+        "name": "__ockl_fprintf_stderr_begin",
+        "value": 19080,
+        "size": 232,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 9096
+      },
+      {
+        "name": "__ockl_fprintf_append_string_n",
+        "value": 19312,
+        "size": 11388,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 9328
+      },
+      {
+        "name": "__ockl_fprintf_append_args",
+        "value": 30700,
+        "size": 452,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 20716
+      },
+      {
+        "name": "__ockl_get_group_id",
+        "value": 37600,
+        "size": 1060,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 27616
+      },
+      {
+        "name": "__ockl_get_local_size",
+        "value": 38660,
+        "size": 3064,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 28676
+      },
+      {
+        "name": "__ockl_get_local_id",
+        "value": 41724,
+        "size": 996,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 31740
+      },
+      {
+        "name": "__assert_fail",
+        "value": 31152,
+        "size": 6424,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [
+          "STV_HIDDEN"
+        ],
+        "section": ".text",
+        "section_offset": 21168
+      },
+      {
+        "name": "__assertfail",
+        "value": 37576,
+        "size": 24,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [
+          "STV_HIDDEN"
+        ],
+        "section": ".text",
+        "section_offset": 27592
+      },
+      {
+        "name": "__cxa_pure_virtual",
+        "value": 9984,
+        "size": 16,
+        "binding": "Weak",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 0
+      },
+      {
+        "name": "__cxa_deleted_virtual",
+        "value": 10000,
+        "size": 16,
+        "binding": "Weak",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 16
+      },
+      {
+        "name": "mlk",
+        "value": 42752,
+        "size": 1044,
+        "binding": "Global",
+        "type": "Function",
+        "visibility": [
+          "STV_PROTECTED"
+        ],
+        "section": ".text",
+        "section_offset": 32768
+      },
+      {
+        "name": "mlk_d",
+        "value": 44032,
+        "size": 1044,
+        "binding": "Global",
+        "type": "Function",
+        "visibility": [
+          "STV_PROTECTED"
+        ],
+        "section": ".text",
+        "section_offset": 34048
+      },
+      {
+        "name": "mlk_xyz",
+        "value": 45312,
+        "size": 1396,
+        "binding": "Global",
+        "type": "Function",
+        "visibility": [
+          "STV_PROTECTED"
+        ],
+        "section": ".text",
+        "section_offset": 35328
+      }
+    ],
+    "helper_symbols": [
+      {
+        "name": "__ockl_hsa_signal_add",
+        "value": 10016,
+        "size": 2652,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 32
+      },
+      {
+        "name": "__ockl_hostcall_internal",
+        "value": 12668,
+        "size": 6084,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 2684
+      },
+      {
+        "name": "__ockl_hostcall_preview",
+        "value": 18752,
+        "size": 328,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 8768
+      },
+      {
+        "name": "__ockl_fprintf_stderr_begin",
+        "value": 19080,
+        "size": 232,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 9096
+      },
+      {
+        "name": "__ockl_fprintf_append_string_n",
+        "value": 19312,
+        "size": 11388,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 9328
+      },
+      {
+        "name": "__ockl_fprintf_append_args",
+        "value": 30700,
+        "size": 452,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 20716
+      },
+      {
+        "name": "__ockl_get_group_id",
+        "value": 37600,
+        "size": 1060,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 27616
+      },
+      {
+        "name": "__ockl_get_local_size",
+        "value": 38660,
+        "size": 3064,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 28676
+      },
+      {
+        "name": "__ockl_get_local_id",
+        "value": 41724,
+        "size": 996,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 31740
+      },
+      {
+        "name": "__assert_fail",
+        "value": 31152,
+        "size": 6424,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [
+          "STV_HIDDEN"
+        ],
+        "section": ".text",
+        "section_offset": 21168
+      },
+      {
+        "name": "__assertfail",
+        "value": 37576,
+        "size": 24,
+        "binding": "Local",
+        "type": "Function",
+        "visibility": [
+          "STV_HIDDEN"
+        ],
+        "section": ".text",
+        "section_offset": 27592
+      },
+      {
+        "name": "__cxa_pure_virtual",
+        "value": 9984,
+        "size": 16,
+        "binding": "Weak",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 0
+      },
+      {
+        "name": "__cxa_deleted_virtual",
+        "value": 10000,
+        "size": 16,
+        "binding": "Weak",
+        "type": "Function",
+        "visibility": [],
+        "section": ".text",
+        "section_offset": 16
+      }
+    ]
+  },
+  "sections": [
+    {
+      "index": 0,
+      "name": "",
+      "type": "SHT_NULL",
+      "address": 0,
+      "offset": 0,
+      "size": 0,
+      "alignment": 0,
+      "flags": []
+    },
+    {
+      "index": 1,
+      "name": ".note",
+      "type": "SHT_NOTE",
+      "address": 568,
+      "offset": 568,
+      "size": 4312,
+      "alignment": 4,
+      "flags": [
+        "SHF_ALLOC"
+      ]
+    },
+    {
+      "index": 2,
+      "name": ".dynsym",
+      "type": "SHT_DYNSYM",
+      "address": 4880,
+      "offset": 4880,
+      "size": 240,
+      "alignment": 8,
+      "flags": [
+        "SHF_ALLOC"
+      ]
+    },
+    {
+      "index": 3,
+      "name": ".gnu.hash",
+      "type": "SHT_GNU_HASH",
+      "address": 5120,
+      "offset": 5120,
+      "size": 76,
+      "alignment": 8,
+      "flags": [
+        "SHF_ALLOC"
+      ]
+    },
+    {
+      "index": 4,
+      "name": ".hash",
+      "type": "SHT_HASH",
+      "address": 5196,
+      "offset": 5196,
+      "size": 88,
+      "alignment": 4,
+      "flags": [
+        "SHF_ALLOC"
+      ]
+    },
+    {
+      "index": 5,
+      "name": ".dynstr",
+      "type": "SHT_STRTAB",
+      "address": 5284,
+      "offset": 5284,
+      "size": 114,
+      "alignment": 1,
+      "flags": [
+        "SHF_ALLOC"
+      ]
+    },
+    {
+      "index": 6,
+      "name": ".rodata",
+      "type": "SHT_PROGBITS",
+      "address": 5440,
+      "offset": 5440,
+      "size": 255,
+      "alignment": 64,
+      "flags": [
+        "SHF_ALLOC",
+        "SHF_MERGE",
+        "SHF_STRINGS"
+      ]
+    },
+    {
+      "index": 7,
+      "name": ".text",
+      "type": "SHT_PROGBITS",
+      "address": 9984,
+      "offset": 5888,
+      "size": 37760,
+      "alignment": 256,
+      "flags": [
+        "SHF_ALLOC",
+        "SHF_EXECINSTR"
+      ]
+    },
+    {
+      "index": 8,
+      "name": ".dynamic",
+      "type": "SHT_DYNAMIC",
+      "address": 51840,
+      "offset": 43648,
+      "size": 112,
+      "alignment": 8,
+      "flags": [
+        "SHF_ALLOC",
+        "SHF_WRITE"
+      ]
+    },
+    {
+      "index": 9,
+      "name": ".relro_padding",
+      "type": "SHT_NOBITS",
+      "address": 51952,
+      "offset": 43760,
+      "size": 1296,
+      "alignment": 1,
+      "flags": [
+        "SHF_ALLOC",
+        "SHF_WRITE"
+      ]
+    },
+    {
+      "index": 10,
+      "name": ".bss",
+      "type": "SHT_NOBITS",
+      "address": 56048,
+      "offset": 43760,
+      "size": 1,
+      "alignment": 1,
+      "flags": [
+        "SHF_ALLOC",
+        "SHF_WRITE"
+      ]
+    },
+    {
+      "index": 11,
+      "name": ".AMDGPU.gpr_maximums",
+      "type": "SHT_PROGBITS",
+      "address": 0,
+      "offset": 43760,
+      "size": 0,
+      "alignment": 1,
+      "flags": []
+    },
+    {
+      "index": 12,
+      "name": ".comment",
+      "type": "SHT_PROGBITS",
+      "address": 0,
+      "offset": 43760,
+      "size": 313,
+      "alignment": 1,
+      "flags": [
+        "SHF_MERGE",
+        "SHF_STRINGS"
+      ]
+    },
+    {
+      "index": 13,
+      "name": ".symtab",
+      "type": "SHT_SYMTAB",
+      "address": 0,
+      "offset": 44080,
+      "size": 1248,
+      "alignment": 8,
+      "flags": []
+    },
+    {
+      "index": 14,
+      "name": ".shstrtab",
+      "type": "SHT_STRTAB",
+      "address": 0,
+      "offset": 45328,
+      "size": 138,
+      "alignment": 1,
+      "flags": []
+    },
+    {
+      "index": 15,
+      "name": ".strtab",
+      "type": "SHT_STRTAB",
+      "address": 0,
+      "offset": 45466,
+      "size": 935,
+      "alignment": 1,
+      "flags": []
+    }
+  ]
+}
