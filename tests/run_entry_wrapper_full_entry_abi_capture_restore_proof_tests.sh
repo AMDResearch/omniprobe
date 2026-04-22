@@ -16,7 +16,11 @@
 #      original body
 #   4. launch through the HSA runtime with a single 3D workgroup and verify
 #      the imported body still observes the original threadIdx.{x,y,z}
-#      contract while hidden_ctx exposes the captured entry system state
+#      contract while hidden_ctx exposes the captured first-wave entry system
+#      state
+#   5. launch through the HSA runtime with a 128-thread single workgroup and
+#      verify the imported body still observes the original threadIdx.x
+#      contract across multiple waves
 ################################################################################
 
 set -e
@@ -62,6 +66,7 @@ PROOF_IR="$WORK_DIR/module_load_entry_wrapper_full_entry_abi_capture_restore_pro
 PROOF_STDOUT="$WORK_DIR/module_load_entry_wrapper_full_entry_abi_capture_restore_proof.stdout"
 PROOF_STDERR="$WORK_DIR/module_load_entry_wrapper_full_entry_abi_capture_restore_proof.stderr"
 LAUNCH_OUT="$WORK_DIR/launch.out"
+MULTIWAVE_LAUNCH_OUT="$WORK_DIR/multiwave_launch.out"
 
 echo ""
 echo "================================================================================"
@@ -88,6 +93,22 @@ python3 "$DISASM_TO_IR" \
     "$PROOF_HSACO" \
     --manifest "$PROOF_MANIFEST" \
     --output "$PROOF_IR" >/dev/null
+
+PROOF_ARCH="$(python3 - <<'PY' "$PROOF_REPORT"
+import json
+import sys
+
+report = json.load(open(sys.argv[1], encoding="utf-8"))
+print(report.get("entry_wrapper_result", {}).get("preconditions", {}).get("arch", ""))
+PY
+)"
+
+if [ "$PROOF_ARCH" != "gfx942" ]; then
+    echo -e "${YELLOW}SKIP: Full entry-ABI gfx942 proof requires a gfx942 code object${NC}"
+    echo "  Observed proof arch: ${PROOF_ARCH:-<unknown>}"
+    export TESTS_RUN TESTS_PASSED TESTS_FAILED
+    return 0 2>/dev/null || exit 0
+fi
 
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="entry_wrapper_full_entry_abi_capture_restore_report"
@@ -332,6 +353,26 @@ if ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
 else
     echo -e "  ${RED}✗ FAIL${NC} - Full entry-ABI proof hsaco failed under the HSA path"
     echo "  Output saved to: $LAUNCH_OUT"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="entry_wrapper_full_entry_abi_capture_restore_multiwave_launch"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+echo "  Validate a 128-thread single-workgroup launch preserves threadIdx.x behavior across multiple waves"
+
+if ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
+   "$HSA_LAUNCH_TEST" \
+   "$PROOF_HSACO" mlk_xyz.kd index \
+   --hidden-ctx-offset "$HIDDEN_CTX_OFFSET" \
+   --populate-original-kernarg-pointer \
+   --single-workgroup \
+   --workgroup-size-x 128 > "$MULTIWAVE_LAUNCH_OUT" 2>&1; then
+    echo -e "  ${GREEN}✓ PASS${NC} - Full entry-ABI proof hsaco preserves imported-body behavior for a multi-wave single-workgroup launch"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Full entry-ABI proof hsaco failed under the multi-wave HSA path"
+    echo "  Output saved to: $MULTIWAVE_LAUNCH_OUT"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
