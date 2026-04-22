@@ -220,6 +220,12 @@ assert payload["entry_workitem_vgpr_count"] == 1
 assert payload["inferred_kernarg_base"]["base_pair"] == [0, 1]
 assert payload["observed_workitem_id_materialization"]["pattern_class"] == "single_vgpr_workitem_id"
 assert payload["observed_private_segment_materialization"] is None
+dead_pairs = payload["entry_dead_sgpr_pair_candidates"]
+assert len(dead_pairs) >= 4
+assert dead_pairs[0]["pair"] == [4, 5], dead_pairs
+assert dead_pairs[1]["pair"] == [6, 7], dead_pairs
+assert dead_pairs[2]["pair"] == [8, 9], dead_pairs
+assert dead_pairs[3]["pair"] == [10, 11], dead_pairs
 support = payload["current_entry_stub_support"]
 assert payload["supported_for_current_entry_stub"] is True
 assert support["supported"] is True

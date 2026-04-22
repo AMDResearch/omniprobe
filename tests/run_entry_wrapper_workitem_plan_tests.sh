@@ -121,4 +121,122 @@ else
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="entry_wrapper_workitem_plan_gfx942_real_single_vgpr"
+STDOUT_FILE="$WORK_DIR/${TEST_NAME}.stdout"
+STDERR_FILE="$WORK_DIR/${TEST_NAME}.stderr"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+echo "  Validate the offline workitem spill/restore planner derives a coherent single-VGPR plan for the real gfx942 class"
+
+if python3 - "$REPO_ROOT" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.manifest.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.ir.json" \
+    "Cijk_S_GA" > "$STDOUT_FILE" 2> "$STDERR_FILE" <<'PY'
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(sys.argv[1]).resolve()
+manifest_path = Path(sys.argv[2]).resolve()
+ir_path = Path(sys.argv[3]).resolve()
+function_name = sys.argv[4]
+
+sys.path.insert(0, str(REPO_ROOT / "tools" / "codeobj"))
+
+from amdgpu_entry_abi import analyze_kernel_entry_abi  # type: ignore
+from code_object_model import CodeObjectModel  # type: ignore
+from regenerate_code_object import (  # type: ignore
+    build_entry_wrapper_handoff_recipe,
+    build_entry_wrapper_workitem_spill_restore_plan,
+    classify_entry_handoff_supported_class,
+)
+
+
+def load_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+manifest = load_json(manifest_path)
+ir = load_json(ir_path)
+model = CodeObjectModel.from_manifest(manifest)
+descriptor = model.descriptor_by_kernel_name(function_name)
+kernel_metadata = model.metadata_by_kernel_name(function_name)
+function = next(
+    entry for entry in ir.get("functions", []) if entry.get("name") == function_name
+)
+assert descriptor is not None
+
+analysis = analyze_kernel_entry_abi(
+    function=function,
+    descriptor=descriptor,
+    kernel_metadata=kernel_metadata,
+)
+supported_class, blockers = classify_entry_handoff_supported_class(analysis)
+assert supported_class == "wave64-single-vgpr-x-workgroup-x-kernarg-only-v1", blockers
+assert blockers == [], blockers
+pair_candidates = analysis.get("entry_dead_sgpr_pair_candidates", [])
+assert isinstance(pair_candidates, list) and len(pair_candidates) >= 4, pair_candidates
+assert pair_candidates[0]["pair"] == [4, 5], pair_candidates
+assert pair_candidates[1]["pair"] == [6, 7], pair_candidates
+
+recipe = build_entry_wrapper_handoff_recipe(
+    function_name=function_name,
+    analysis=analysis,
+    descriptor=descriptor,
+    kernel_metadata=kernel_metadata,
+    scratch_pair=(4, 5),
+)
+assert recipe.get("supported") is True
+assert recipe.get("supported_class") == supported_class
+
+plan = build_entry_wrapper_workitem_spill_restore_plan(
+    analysis=analysis,
+    descriptor=descriptor,
+    save_pair=(4, 5),
+    branch_pair=(6, 7),
+)
+assert plan["source_vgprs"] == [0], plan
+assert plan["pattern_class"] == "single_vgpr_workitem_id", plan
+assert plan["spill_offset"] == 0, plan
+assert plan["spill_bytes"] == 4, plan
+assert plan["private_segment_growth"] == 16, plan
+assert plan["private_segment_pattern_class"] is None, plan
+assert plan["private_segment_offset_source_sgpr"] is None, plan
+assert plan["save_pair"] == [4, 5], plan
+assert plan["branch_pair"] == [6, 7], plan
+assert plan["soffset_sgpr"] == 6, plan
+
+print(json.dumps({"pairs": pair_candidates[:4], "plan": plan}, indent=2))
+PY
+then
+    if python3 - "$STDOUT_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert payload["pairs"][0]["pair"] == [4, 5]
+assert payload["pairs"][1]["pair"] == [6, 7]
+assert payload["plan"]["source_vgprs"] == [0]
+assert payload["plan"]["spill_offset"] == 0
+assert payload["plan"]["private_segment_growth"] == 16
+PY
+    then
+        echo -e "  ${GREEN}✓ PASS${NC} - Offline workitem spill/restore planning now has viable scratch pairs for the real gfx942 single-VGPR class"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Real gfx942 single-VGPR workitem spill/restore planning output was malformed"
+        echo "  Stdout saved to: $STDOUT_FILE"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Real gfx942 single-VGPR workitem spill/restore planner failed unexpectedly"
+    echo "  Stdout saved to: $STDOUT_FILE"
+    echo "  Stderr saved to: $STDERR_FILE"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 print_summary

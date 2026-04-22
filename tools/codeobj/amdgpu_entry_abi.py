@@ -63,20 +63,25 @@ def _operand_mentions_sgpr(operand: str, sgpr: int) -> bool:
 
 
 def _write_only_scalar_def(instruction: dict[str, Any]) -> list[int]:
-    mnemonic = str(instruction.get("mnemonic", "") or "")
     operands = instruction.get("operands", [])
     if not isinstance(operands, list) or not operands:
         return []
 
-    if mnemonic in {"s_mov_b32", "s_movk_i32"}:
-        dst = parse_scalar_reg(str(operands[0]))
-        return [dst] if dst is not None else []
+    dst_operand = str(operands[0])
+    dst_range = _parse_scalar_reg_range(dst_operand)
+    if dst_range is not None:
+        dst_regs = list(range(dst_range[0], dst_range[1] + 1))
+    else:
+        dst = parse_scalar_reg(dst_operand)
+        if dst is None:
+            return []
+        dst_regs = [dst]
 
-    if mnemonic in {"s_mov_b64", "s_getpc_b64"}:
-        dst_pair = parse_scalar_reg_pair(str(operands[0]))
-        if dst_pair is not None:
-            return [dst_pair[0], dst_pair[1]]
-    return []
+    for operand in operands[1:]:
+        text = str(operand)
+        if any(_operand_mentions_sgpr(text, reg) for reg in dst_regs):
+            return []
+    return dst_regs
 
 
 def observe_entry_dead_sgpr_pairs(
