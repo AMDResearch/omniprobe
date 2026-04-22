@@ -126,13 +126,69 @@ def _is_zero_like_offset(operand: str) -> bool:
     return normalized in {"0", "0x0", "null", "0.0"}
 
 
+def _parse_immediate_lane(operand: str) -> int | None:
+    normalized = operand.strip().lower()
+    if normalized.startswith("0x"):
+        try:
+            return int(normalized, 16)
+        except ValueError:
+            return None
+    try:
+        return int(normalized, 10)
+    except ValueError:
+        return None
+
+
 def infer_kernarg_base_pair(function: dict[str, Any], max_scan_instructions: int = 32) -> dict[str, Any] | None:
     instructions = function.get("instructions", [])
+    sgpr_provenance: dict[int, int | None] = {}
+    vector_lane_provenance: dict[tuple[int, int], int | None] = {}
+
+    def current_sgpr_provenance(reg: int) -> int | None:
+        if reg not in sgpr_provenance:
+            sgpr_provenance[reg] = reg
+        return sgpr_provenance[reg]
+
     for index, instruction in enumerate(instructions[:max_scan_instructions]):
         mnemonic = str(instruction.get("mnemonic", ""))
+        operands = instruction.get("operands", [])
+
+        if mnemonic == "s_mov_b32" and len(operands) == 2:
+            dst = parse_scalar_reg(str(operands[0]))
+            src = parse_scalar_reg(str(operands[1]))
+            if dst is not None:
+                sgpr_provenance[dst] = current_sgpr_provenance(src) if src is not None else None
+
+        if mnemonic == "s_mov_b64" and len(operands) == 2:
+            dst_pair = parse_scalar_reg_pair(str(operands[0]))
+            src_pair = parse_scalar_reg_pair(str(operands[1]))
+            if dst_pair is not None:
+                if src_pair is not None:
+                    sgpr_provenance[dst_pair[0]] = current_sgpr_provenance(src_pair[0])
+                    sgpr_provenance[dst_pair[1]] = current_sgpr_provenance(src_pair[1])
+                else:
+                    sgpr_provenance[dst_pair[0]] = None
+                    sgpr_provenance[dst_pair[1]] = None
+
+        if mnemonic == "v_writelane_b32" and len(operands) == 3:
+            dst_vgpr = parse_vector_reg(str(operands[0]))
+            src_sgpr = parse_scalar_reg(str(operands[1]))
+            lane = _parse_immediate_lane(str(operands[2]))
+            if dst_vgpr is not None and src_sgpr is not None and lane is not None:
+                vector_lane_provenance[(dst_vgpr, lane)] = current_sgpr_provenance(src_sgpr)
+
+        if mnemonic == "v_readlane_b32" and len(operands) == 3:
+            dst_sgpr = parse_scalar_reg(str(operands[0]))
+            src_vgpr = parse_vector_reg(str(operands[1]))
+            lane = _parse_immediate_lane(str(operands[2]))
+            if dst_sgpr is not None:
+                if src_vgpr is not None and lane is not None:
+                    sgpr_provenance[dst_sgpr] = vector_lane_provenance.get((src_vgpr, lane))
+                else:
+                    sgpr_provenance[dst_sgpr] = None
+
         if not mnemonic.startswith("s_load_dword"):
             continue
-        operands = instruction.get("operands", [])
         if len(operands) < 3:
             continue
         base_pair = parse_scalar_reg_pair(str(operands[1]))
@@ -140,11 +196,17 @@ def infer_kernarg_base_pair(function: dict[str, Any], max_scan_instructions: int
             continue
         if not _is_zero_like_offset(str(operands[2])):
             continue
+        entry_base_pair = None
+        entry_lo = current_sgpr_provenance(base_pair[0])
+        entry_hi = current_sgpr_provenance(base_pair[1])
+        if isinstance(entry_lo, int) and isinstance(entry_hi, int):
+            entry_base_pair = [entry_lo, entry_hi]
         return {
             "instruction_index": index,
             "instruction_address": instruction.get("address"),
             "mnemonic": mnemonic,
             "base_pair": [base_pair[0], base_pair[1]],
+            "entry_base_pair": entry_base_pair,
             "operands": operands,
         }
     return None

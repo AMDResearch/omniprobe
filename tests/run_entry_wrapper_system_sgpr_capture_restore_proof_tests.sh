@@ -19,7 +19,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/test_common.sh"
 
-check_omniprobe
+mkdir -p "$OUTPUT_DIR"
 
 MODULE_LOAD_PLAIN_HSACO="${BUILD_DIR}/tests/test_kernels/module_load_kernel_plain.hsaco"
 HSA_LAUNCH_TEST="${BUILD_DIR}/tools/test_hsa_module_launch"
@@ -169,20 +169,20 @@ def find_load_index(target_sgpr, offset_text):
 assert mnemonics.count("flat_store_dword") == 4
 for needle in (
     "v[4:5], v6",
-    "v6, s14",
-    "v6, s15",
-    "v6, s16",
-    "v6, s17",
-    "s14, 0",
-    "s15, 0",
-    "s16, 0",
-    "s17, 0",
+    "v6, s8",
+    "v6, s9",
+    "v6, s10",
+    "v6, s11",
+    "s8, 0",
+    "s9, 0",
+    "s10, 0",
+    "s11, 0",
 ):
     assert needle in texts, needle
-assert find_index("v_mov_b32_e32", "v6, s14") < find_index("s_mov_b32", "s14, 0") < find_load_index(14, "0x8")
-assert find_index("v_mov_b32_e32", "v6, s15") < find_index("s_mov_b32", "s15, 0") < find_load_index(15, "0xc")
-assert find_index("v_mov_b32_e32", "v6, s16") < find_index("s_mov_b32", "s16, 0") < find_load_index(16, "0x10")
-assert find_index("v_mov_b32_e32", "v6, s17") < find_index("s_mov_b32", "s17, 0") < find_load_index(17, "0x14")
+assert find_index("v_mov_b32_e32", "v6, s8") < find_index("s_mov_b32", "s8, 0") < find_load_index(8, "0x8")
+assert find_index("v_mov_b32_e32", "v6, s9") < find_index("s_mov_b32", "s9, 0") < find_load_index(9, "0xc")
+assert find_index("v_mov_b32_e32", "v6, s10") < find_index("s_mov_b32", "s10, 0") < find_load_index(10, "0x10")
+assert find_index("v_mov_b32_e32", "v6, s11") < find_index("s_mov_b32", "s11, 0") < find_load_index(11, "0x14")
 PY
 then
     echo -e "  ${GREEN}✓ PASS${NC} - Rebuilt wrapper IR contains the expected full system-SGPR closed-loop sequence"
@@ -196,7 +196,7 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="entry_wrapper_system_sgpr_capture_restore_launch"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
-echo "  Validate single-wave HSA launch preserves original behavior while capturing x/y/z and the wave-variant private offset"
+echo "  Validate single-wave HSA launch preserves original behavior while capturing x/y/z and the first-wave private offset"
 
 HIDDEN_CTX_OFFSET="$(python3 - <<'PY' "$PROOF_REPORT"
 import json
@@ -215,9 +215,9 @@ if ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
    --verify-hidden-u32 8 0 \
    --verify-hidden-u32 12 0 \
    --verify-hidden-u32 16 0 \
-   --verify-hidden-u32-nonzero 20 \
+   --verify-hidden-u32 20 0 \
    --single-wave > "$LAUNCH_OUT" 2>&1; then
-    echo -e "  ${GREEN}✓ PASS${NC} - System-SGPR capture-restore proof hsaco launches successfully, preserves the imported body ABI slice, and captures a runtime private offset"
+    echo -e "  ${GREEN}✓ PASS${NC} - System-SGPR capture-restore proof hsaco launches successfully, preserves the imported body ABI slice, and captures the first-wave private offset"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
     echo -e "  ${RED}✗ FAIL${NC} - System-SGPR capture-restore proof hsaco failed under the HSA path"

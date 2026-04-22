@@ -2678,6 +2678,7 @@ def add_entry_wrapper_proof_intent(
     hidden_handoff_field_stores: list[dict] = []
     kernarg_base = entry_analysis.get("inferred_kernarg_base") or {}
     kernarg_base_pair = kernarg_base.get("base_pair") or []
+    kernarg_entry_pair = kernarg_base.get("entry_base_pair") or kernarg_base_pair
     if include_hidden_handoff:
         if len(kernarg_base_pair) != 2:
             raise SystemExit("entry-wrapper hidden-handoff proof requires an inferred kernarg base SGPR pair")
@@ -2881,8 +2882,8 @@ def add_entry_wrapper_proof_intent(
         workitem_spill_restore_plan=workitem_spill_restore_plan,
         hidden_ctx_offset=hidden_ctx_offset,
         hidden_ctx_source_pair=(
-            (int(kernarg_base_pair[0]), int(kernarg_base_pair[1]))
-            if len(kernarg_base_pair) == 2
+            (int(kernarg_entry_pair[0]), int(kernarg_entry_pair[1]))
+            if len(kernarg_entry_pair) == 2
             else None
         ),
         hidden_handoff_field_loads=hidden_handoff_field_loads,
@@ -3016,7 +3017,7 @@ def add_entry_wrapper_proof_intent(
                 "offset": int(hidden_handoff_plan["hidden_omniprobe_ctx"]["offset"]),
                 "size": int(hidden_handoff_plan["hidden_omniprobe_ctx"]["size"]),
                 "instrumented_kernarg_length": int(hidden_handoff_plan["instrumented_kernarg_length"]),
-                "load_source_pair": [int(kernarg_base_pair[0]), int(kernarg_base_pair[1])],
+                "load_source_pair": [int(kernarg_entry_pair[0]), int(kernarg_entry_pair[1])],
                 "pointer_load_opcode": "s_load_dwordx2",
                 "consumed_fields": [
                     {

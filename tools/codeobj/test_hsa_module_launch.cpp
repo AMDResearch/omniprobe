@@ -564,7 +564,9 @@ int main(int argc, char** argv) {
   if (use_hidden_ctx) {
     hidden_ctx = allocate_pool(device_pool.pool, device_pool.granule, 64);
     allow_access({agents.cpu, agents.gpu}, hidden_ctx);
-    std::memset(hidden_ctx, 0, 64);
+    std::array<std::byte, 64> hidden_ctx_zero{};
+    check(hsa_memory_copy(hidden_ctx, hidden_ctx_zero.data(), hidden_ctx_zero.size()),
+          "hsa_memory_copy(host->hidden_ctx)");
   }
 
   std::vector<std::byte> kernarg(symbol.kernarg_size, std::byte{0});
@@ -591,17 +593,40 @@ int main(int argc, char** argv) {
       allocate_pool(kernarg_pool.pool, kernarg_pool.granule, kernarg.size());
   allow_access({agents.gpu}, kernarg_buffer);
   if (populate_original_kernarg_pointer) {
-    std::memcpy(hidden_ctx, &kernarg_buffer, sizeof(kernarg_buffer));
+    check(hsa_memory_copy(hidden_ctx, &kernarg_buffer, sizeof(kernarg_buffer)),
+          "hsa_memory_copy(host->hidden_ctx original_kernarg_pointer)");
     std::cout << "hidden ctx offset=" << hidden_ctx_offset
               << " original_kernarg_pointer=0x" << std::hex
               << reinterpret_cast<uintptr_t>(kernarg_buffer) << std::dec << "\n";
   }
   if (populate_workgroup_id_x) {
-    std::memcpy(static_cast<std::byte*>(hidden_ctx) + 8, &workgroup_id_x_value,
-                sizeof(workgroup_id_x_value));
+    check(hsa_memory_copy(static_cast<std::byte*>(hidden_ctx) + 8,
+                          &workgroup_id_x_value,
+                          sizeof(workgroup_id_x_value)),
+          "hsa_memory_copy(host->hidden_ctx workgroup_id_x)");
     std::cout << "hidden ctx workgroup_id_x=" << workgroup_id_x_value << "\n";
   }
   std::memcpy(kernarg_buffer, kernarg.data(), kernarg.size());
+  if (use_hidden_ctx) {
+    void* observed_hidden_ctx = nullptr;
+    check(hsa_memory_copy(&observed_hidden_ctx,
+                          static_cast<std::byte*>(kernarg_buffer) + hidden_ctx_offset,
+                          sizeof(observed_hidden_ctx)),
+          "hsa_memory_copy(kernarg hidden_ctx->host)");
+    std::cout << "kernarg hidden_ctx pointer=0x" << std::hex
+              << reinterpret_cast<uintptr_t>(observed_hidden_ctx) << std::dec
+              << "\n";
+  }
+  if (populate_original_kernarg_pointer) {
+    void* observed_original_kernarg = nullptr;
+    check(hsa_memory_copy(&observed_original_kernarg,
+                          hidden_ctx,
+                          sizeof(observed_original_kernarg)),
+          "hsa_memory_copy(hidden_ctx original_kernarg_pointer->host)");
+    std::cout << "hidden ctx original_kernarg readback=0x" << std::hex
+              << reinterpret_cast<uintptr_t>(observed_original_kernarg) << std::dec
+              << "\n";
+  }
 
   hsa_queue_t* queue = nullptr;
   check(hsa_queue_create(agents.gpu, kQueueSize, HSA_QUEUE_TYPE_SINGLE, nullptr,
