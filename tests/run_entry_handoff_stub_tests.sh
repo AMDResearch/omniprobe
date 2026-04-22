@@ -28,6 +28,88 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
+run_supported_fixture_stub_test() {
+    local arch="$1"
+    local fixture="$2"
+    local manifest="$3"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    local test_name="entry_handoff_stub_fixture_${arch}"
+    local recipe_json="$OUTPUT_DIR/${test_name}.recipe.json"
+    local stub_json="$OUTPUT_DIR/${test_name}.stub.json"
+    echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $test_name"
+
+    if python3 "$RECIPE_TOOL" \
+        "$fixture" \
+        --manifest "$manifest" \
+        --function entry_abi_kernel \
+        --output "$recipe_json" > "$OUTPUT_DIR/${test_name}.recipe.out" && \
+       python3 "$STUB_TOOL" "$recipe_json" --output "$stub_json" > "$OUTPUT_DIR/${test_name}.stub.out"; then
+        if python3 - "$stub_json" "$arch" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+expected_arch = sys.argv[2]
+
+assert payload["function"] == "entry_abi_kernel"
+assert payload["arch"] == expected_arch
+assert payload["supported"] is True
+assert payload["supported_class"] == {
+    "gfx90a": "wave64-packed-v0-10_10_10-flat-scratch-alias-v1",
+    "gfx942": "wave64-packed-v0-10_10_10-src-private-base-v1",
+}[expected_arch]
+assert payload["blockers"] == []
+assert payload["handoff_strategy"] == "branch-to-original-entry"
+assert payload["branch_transfer_kind"] == "s_setpc_b64"
+assert payload["branch_target_symbol"] == "entry_abi_kernel"
+
+required_inputs = {entry["name"]: entry for entry in payload["required_inputs"]}
+assert required_inputs["original_launch_kernarg_image"]["source_class"] == "dispatch_carried"
+assert required_inputs["workgroup_ids"]["source_class"] == "entry_captured"
+assert required_inputs["preserved_entry_workitem_vgprs"]["source_class"] == "entry_captured"
+assert required_inputs["wavefront_mode"]["source_class"] == "descriptor_derived"
+
+register_plan = payload["register_plan"]
+expected_pair = {
+    "gfx90a": [4, 5],
+    "gfx942": [0, 1],
+}[expected_arch]
+expected_private_sgpr = {
+    "gfx90a": 11,
+    "gfx942": 5,
+}[expected_arch]
+assert any(entry["kind"] == "sgpr-pair" and entry["target"] == expected_pair for entry in register_plan)
+assert any(entry["kind"] == "sgpr" and entry["target"] == expected_private_sgpr for entry in register_plan)
+assert any(entry["kind"] == "vgpr" and entry["target"] == 0 for entry in register_plan)
+asm = payload["symbolic_asm"]
+assert any(f"s_mov_b64 s[{expected_pair[0]}:{expected_pair[1]}], <original_launch_kernarg_image>" in line for line in asm)
+assert any(f"s_mov_b32 s{expected_private_sgpr}, <trampoline.entry.private_segment_wave_offset>" in line for line in asm)
+assert asm[-1] == "s_setpc_b64 <original_body_entry_symbol_addr_pair>"
+PY
+        then
+            echo -e "  ${GREEN}✓ PASS${NC} - ${arch} stub plan emits a supported symbolic reconstruction plan"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            echo -e "  ${RED}✗ FAIL${NC} - ${arch} supported fixture stub output was incorrect"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - ${arch} supported fixture stub generation failed"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+run_supported_fixture_stub_test \
+    "gfx90a" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.manifest.json"
+
+run_supported_fixture_stub_test \
+    "gfx942" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.manifest.json"
+
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="entry_handoff_stub_mlk_runtime"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
@@ -50,7 +132,7 @@ import sys
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
 assert payload["function"] == "mlk"
 assert payload["supported"] is True
-assert payload["supported_class"] == "rdna-gfx1030-wave32-kernarg-sgpr8-9-workgroup-xyz-private17-vgpr3"
+assert payload["supported_class"] == "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1"
 assert payload["handoff_strategy"] == "branch-to-original-entry"
 assert payload["branch_transfer_kind"] == "s_setpc_b64"
 assert payload["branch_target_symbol"] == "mlk"

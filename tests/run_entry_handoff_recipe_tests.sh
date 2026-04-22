@@ -28,6 +28,88 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
+run_supported_fixture_test() {
+    local arch="$1"
+    local fixture="$2"
+    local manifest="$3"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    local test_name="entry_handoff_recipe_fixture_${arch}"
+    local output_json="$OUTPUT_DIR/${test_name}.json"
+    echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $test_name"
+
+    if python3 "$RECIPE_TOOL" \
+        "$fixture" \
+        --manifest "$manifest" \
+        --function entry_abi_kernel \
+        --output "$output_json" > "$OUTPUT_DIR/${test_name}.out"; then
+        if python3 - "$output_json" "$arch" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+expected_arch = sys.argv[2]
+
+assert payload["function"] == "entry_abi_kernel"
+assert payload["arch"] == expected_arch
+assert payload["supported"] is True
+expected_class = {
+    "gfx90a": "wave64-packed-v0-10_10_10-flat-scratch-alias-v1",
+    "gfx942": "wave64-packed-v0-10_10_10-src-private-base-v1",
+}[expected_arch]
+assert payload["supported_class"] == expected_class
+assert payload["blockers"] == []
+
+actions = payload["reconstruction_actions"]
+assert actions[0]["action"] == "materialize-kernarg-base-pair"
+assert any(
+    entry["action"] == "materialize-entry-workitem-vgprs" and entry["count"] == 3
+    for entry in actions
+)
+private_action = next(
+    entry for entry in actions if entry["action"] == "materialize-private-segment-state"
+)
+assert private_action["pattern_class"] == {
+    "gfx90a": "flat_scratch_alias_init",
+    "gfx942": "src_private_base",
+}[expected_arch]
+
+wrapper = payload["wrapper_source_analysis"]
+assert wrapper["model"] == "direct-entry-wrapper-v1"
+assert wrapper["direct_branch_supported"] is True
+assert wrapper["reconstruction_after_clobber_supported"] is False
+assert "no-independent-entry-workitem-vgpr-source" in wrapper["reconstruction_after_clobber_blockers"]
+assert "requires-original-private-state-or-supplemental-handoff" in wrapper["reconstruction_after_clobber_blockers"]
+
+handoff = payload["supplemental_handoff_contract"]
+assert handoff["schema"] == "omniprobe.entry_handoff.hidden_v1"
+assert handoff["required"] is True
+fields = {entry["name"]: entry for entry in handoff["fields"]}
+assert fields["original_kernarg_pointer"]["source_class"] == "dispatch_carried"
+assert fields["entry_workitem_id_x"]["source_class"] == "entry_captured"
+assert fields["private_segment_wave_offset"]["source_class"] == "entry_captured"
+validation = {entry["name"]: entry for entry in handoff["validation_requirements"]}
+assert validation["wavefront_size"]["source_class"] == "descriptor_derived"
+runtime_objects = handoff["runtime_objects"]
+dispatch_payload = {entry["name"]: entry for entry in runtime_objects["dispatch_payload"]["fields"]}
+entry_snapshot = {entry["name"]: entry for entry in runtime_objects["entry_snapshot"]["fields"]}
+assert "original_kernarg_pointer" in dispatch_payload
+assert "entry_workitem_id_x" in entry_snapshot
+assert "private_segment_wave_offset" in entry_snapshot
+PY
+        then
+            echo -e "  ${GREEN}✓ PASS${NC} - ${arch} fixture emits a supported symbolic reconstruction recipe"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            echo -e "  ${RED}✗ FAIL${NC} - ${arch} supported fixture recipe output was incorrect"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - ${arch} supported fixture recipe generation failed"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="entry_handoff_recipe_fixture_gfx1030"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
@@ -45,7 +127,7 @@ import sys
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
 assert payload["function"] == "entry_abi_kernel"
 assert payload["supported"] is True
-assert payload["supported_class"] == "rdna-gfx1030-wave32-kernarg-sgpr8-9-workgroup-xyz-private17-vgpr3"
+assert payload["supported_class"] == "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1"
 actions = payload["reconstruction_actions"]
 assert actions[0]["action"] == "materialize-kernarg-base-pair"
 assert actions[0]["target_sgprs"] == [4, 5]
@@ -91,6 +173,16 @@ else
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+run_supported_fixture_test \
+    "gfx90a" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.manifest.json"
+
+run_supported_fixture_test \
+    "gfx942" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.manifest.json"
+
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="entry_handoff_recipe_mlk_runtime"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
@@ -115,7 +207,7 @@ import sys
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
 assert payload["function"] == "mlk"
 assert payload["supported"] is True
-assert payload["supported_class"] == "rdna-gfx1030-wave32-kernarg-sgpr8-9-workgroup-xyz-private17-vgpr3"
+assert payload["supported_class"] == "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1"
 assert payload["descriptor_summary"]["kernarg_size"] == 272
 assert payload["descriptor_summary"]["user_sgpr_count"] == 14
 assert payload["kernel_metadata_summary"]["sgpr_count"] == 36

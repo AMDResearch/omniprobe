@@ -7,7 +7,11 @@ import sys
 from pathlib import Path
 
 
-SUPPORTED_CLASS = "rdna-gfx1030-wave32-kernarg-sgpr8-9-workgroup-xyz-private17-vgpr3"
+SUPPORTED_CLASSES = {
+    "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1",
+    "wave64-packed-v0-10_10_10-flat-scratch-alias-v1",
+    "wave64-packed-v0-10_10_10-src-private-base-v1",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -184,7 +188,7 @@ def build_stub_plan(recipe: dict) -> dict:
     supported = bool(recipe.get("supported"))
     supported_class = recipe.get("supported_class")
     blockers = list(recipe.get("blockers", []))
-    if supported and supported_class != SUPPORTED_CLASS:
+    if supported and supported_class not in SUPPORTED_CLASSES:
         supported = False
         blockers.append(f"unsupported-stub-generator-class-{supported_class}")
 

@@ -66,7 +66,7 @@ def classify_supported_class(analysis: dict) -> tuple[str | None, list[str]]:
         blockers.append("kernarg-base-not-observed")
 
     wavefront_size = int(analysis.get("wavefront_size", 0) or 0)
-    if wavefront_size != 32:
+    if wavefront_size not in {32, 64}:
         blockers.append(f"unsupported-wavefront-size-{wavefront_size}")
 
     workitem_vgpr_count = int(analysis.get("entry_workitem_vgpr_count", 0) or 0)
@@ -99,7 +99,25 @@ def classify_supported_class(analysis: dict) -> tuple[str | None, list[str]]:
     if blockers:
         return None, blockers
 
-    return "rdna-gfx1030-wave32-kernarg-sgpr8-9-workgroup-xyz-private17-vgpr3", blockers
+    if wavefront_size == 32 and workitem_pattern in {None, "direct_vgpr_xyz"}:
+        if private_pattern == "setreg_flat_scratch_init":
+            return "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1", blockers
+        blockers.append(f"unsupported-wave32-private-pattern-{private_pattern}")
+        return None, blockers
+
+    if wavefront_size == 64 and workitem_pattern == "packed_v0_10_10_10_unpack":
+        if private_pattern == "flat_scratch_alias_init":
+            return "wave64-packed-v0-10_10_10-flat-scratch-alias-v1", blockers
+        if private_pattern == "src_private_base":
+            return "wave64-packed-v0-10_10_10-src-private-base-v1", blockers
+        blockers.append(f"unsupported-wave64-private-pattern-{private_pattern}")
+        return None, blockers
+
+    blockers.append(
+        "unsupported-entry-shape-"
+        f"wave{wavefront_size}-{workitem_pattern}-{private_pattern}"
+    )
+    return None, blockers
 
 
 def build_reconstruction_actions(analysis: dict) -> list[dict]:
