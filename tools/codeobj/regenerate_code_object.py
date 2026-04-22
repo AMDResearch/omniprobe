@@ -186,6 +186,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--add-entry-wrapper-full-entry-abi-capture-restore-proof",
+        action="store_true",
+        help=(
+            "Extend the entry-wrapper proof by preserving both the supported "
+            "entry system SGPR roles and the entry workitem VGPR state before "
+            "branching to the original body. This combines hidden-handoff "
+            "entry snapshot restore for workgroup/private state with "
+            "private-tail spill/restore for lane-variant workitem VGPRs."
+        ),
+    )
+    parser.add_argument(
         "--python",
         default=sys.executable,
         help="Python interpreter to use for helper tools",
@@ -2024,6 +2035,7 @@ def add_entry_wrapper_proof_intent(
     restore_workgroup_xyz_from_handoff: bool = False,
     restore_all_system_sgprs_from_handoff: bool = False,
     capture_restore_entry_workitem_vgprs: bool = False,
+    capture_restore_full_entry_abi: bool = False,
     capture_workgroup_x_to_handoff: bool = False,
     capture_workgroup_xyz_to_handoff: bool = False,
     capture_all_system_sgprs_to_handoff: bool = False,
@@ -2042,7 +2054,7 @@ def add_entry_wrapper_proof_intent(
     )
     branch_scratch_pair = scratch_pair
     workitem_spill_restore_plan = None
-    if capture_restore_entry_workitem_vgprs:
+    if capture_restore_entry_workitem_vgprs or capture_restore_full_entry_abi:
         pair_candidates = entry_analysis.get("entry_dead_sgpr_pair_candidates", [])
         if not isinstance(pair_candidates, list) or len(pair_candidates) < 2:
             raise SystemExit(
@@ -2336,6 +2348,9 @@ def add_entry_wrapper_proof_intent(
 
     return {
         "mode": (
+            "entry-wrapper-full-entry-abi-capture-restore-proof"
+            if capture_restore_full_entry_abi
+            else (
             "entry-wrapper-workitem-vgpr-capture-restore-proof"
             if capture_restore_entry_workitem_vgprs
             else (
@@ -2357,6 +2372,7 @@ def add_entry_wrapper_proof_intent(
             "entry-wrapper-kernarg-restore-proof"
             if restore_kernarg_base_from_handoff
             else ("entry-wrapper-hidden-handoff-proof" if include_hidden_handoff else "entry-wrapper-proof")
+            )
             )
             )
             )
@@ -3056,6 +3072,7 @@ def main() -> int:
             bool(args.add_entry_wrapper_workgroup_xyz_capture_restore_proof),
             bool(args.add_entry_wrapper_system_sgpr_capture_restore_proof),
             bool(args.add_entry_wrapper_workitem_vgpr_capture_restore_proof),
+            bool(args.add_entry_wrapper_full_entry_abi_capture_restore_proof),
         ]
         if sum(1 for enabled in mutation_modes if enabled) > 1:
             raise SystemExit(
@@ -3068,7 +3085,8 @@ def main() -> int:
                 "--add-entry-wrapper-workgroup-xyz-capture-proof, or "
                 "--add-entry-wrapper-workgroup-xyz-capture-restore-proof, or "
                 "--add-entry-wrapper-system-sgpr-capture-restore-proof, or "
-                "--add-entry-wrapper-workitem-vgpr-capture-restore-proof"
+                "--add-entry-wrapper-workitem-vgpr-capture-restore-proof, or "
+                "--add-entry-wrapper-full-entry-abi-capture-restore-proof"
             )
 
         ir_path = temp_dir_path / "input.ir.json"
@@ -3361,6 +3379,45 @@ def main() -> int:
                 model,
                 kernel_name,
                 capture_restore_entry_workitem_vgprs=True,
+            )
+            working_manifest_path.write_text(
+                json.dumps(manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            asm_manifest_payload = deepcopy(manifest_payload)
+            asm_manifest_metadata = asm_manifest_payload.setdefault("kernels", {}).setdefault(
+                "metadata", {}
+            )
+            original_metadata = original_manifest_payload.get("kernels", {}).get("metadata", {})
+            for key in ("raw", "rendered", "object", "target"):
+                if key in original_metadata:
+                    asm_manifest_metadata[key] = deepcopy(original_metadata[key])
+                else:
+                    asm_manifest_metadata.pop(key, None)
+            asm_manifest_path = temp_dir_path / "input.asm.manifest.json"
+            asm_manifest_path.write_text(
+                json.dumps(asm_manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            ir_path.write_text(
+                json.dumps(ir_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        elif args.add_entry_wrapper_full_entry_abi_capture_restore_proof:
+            original_manifest_payload = load_json(working_manifest_path)
+            manifest_payload = load_json(working_manifest_path)
+            ir_payload = load_json(ir_path)
+            entry_wrapper_result = add_entry_wrapper_proof_intent(
+                manifest_payload,
+                ir_payload,
+                model,
+                kernel_name,
+                include_hidden_handoff=True,
+                restore_kernarg_base_from_handoff=True,
+                restore_all_system_sgprs_from_handoff=True,
+                capture_all_system_sgprs_to_handoff=True,
+                capture_restore_entry_workitem_vgprs=True,
+                capture_restore_full_entry_abi=True,
             )
             working_manifest_path.write_text(
                 json.dumps(manifest_payload, indent=2) + "\n",
@@ -3720,6 +3777,7 @@ def main() -> int:
             or args.add_entry_wrapper_workgroup_xyz_capture_restore_proof
             or args.add_entry_wrapper_system_sgpr_capture_restore_proof
             or args.add_entry_wrapper_workitem_vgpr_capture_restore_proof
+            or args.add_entry_wrapper_full_entry_abi_capture_restore_proof
         ):
             patch_output_metadata_note(output_path, load_json(working_manifest_path))
         if clone_result is not None or entry_wrapper_result is not None:
