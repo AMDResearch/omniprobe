@@ -795,7 +795,9 @@ def add_noop_clone_intent(manifest: dict, ir: dict, model: CodeObjectModel, kern
 
 ENTRY_WRAPPER_PROOF_ARCH = "gfx1030"
 ENTRY_WRAPPER_PROOF_BODY_PREFIX = "__omniprobe_original_body_"
-ENTRY_WRAPPER_PROOF_SUPPORTED_CLASS = "rdna-gfx1030-wave32-kernarg-sgpr8-9-workgroup-xyz-private17-vgpr3"
+ENTRY_WRAPPER_PROOF_IMPLEMENTED_CLASSES = {
+    "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1",
+}
 ENTRY_WRAPPER_HIDDEN_HANDOFF_POINTER_SIZE = 8
 ENTRY_WRAPPER_HIDDEN_HANDOFF_ALIGNMENT = 8
 
@@ -1442,7 +1444,7 @@ def classify_entry_handoff_supported_class(analysis: dict) -> tuple[str | None, 
         blockers.append("kernarg-base-not-observed")
 
     wavefront_size = int(analysis.get("wavefront_size", 0) or 0)
-    if wavefront_size != 32:
+    if wavefront_size not in {32, 64}:
         blockers.append(f"unsupported-wavefront-size-{wavefront_size}")
 
     workitem_vgpr_count = int(analysis.get("entry_workitem_vgpr_count", 0) or 0)
@@ -1473,7 +1475,23 @@ def classify_entry_handoff_supported_class(analysis: dict) -> tuple[str | None, 
 
     if blockers:
         return None, blockers
-    return ENTRY_WRAPPER_PROOF_SUPPORTED_CLASS, blockers
+
+    if wavefront_size == 32 and workitem_pattern in {None, "direct_vgpr_xyz"}:
+        if private_pattern == "setreg_flat_scratch_init":
+            return "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1", blockers
+        return None, [f"unsupported-wave32-private-pattern-{private_pattern}"]
+
+    if wavefront_size == 64 and workitem_pattern == "packed_v0_10_10_10_unpack":
+        if private_pattern == "flat_scratch_alias_init":
+            return "wave64-packed-v0-10_10_10-flat-scratch-alias-v1", blockers
+        if private_pattern == "src_private_base":
+            return "wave64-packed-v0-10_10_10-src-private-base-v1", blockers
+        return None, [f"unsupported-wave64-private-pattern-{private_pattern}"]
+
+    return None, [
+        "unsupported-entry-shape-"
+        f"wave{wavefront_size}-{workitem_pattern}-{private_pattern}"
+    ]
 
 
 def build_entry_handoff_reconstruction_actions(analysis: dict) -> list[dict]:
@@ -1973,12 +1991,17 @@ def validate_entry_wrapper_proof_preconditions(
     )
     liveins = set(int(value) for value in analysis.get("entry_livein_sgprs", []) if isinstance(value, int))
     supported_class, blockers = classify_entry_handoff_supported_class(analysis)
-    if not blockers:
-        supported_class = ENTRY_WRAPPER_PROOF_SUPPORTED_CLASS
-    if supported_class != ENTRY_WRAPPER_PROOF_SUPPORTED_CLASS or descriptor is None:
+    if descriptor is None:
+        raise SystemExit("entry-wrapper proof requires a descriptor for the source kernel")
+    if supported_class is None:
         raise SystemExit(
-            "entry-wrapper proof requires the validated entry-handoff class "
-            f"{ENTRY_WRAPPER_PROOF_SUPPORTED_CLASS}; blockers: {', '.join(blockers) or 'unknown'}"
+            "entry-wrapper proof could not classify the source entry ABI; blockers: "
+            f"{', '.join(blockers) or 'unknown'}"
+        )
+    if supported_class not in ENTRY_WRAPPER_PROOF_IMPLEMENTED_CLASSES:
+        raise SystemExit(
+            "entry-wrapper proof recognized entry-handoff class "
+            f"{supported_class} but that class is not implemented in the runtime wrapper yet"
         )
 
     pair_candidates = analysis.get("entry_dead_sgpr_pair_candidates", [])
