@@ -13,6 +13,7 @@ SUPPORTED_CLASSES = {
     "wave64-direct-vgpr-xyz-src-private-base-v1",
     "wave64-packed-v0-10_10_10-flat-scratch-alias-v1",
     "wave64-packed-v0-10_10_10-src-private-base-v1",
+    "wave64-single-vgpr-x-workgroup-x-kernarg-only-v1",
 }
 
 
@@ -75,18 +76,10 @@ def build_required_inputs(recipe: dict) -> list[dict]:
         {
             "name": "workgroup_ids",
             "kind": "triple-u32",
-            "required": True,
+            "required": any(name in fields for name in ("workgroup_id_x", "workgroup_id_y", "workgroup_id_z")),
             "source_class": "entry_captured",
             "acquisition": "capture-from-entry-system-sgprs-before-helper-execution",
-            "reason": "original body expects workgroup IDs in entry system SGPRs",
-        },
-        {
-            "name": "trampoline_private_segment_wave_offset",
-            "kind": "u32",
-            "required": True,
-            "source_class": str(fields.get("private_segment_wave_offset", {}).get("source_class", "entry_captured")),
-            "acquisition": "capture-from-entry-system-sgpr-before-helper-execution",
-            "reason": "original body prologue uses the entry private-segment wave offset",
+            "reason": "original body expects the entry workgroup ID subset in system SGPRs",
         },
         {
             "name": "preserved_entry_workitem_vgprs",
@@ -105,6 +98,18 @@ def build_required_inputs(recipe: dict) -> list[dict]:
             "reason": "original body was compiled for a specific wave mode",
         },
     ]
+    if "private_segment_wave_offset" in fields:
+        inputs.insert(
+            2,
+            {
+                "name": "trampoline_private_segment_wave_offset",
+                "kind": "u32",
+                "required": True,
+                "source_class": str(fields.get("private_segment_wave_offset", {}).get("source_class", "entry_captured")),
+                "acquisition": "capture-from-entry-system-sgpr-before-helper-execution",
+                "reason": "original body prologue uses the entry private-segment wave offset",
+            },
+        )
     if any(
         entry.get("action") == "materialize-private-segment-state"
         for entry in recipe.get("reconstruction_actions", [])
@@ -120,7 +125,7 @@ def build_required_inputs(recipe: dict) -> list[dict]:
                 "reason": "original body prologue initializes flat scratch from entry-private state",
             }
         )
-    return inputs
+    return [entry for entry in inputs if entry.get("required")]
 
 
 def build_register_plan(recipe: dict) -> list[dict]:

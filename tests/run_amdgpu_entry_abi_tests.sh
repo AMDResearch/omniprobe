@@ -191,4 +191,50 @@ else
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="amdgpu_entry_abi_gfx942_real_single_vgpr"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+
+if python3 "$ANALYZER" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.ir.json" \
+    --manifest "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.manifest.json" \
+    --function Cijk_S_GA \
+    --output "$OUTPUT_DIR/${TEST_NAME}.json" > "$OUTPUT_DIR/${TEST_NAME}.out"; then
+    if python3 - "$OUTPUT_DIR/${TEST_NAME}.json" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["arch"] == "gfx942"
+assert payload["function"] == "Cijk_S_GA"
+assert payload["descriptor_has_kernarg_segment_ptr"] is True
+assert payload["allocated_sgpr_count"] == 24
+assert payload["allocated_vgpr_count"] == 16
+assert payload["wavefront_size"] == 64
+assert payload["private_segment_fixed_size"] == 0
+assert payload["entry_livein_sgprs"] == [0, 1, 2]
+roles = payload["entry_system_sgpr_roles"]
+assert [entry["role"] for entry in roles] == ["workgroup_id_x"]
+assert [entry["sgpr"] for entry in roles] == [2]
+assert payload["entry_workitem_vgpr_count"] == 1
+assert payload["inferred_kernarg_base"]["base_pair"] == [0, 1]
+assert payload["observed_workitem_id_materialization"]["pattern_class"] == "single_vgpr_workitem_id"
+assert payload["observed_private_segment_materialization"] is None
+support = payload["current_entry_stub_support"]
+assert payload["supported_for_current_entry_stub"] is True
+assert support["supported"] is True
+assert support["reasons"] == []
+PY
+    then
+        echo -e "  ${GREEN}✓ PASS${NC} - Real gfx942 fixture exposes the audited single-VGPR entry ABI shape"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Real gfx942 single-VGPR entry ABI inference did not match expectations"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Real gfx942 single-VGPR analyzer execution failed"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 print_summary

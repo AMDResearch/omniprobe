@@ -1449,52 +1449,88 @@ def classify_entry_handoff_supported_class(analysis: dict) -> tuple[str | None, 
         blockers.append(f"unsupported-wavefront-size-{wavefront_size}")
 
     workitem_vgpr_count = int(analysis.get("entry_workitem_vgpr_count", 0) or 0)
-    if workitem_vgpr_count != 3:
-        blockers.append(f"unsupported-workitem-vgpr-count-{workitem_vgpr_count}")
-
     system_roles = analysis.get("entry_system_sgpr_roles", [])
     role_names = [entry.get("role") for entry in system_roles if isinstance(entry, dict)]
-    if role_names != [
-        "workgroup_id_x",
-        "workgroup_id_y",
-        "workgroup_id_z",
-        "private_segment_wave_offset",
-    ]:
-        blockers.append(f"unsupported-system-sgpr-role-layout-{role_names}")
-
     private_pattern = (
         analysis.get("observed_private_segment_materialization", {}) or {}
     ).get("pattern_class")
-    if private_pattern not in {"setreg_flat_scratch_init", "flat_scratch_alias_init", "src_private_base"}:
-        blockers.append(f"unsupported-private-pattern-{private_pattern}")
-
     workitem_pattern = (
         analysis.get("observed_workitem_id_materialization", {}) or {}
     ).get("pattern_class")
-    if workitem_pattern not in {None, "direct_vgpr_xyz", "packed_v0_10_10_10_unpack"}:
-        blockers.append(f"unsupported-workitem-pattern-{workitem_pattern}")
 
     if blockers:
         return None, blockers
 
-    if wavefront_size == 32 and workitem_pattern in {None, "direct_vgpr_xyz"}:
+    full_system_role_layout = [
+        "workgroup_id_x",
+        "workgroup_id_y",
+        "workgroup_id_z",
+        "private_segment_wave_offset",
+    ]
+
+    if (
+        wavefront_size == 32
+        and workitem_vgpr_count == 3
+        and role_names == full_system_role_layout
+        and workitem_pattern in {None, "direct_vgpr_xyz"}
+    ):
         if private_pattern == "setreg_flat_scratch_init":
             return "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1", blockers
         return None, [f"unsupported-wave32-private-pattern-{private_pattern}"]
 
-    if wavefront_size == 64 and workitem_pattern == "packed_v0_10_10_10_unpack":
+    if (
+        wavefront_size == 64
+        and workitem_vgpr_count == 3
+        and role_names == full_system_role_layout
+        and workitem_pattern == "packed_v0_10_10_10_unpack"
+    ):
         if private_pattern == "flat_scratch_alias_init":
             return "wave64-packed-v0-10_10_10-flat-scratch-alias-v1", blockers
         if private_pattern == "src_private_base":
             return "wave64-packed-v0-10_10_10-src-private-base-v1", blockers
         return None, [f"unsupported-wave64-private-pattern-{private_pattern}"]
 
-    if wavefront_size == 64 and workitem_pattern == "direct_vgpr_xyz":
+    if (
+        wavefront_size == 64
+        and workitem_vgpr_count == 3
+        and role_names == full_system_role_layout
+        and workitem_pattern == "direct_vgpr_xyz"
+    ):
         if private_pattern == "flat_scratch_alias_init":
             return "wave64-direct-vgpr-xyz-flat-scratch-alias-v1", blockers
         if private_pattern == "src_private_base":
             return "wave64-direct-vgpr-xyz-src-private-base-v1", blockers
         return None, [f"unsupported-wave64-private-pattern-{private_pattern}"]
+
+    if (
+        wavefront_size == 64
+        and workitem_vgpr_count == 1
+        and role_names == ["workgroup_id_x"]
+        and workitem_pattern == "single_vgpr_workitem_id"
+        and private_pattern is None
+    ):
+        return "wave64-single-vgpr-x-workgroup-x-kernarg-only-v1", blockers
+
+    if workitem_vgpr_count not in {1, 3}:
+        blockers.append(f"unsupported-workitem-vgpr-count-{workitem_vgpr_count}")
+    if role_names not in (["workgroup_id_x"], full_system_role_layout):
+        blockers.append(f"unsupported-system-sgpr-role-layout-{role_names}")
+    if private_pattern not in {
+        None,
+        "setreg_flat_scratch_init",
+        "flat_scratch_alias_init",
+        "src_private_base",
+    }:
+        blockers.append(f"unsupported-private-pattern-{private_pattern}")
+    if workitem_pattern not in {
+        None,
+        "direct_vgpr_xyz",
+        "packed_v0_10_10_10_unpack",
+        "single_vgpr_workitem_id",
+    }:
+        blockers.append(f"unsupported-workitem-pattern-{workitem_pattern}")
+    if blockers:
+        return None, blockers
 
     return None, [
         "unsupported-entry-shape-"
@@ -1643,81 +1679,59 @@ def build_entry_supplemental_handoff_contract(
             "purpose": "re-materialize the original kernarg base pair after wrapper-side clobber",
             "satisfies_actions": ["materialize-kernarg-base-pair"],
         },
-        {
-            "name": "workgroup_id_x",
-            "kind": "u32",
-            "required": True,
-            "source_class": "entry_captured",
-            "variability": "workgroup_variant",
-            "producer": "wrapper-entry-snapshot",
-            "purpose": "restore entry system SGPR role workgroup_id_x",
-            "satisfies_actions": ["materialize-system-sgpr"],
-            "role": "workgroup_id_x",
-        },
-        {
-            "name": "workgroup_id_y",
-            "kind": "u32",
-            "required": True,
-            "source_class": "entry_captured",
-            "variability": "workgroup_variant",
-            "producer": "wrapper-entry-snapshot",
-            "purpose": "restore entry system SGPR role workgroup_id_y",
-            "satisfies_actions": ["materialize-system-sgpr"],
-            "role": "workgroup_id_y",
-        },
-        {
-            "name": "workgroup_id_z",
-            "kind": "u32",
-            "required": True,
-            "source_class": "entry_captured",
-            "variability": "workgroup_variant",
-            "producer": "wrapper-entry-snapshot",
-            "purpose": "restore entry system SGPR role workgroup_id_z",
-            "satisfies_actions": ["materialize-system-sgpr"],
-            "role": "workgroup_id_z",
-        },
-        {
-            "name": "private_segment_wave_offset",
-            "kind": "u32",
-            "required": True,
-            "source_class": "entry_captured",
-            "variability": "wave_variant",
-            "producer": "wrapper-entry-snapshot",
-            "purpose": "restore the entry private-segment wave offset live-in",
-            "satisfies_actions": ["materialize-system-sgpr", "materialize-private-segment-state"],
-            "role": "private_segment_wave_offset",
-        },
-        {
-            "name": "entry_workitem_id_x",
-            "kind": "u32",
-            "required": True,
-            "source_class": "entry_captured",
-            "variability": "lane_variant",
-            "producer": "wrapper-entry-snapshot",
-            "purpose": "restore the canonical x workitem-id component into the expected entry VGPR contract",
-            "satisfies_actions": ["materialize-entry-workitem-vgprs"],
-        },
-        {
-            "name": "entry_workitem_id_y",
-            "kind": "u32",
-            "required": True,
-            "source_class": "entry_captured",
-            "variability": "lane_variant",
-            "producer": "wrapper-entry-snapshot",
-            "purpose": "restore the canonical y workitem-id component into the expected entry VGPR contract",
-            "satisfies_actions": ["materialize-entry-workitem-vgprs"],
-        },
-        {
-            "name": "entry_workitem_id_z",
-            "kind": "u32",
-            "required": True,
-            "source_class": "entry_captured",
-            "variability": "lane_variant",
-            "producer": "wrapper-entry-snapshot",
-            "purpose": "restore the canonical z workitem-id component into the expected entry VGPR contract",
-            "satisfies_actions": ["materialize-entry-workitem-vgprs"],
-        },
     ]
+
+    role_field_specs = {
+        "workgroup_id_x": ("u32", "workgroup_variant", "restore entry system SGPR role workgroup_id_x"),
+        "workgroup_id_y": ("u32", "workgroup_variant", "restore entry system SGPR role workgroup_id_y"),
+        "workgroup_id_z": ("u32", "workgroup_variant", "restore entry system SGPR role workgroup_id_z"),
+        "private_segment_wave_offset": (
+            "u32",
+            "wave_variant",
+            "restore the entry private-segment wave offset live-in",
+        ),
+    }
+    for role_entry in analysis.get("entry_system_sgpr_roles", []):
+        if not isinstance(role_entry, dict):
+            continue
+        role = role_entry.get("role")
+        if role not in role_field_specs:
+            continue
+        kind, variability, purpose = role_field_specs[str(role)]
+        satisfies_actions = ["materialize-system-sgpr"]
+        if role == "private_segment_wave_offset":
+            satisfies_actions.append("materialize-private-segment-state")
+        fields.append(
+            {
+                "name": str(role),
+                "kind": kind,
+                "required": True,
+                "source_class": "entry_captured",
+                "variability": variability,
+                "producer": "wrapper-entry-snapshot",
+                "purpose": purpose,
+                "satisfies_actions": satisfies_actions,
+                "role": str(role),
+            }
+        )
+
+    workitem_components = ["x", "y", "z"][: max(0, min(3, int(analysis.get("entry_workitem_vgpr_count", 0) or 0)))]
+    for component in workitem_components:
+        fields.append(
+            {
+                "name": f"entry_workitem_id_{component}",
+                "kind": "u32",
+                "required": True,
+                "source_class": "entry_captured",
+                "variability": "lane_variant",
+                "producer": "wrapper-entry-snapshot",
+                "purpose": (
+                    "restore the canonical "
+                    f"{component} workitem-id component into the expected entry VGPR contract"
+                ),
+                "satisfies_actions": ["materialize-entry-workitem-vgprs"],
+            }
+        )
 
     private_pattern = (
         analysis.get("observed_private_segment_materialization", {}) or {}

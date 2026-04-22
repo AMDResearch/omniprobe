@@ -431,7 +431,12 @@ def summarize_current_entry_stub_support(
         if isinstance(workitem_materialization, dict)
         else None
     )
-    if workitem_pattern not in {"direct_vgpr_xyz", "packed_v0_10_10_10_unpack", None}:
+    if workitem_pattern not in {
+        "direct_vgpr_xyz",
+        "packed_v0_10_10_10_unpack",
+        "single_vgpr_workitem_id",
+        None,
+    }:
         reasons.append("unrecognized_workitem_id_materialization")
 
     rsrc2 = descriptor.get("compute_pgm_rsrc2", {}) if isinstance(descriptor, dict) else {}

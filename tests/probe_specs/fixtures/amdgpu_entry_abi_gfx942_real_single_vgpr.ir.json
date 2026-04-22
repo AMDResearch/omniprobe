@@ -1,0 +1,2810 @@
+{
+  "arch": "gfx942",
+  "functions": [
+    {
+      "name": "Cijk_S_GA",
+      "start_address": 430592,
+      "section": ".text",
+      "instructions": [
+        {
+          "address": 430592,
+          "mnemonic": "s_load_dword",
+          "operand_text": "s3, s[0:1], 0x3c",
+          "operands": [
+            "s3",
+            "s[0:1]",
+            "0x3c"
+          ],
+          "encoding_words": [
+            "C00200C0",
+            "0000003C"
+          ],
+          "encoding_hex": "C00200C00000003C",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430600,
+          "mnemonic": "s_load_dword",
+          "operand_text": "s12, s[0:1], 0x58",
+          "operands": [
+            "s12",
+            "s[0:1]",
+            "0x58"
+          ],
+          "encoding_words": [
+            "C0020300",
+            "00000058"
+          ],
+          "encoding_hex": "C002030000000058",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430608,
+          "mnemonic": "s_load_dwordx8",
+          "operand_text": "s[4:11], s[0:1], 0x10",
+          "operands": [
+            "s[4:11]",
+            "s[0:1]",
+            "0x10"
+          ],
+          "encoding_words": [
+            "C00E0100",
+            "00000010"
+          ],
+          "encoding_hex": "C00E010000000010",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430616,
+          "mnemonic": "s_waitcnt",
+          "operand_text": "lgkmcnt(0)",
+          "operands": [
+            "lgkmcnt(0)"
+          ],
+          "encoding_words": [
+            "BF8CC07F"
+          ],
+          "encoding_hex": "BF8CC07F",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430620,
+          "mnemonic": "s_and_b32",
+          "operand_text": "s3, s3, 0xffff",
+          "operands": [
+            "s3",
+            "s3",
+            "0xffff"
+          ],
+          "encoding_words": [
+            "8603FF03",
+            "0000FFFF"
+          ],
+          "encoding_hex": "8603FF030000FFFF",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430628,
+          "mnemonic": "s_mul_i32",
+          "operand_text": "s2, s2, s3",
+          "operands": [
+            "s2",
+            "s2",
+            "s3"
+          ],
+          "encoding_words": [
+            "92020302"
+          ],
+          "encoding_hex": "92020302",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430632,
+          "mnemonic": "s_add_i32",
+          "operand_text": "s2, s2, s12",
+          "operands": [
+            "s2",
+            "s2",
+            "s12"
+          ],
+          "encoding_words": [
+            "81020C02"
+          ],
+          "encoding_hex": "81020C02",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430636,
+          "mnemonic": "v_add_u32_e32",
+          "operand_text": "v0, s2, v0",
+          "operands": [
+            "v0",
+            "s2",
+            "v0"
+          ],
+          "encoding_words": [
+            "68000002"
+          ],
+          "encoding_hex": "68000002",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430640,
+          "mnemonic": "s_mul_i32",
+          "operand_text": "s2, s9, s8",
+          "operands": [
+            "s2",
+            "s9",
+            "s8"
+          ],
+          "encoding_words": [
+            "92020809"
+          ],
+          "encoding_hex": "92020809",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430644,
+          "mnemonic": "s_mul_i32",
+          "operand_text": "s2, s2, s10",
+          "operands": [
+            "s2",
+            "s2",
+            "s10"
+          ],
+          "encoding_words": [
+            "92020A02"
+          ],
+          "encoding_hex": "92020A02",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430648,
+          "mnemonic": "v_cmp_gt_u32_e32",
+          "operand_text": "vcc, s2, v0",
+          "operands": [
+            "vcc",
+            "s2",
+            "v0"
+          ],
+          "encoding_words": [
+            "7D980002"
+          ],
+          "encoding_hex": "7D980002",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430652,
+          "mnemonic": "s_and_saveexec_b64",
+          "operand_text": "s[2:3], vcc",
+          "operands": [
+            "s[2:3]",
+            "vcc"
+          ],
+          "encoding_words": [
+            "BE82206A"
+          ],
+          "encoding_hex": "BE82206A",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430656,
+          "mnemonic": "s_cbranch_execz",
+          "operand_text": "121",
+          "operands": [
+            "121"
+          ],
+          "encoding_words": [
+            "BF880079"
+          ],
+          "encoding_hex": "BF880079",
+          "control_flow": "branch_conditional",
+          "target": {
+            "raw": "Cijk_S_GA+0x228",
+            "symbol": "Cijk_S_GA",
+            "offset": 552
+          },
+          "is_padding": false
+        },
+        {
+          "address": 430660,
+          "mnemonic": "v_cvt_f32_u32_e32",
+          "operand_text": "v1, s8",
+          "operands": [
+            "v1",
+            "s8"
+          ],
+          "encoding_words": [
+            "7E020C08"
+          ],
+          "encoding_hex": "7E020C08",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430664,
+          "mnemonic": "v_cvt_f32_u32_e32",
+          "operand_text": "v2, s9",
+          "operands": [
+            "v2",
+            "s9"
+          ],
+          "encoding_words": [
+            "7E040C09"
+          ],
+          "encoding_hex": "7E040C09",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430668,
+          "mnemonic": "s_sub_i32",
+          "operand_text": "s12, 0, s8",
+          "operands": [
+            "s12",
+            "0",
+            "s8"
+          ],
+          "encoding_words": [
+            "818C0880"
+          ],
+          "encoding_hex": "818C0880",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430672,
+          "mnemonic": "v_cvt_f32_u32_e32",
+          "operand_text": "v6, s10",
+          "operands": [
+            "v6",
+            "s10"
+          ],
+          "encoding_words": [
+            "7E0C0C0A"
+          ],
+          "encoding_hex": "7E0C0C0A",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430676,
+          "mnemonic": "v_rcp_iflag_f32_e32",
+          "operand_text": "v1, v1",
+          "operands": [
+            "v1",
+            "v1"
+          ],
+          "encoding_words": [
+            "7E024701"
+          ],
+          "encoding_hex": "7E024701",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430680,
+          "mnemonic": "v_rcp_iflag_f32_e32",
+          "operand_text": "v2, v2",
+          "operands": [
+            "v2",
+            "v2"
+          ],
+          "encoding_words": [
+            "7E044702"
+          ],
+          "encoding_hex": "7E044702",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430684,
+          "mnemonic": "s_load_dwordx4",
+          "operand_text": "s[0:3], s[0:1], 0x0",
+          "operands": [
+            "s[0:3]",
+            "s[0:1]",
+            "0x0"
+          ],
+          "encoding_words": [
+            "C00A0000",
+            "00000000"
+          ],
+          "encoding_hex": "C00A000000000000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430692,
+          "mnemonic": "v_mul_f32_e32",
+          "operand_text": "v1, 0x4f7ffffe, v1",
+          "operands": [
+            "v1",
+            "0x4f7ffffe",
+            "v1"
+          ],
+          "encoding_words": [
+            "0A0202FF",
+            "4F7FFFFE"
+          ],
+          "encoding_hex": "0A0202FF4F7FFFFE",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430700,
+          "mnemonic": "v_cvt_u32_f32_e32",
+          "operand_text": "v1, v1",
+          "operands": [
+            "v1",
+            "v1"
+          ],
+          "encoding_words": [
+            "7E020F01"
+          ],
+          "encoding_hex": "7E020F01",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430704,
+          "mnemonic": "v_mul_f32_e32",
+          "operand_text": "v2, 0x4f7ffffe, v2",
+          "operands": [
+            "v2",
+            "0x4f7ffffe",
+            "v2"
+          ],
+          "encoding_words": [
+            "0A0404FF",
+            "4F7FFFFE"
+          ],
+          "encoding_hex": "0A0404FF4F7FFFFE",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430712,
+          "mnemonic": "v_cvt_u32_f32_e32",
+          "operand_text": "v2, v2",
+          "operands": [
+            "v2",
+            "v2"
+          ],
+          "encoding_words": [
+            "7E040F02"
+          ],
+          "encoding_hex": "7E040F02",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430716,
+          "mnemonic": "v_mul_lo_u32",
+          "operand_text": "v3, s12, v1",
+          "operands": [
+            "v3",
+            "s12",
+            "v1"
+          ],
+          "encoding_words": [
+            "D2850003",
+            "0002020C"
+          ],
+          "encoding_hex": "D28500030002020C",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430724,
+          "mnemonic": "v_mul_hi_u32",
+          "operand_text": "v3, v1, v3",
+          "operands": [
+            "v3",
+            "v1",
+            "v3"
+          ],
+          "encoding_words": [
+            "D2860003",
+            "00020701"
+          ],
+          "encoding_hex": "D286000300020701",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430732,
+          "mnemonic": "v_add_u32_e32",
+          "operand_text": "v1, v1, v3",
+          "operands": [
+            "v1",
+            "v1",
+            "v3"
+          ],
+          "encoding_words": [
+            "68020701"
+          ],
+          "encoding_hex": "68020701",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430736,
+          "mnemonic": "v_mul_hi_u32",
+          "operand_text": "v1, v0, v1",
+          "operands": [
+            "v1",
+            "v0",
+            "v1"
+          ],
+          "encoding_words": [
+            "D2860001",
+            "00020300"
+          ],
+          "encoding_hex": "D286000100020300",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430744,
+          "mnemonic": "v_mul_lo_u32",
+          "operand_text": "v3, v1, s8",
+          "operands": [
+            "v3",
+            "v1",
+            "s8"
+          ],
+          "encoding_words": [
+            "D2850003",
+            "00001101"
+          ],
+          "encoding_hex": "D285000300001101",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430752,
+          "mnemonic": "v_sub_u32_e32",
+          "operand_text": "v3, v0, v3",
+          "operands": [
+            "v3",
+            "v0",
+            "v3"
+          ],
+          "encoding_words": [
+            "6A060700"
+          ],
+          "encoding_hex": "6A060700",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430756,
+          "mnemonic": "v_add_u32_e32",
+          "operand_text": "v4, 1, v1",
+          "operands": [
+            "v4",
+            "1",
+            "v1"
+          ],
+          "encoding_words": [
+            "68080281"
+          ],
+          "encoding_hex": "68080281",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430760,
+          "mnemonic": "v_cmp_le_u32_e32",
+          "operand_text": "vcc, s8, v3",
+          "operands": [
+            "vcc",
+            "s8",
+            "v3"
+          ],
+          "encoding_words": [
+            "7D960608"
+          ],
+          "encoding_hex": "7D960608",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430764,
+          "mnemonic": "s_nop",
+          "operand_text": "1",
+          "operands": [
+            "1"
+          ],
+          "encoding_words": [
+            "BF800001"
+          ],
+          "encoding_hex": "BF800001",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430768,
+          "mnemonic": "v_cndmask_b32_e32",
+          "operand_text": "v1, v1, v4, vcc",
+          "operands": [
+            "v1",
+            "v1",
+            "v4",
+            "vcc"
+          ],
+          "encoding_words": [
+            "00020901"
+          ],
+          "encoding_hex": "00020901",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430772,
+          "mnemonic": "v_subrev_u32_e32",
+          "operand_text": "v4, s8, v3",
+          "operands": [
+            "v4",
+            "s8",
+            "v3"
+          ],
+          "encoding_words": [
+            "6C080608"
+          ],
+          "encoding_hex": "6C080608",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430776,
+          "mnemonic": "v_cndmask_b32_e32",
+          "operand_text": "v3, v3, v4, vcc",
+          "operands": [
+            "v3",
+            "v3",
+            "v4",
+            "vcc"
+          ],
+          "encoding_words": [
+            "00060903"
+          ],
+          "encoding_hex": "00060903",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430780,
+          "mnemonic": "v_add_u32_e32",
+          "operand_text": "v4, 1, v1",
+          "operands": [
+            "v4",
+            "1",
+            "v1"
+          ],
+          "encoding_words": [
+            "68080281"
+          ],
+          "encoding_hex": "68080281",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430784,
+          "mnemonic": "v_cmp_le_u32_e32",
+          "operand_text": "vcc, s8, v3",
+          "operands": [
+            "vcc",
+            "s8",
+            "v3"
+          ],
+          "encoding_words": [
+            "7D960608"
+          ],
+          "encoding_hex": "7D960608",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430788,
+          "mnemonic": "s_nop",
+          "operand_text": "1",
+          "operands": [
+            "1"
+          ],
+          "encoding_words": [
+            "BF800001"
+          ],
+          "encoding_hex": "BF800001",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430792,
+          "mnemonic": "v_cndmask_b32_e32",
+          "operand_text": "v3, v1, v4, vcc",
+          "operands": [
+            "v3",
+            "v1",
+            "v4",
+            "vcc"
+          ],
+          "encoding_words": [
+            "00060901"
+          ],
+          "encoding_hex": "00060901",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430796,
+          "mnemonic": "v_mul_lo_u32",
+          "operand_text": "v1, v3, s8",
+          "operands": [
+            "v1",
+            "v3",
+            "s8"
+          ],
+          "encoding_words": [
+            "D2850001",
+            "00001103"
+          ],
+          "encoding_hex": "D285000100001103",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430804,
+          "mnemonic": "s_sub_i32",
+          "operand_text": "s8, 0, s9",
+          "operands": [
+            "s8",
+            "0",
+            "s9"
+          ],
+          "encoding_words": [
+            "81880980"
+          ],
+          "encoding_hex": "81880980",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430808,
+          "mnemonic": "v_mul_lo_u32",
+          "operand_text": "v4, s8, v2",
+          "operands": [
+            "v4",
+            "s8",
+            "v2"
+          ],
+          "encoding_words": [
+            "D2850004",
+            "00020408"
+          ],
+          "encoding_hex": "D285000400020408",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430816,
+          "mnemonic": "v_mul_hi_u32",
+          "operand_text": "v4, v2, v4",
+          "operands": [
+            "v4",
+            "v2",
+            "v4"
+          ],
+          "encoding_words": [
+            "D2860004",
+            "00020902"
+          ],
+          "encoding_hex": "D286000400020902",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430824,
+          "mnemonic": "v_add_u32_e32",
+          "operand_text": "v2, v2, v4",
+          "operands": [
+            "v2",
+            "v2",
+            "v4"
+          ],
+          "encoding_words": [
+            "68040902"
+          ],
+          "encoding_hex": "68040902",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430828,
+          "mnemonic": "v_mul_hi_u32",
+          "operand_text": "v2, v3, v2",
+          "operands": [
+            "v2",
+            "v3",
+            "v2"
+          ],
+          "encoding_words": [
+            "D2860002",
+            "00020503"
+          ],
+          "encoding_hex": "D286000200020503",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430836,
+          "mnemonic": "v_mul_lo_u32",
+          "operand_text": "v4, v2, s9",
+          "operands": [
+            "v4",
+            "v2",
+            "s9"
+          ],
+          "encoding_words": [
+            "D2850004",
+            "00001302"
+          ],
+          "encoding_hex": "D285000400001302",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430844,
+          "mnemonic": "v_sub_u32_e32",
+          "operand_text": "v4, v3, v4",
+          "operands": [
+            "v4",
+            "v3",
+            "v4"
+          ],
+          "encoding_words": [
+            "6A080903"
+          ],
+          "encoding_hex": "6A080903",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430848,
+          "mnemonic": "v_add_u32_e32",
+          "operand_text": "v5, 1, v2",
+          "operands": [
+            "v5",
+            "1",
+            "v2"
+          ],
+          "encoding_words": [
+            "680A0481"
+          ],
+          "encoding_hex": "680A0481",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430852,
+          "mnemonic": "v_cmp_le_u32_e32",
+          "operand_text": "vcc, s9, v4",
+          "operands": [
+            "vcc",
+            "s9",
+            "v4"
+          ],
+          "encoding_words": [
+            "7D960809"
+          ],
+          "encoding_hex": "7D960809",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430856,
+          "mnemonic": "s_sub_i32",
+          "operand_text": "s8, 0, s10",
+          "operands": [
+            "s8",
+            "0",
+            "s10"
+          ],
+          "encoding_words": [
+            "81880A80"
+          ],
+          "encoding_hex": "81880A80",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430860,
+          "mnemonic": "v_sub_u32_e32",
+          "operand_text": "v0, v0, v1",
+          "operands": [
+            "v0",
+            "v0",
+            "v1"
+          ],
+          "encoding_words": [
+            "6A000300"
+          ],
+          "encoding_hex": "6A000300",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430864,
+          "mnemonic": "v_cndmask_b32_e32",
+          "operand_text": "v2, v2, v5, vcc",
+          "operands": [
+            "v2",
+            "v2",
+            "v5",
+            "vcc"
+          ],
+          "encoding_words": [
+            "00040B02"
+          ],
+          "encoding_hex": "00040B02",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430868,
+          "mnemonic": "v_subrev_u32_e32",
+          "operand_text": "v5, s9, v4",
+          "operands": [
+            "v5",
+            "s9",
+            "v4"
+          ],
+          "encoding_words": [
+            "6C0A0809"
+          ],
+          "encoding_hex": "6C0A0809",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430872,
+          "mnemonic": "v_cndmask_b32_e32",
+          "operand_text": "v4, v4, v5, vcc",
+          "operands": [
+            "v4",
+            "v4",
+            "v5",
+            "vcc"
+          ],
+          "encoding_words": [
+            "00080B04"
+          ],
+          "encoding_hex": "00080B04",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430876,
+          "mnemonic": "v_rcp_iflag_f32_e32",
+          "operand_text": "v5, v6",
+          "operands": [
+            "v5",
+            "v6"
+          ],
+          "encoding_words": [
+            "7E0A4706"
+          ],
+          "encoding_hex": "7E0A4706",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430880,
+          "mnemonic": "v_add_u32_e32",
+          "operand_text": "v6, 1, v2",
+          "operands": [
+            "v6",
+            "1",
+            "v2"
+          ],
+          "encoding_words": [
+            "680C0481"
+          ],
+          "encoding_hex": "680C0481",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430884,
+          "mnemonic": "v_cmp_le_u32_e32",
+          "operand_text": "vcc, s9, v4",
+          "operands": [
+            "vcc",
+            "s9",
+            "v4"
+          ],
+          "encoding_words": [
+            "7D960809"
+          ],
+          "encoding_hex": "7D960809",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430888,
+          "mnemonic": "v_mov_b32_e32",
+          "operand_text": "v1, 0",
+          "operands": [
+            "v1",
+            "0"
+          ],
+          "encoding_words": [
+            "7E020280"
+          ],
+          "encoding_hex": "7E020280",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430892,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430896,
+          "mnemonic": "v_cndmask_b32_e32",
+          "operand_text": "v4, v2, v6, vcc",
+          "operands": [
+            "v4",
+            "v2",
+            "v6",
+            "vcc"
+          ],
+          "encoding_words": [
+            "00080D02"
+          ],
+          "encoding_hex": "00080D02",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430900,
+          "mnemonic": "v_mul_f32_e32",
+          "operand_text": "v2, 0x4f7ffffe, v5",
+          "operands": [
+            "v2",
+            "0x4f7ffffe",
+            "v5"
+          ],
+          "encoding_words": [
+            "0A040AFF",
+            "4F7FFFFE"
+          ],
+          "encoding_hex": "0A040AFF4F7FFFFE",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430908,
+          "mnemonic": "v_cvt_u32_f32_e32",
+          "operand_text": "v5, v2",
+          "operands": [
+            "v5",
+            "v2"
+          ],
+          "encoding_words": [
+            "7E0A0F02"
+          ],
+          "encoding_hex": "7E0A0F02",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430912,
+          "mnemonic": "v_mul_lo_u32",
+          "operand_text": "v2, v4, s9",
+          "operands": [
+            "v2",
+            "v4",
+            "s9"
+          ],
+          "encoding_words": [
+            "D2850002",
+            "00001304"
+          ],
+          "encoding_hex": "D285000200001304",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430920,
+          "mnemonic": "v_sub_u32_e32",
+          "operand_text": "v2, v3, v2",
+          "operands": [
+            "v2",
+            "v3",
+            "v2"
+          ],
+          "encoding_words": [
+            "6A040503"
+          ],
+          "encoding_hex": "6A040503",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430924,
+          "mnemonic": "v_mul_lo_u32",
+          "operand_text": "v3, s8, v5",
+          "operands": [
+            "v3",
+            "s8",
+            "v5"
+          ],
+          "encoding_words": [
+            "D2850003",
+            "00020A08"
+          ],
+          "encoding_hex": "D285000300020A08",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430932,
+          "mnemonic": "v_mul_hi_u32",
+          "operand_text": "v3, v5, v3",
+          "operands": [
+            "v3",
+            "v5",
+            "v3"
+          ],
+          "encoding_words": [
+            "D2860003",
+            "00020705"
+          ],
+          "encoding_hex": "D286000300020705",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430940,
+          "mnemonic": "v_add_u32_e32",
+          "operand_text": "v3, v5, v3",
+          "operands": [
+            "v3",
+            "v5",
+            "v3"
+          ],
+          "encoding_words": [
+            "68060705"
+          ],
+          "encoding_hex": "68060705",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430944,
+          "mnemonic": "v_mul_hi_u32",
+          "operand_text": "v3, v4, v3",
+          "operands": [
+            "v3",
+            "v4",
+            "v3"
+          ],
+          "encoding_words": [
+            "D2860003",
+            "00020704"
+          ],
+          "encoding_hex": "D286000300020704",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430952,
+          "mnemonic": "v_mul_lo_u32",
+          "operand_text": "v3, v3, s10",
+          "operands": [
+            "v3",
+            "v3",
+            "s10"
+          ],
+          "encoding_words": [
+            "D2850003",
+            "00001503"
+          ],
+          "encoding_hex": "D285000300001503",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430960,
+          "mnemonic": "v_sub_u32_e32",
+          "operand_text": "v3, v4, v3",
+          "operands": [
+            "v3",
+            "v4",
+            "v3"
+          ],
+          "encoding_words": [
+            "6A060704"
+          ],
+          "encoding_hex": "6A060704",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430964,
+          "mnemonic": "v_subrev_u32_e32",
+          "operand_text": "v4, s10, v3",
+          "operands": [
+            "v4",
+            "s10",
+            "v3"
+          ],
+          "encoding_words": [
+            "6C08060A"
+          ],
+          "encoding_hex": "6C08060A",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430968,
+          "mnemonic": "v_cmp_le_u32_e32",
+          "operand_text": "vcc, s10, v3",
+          "operands": [
+            "vcc",
+            "s10",
+            "v3"
+          ],
+          "encoding_words": [
+            "7D96060A"
+          ],
+          "encoding_hex": "7D96060A",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430972,
+          "mnemonic": "v_cmp_eq_f32_e64",
+          "operand_text": "s[8:9], s11, 0",
+          "operands": [
+            "s[8:9]",
+            "s11",
+            "0"
+          ],
+          "encoding_words": [
+            "D0420008",
+            "0001000B"
+          ],
+          "encoding_hex": "D04200080001000B",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430980,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430984,
+          "mnemonic": "v_cndmask_b32_e32",
+          "operand_text": "v3, v3, v4, vcc",
+          "operands": [
+            "v3",
+            "v3",
+            "v4",
+            "vcc"
+          ],
+          "encoding_words": [
+            "00060903"
+          ],
+          "encoding_hex": "00060903",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430988,
+          "mnemonic": "v_subrev_u32_e32",
+          "operand_text": "v4, s10, v3",
+          "operands": [
+            "v4",
+            "s10",
+            "v3"
+          ],
+          "encoding_words": [
+            "6C08060A"
+          ],
+          "encoding_hex": "6C08060A",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430992,
+          "mnemonic": "v_cmp_le_u32_e32",
+          "operand_text": "vcc, s10, v3",
+          "operands": [
+            "vcc",
+            "s10",
+            "v3"
+          ],
+          "encoding_words": [
+            "7D96060A"
+          ],
+          "encoding_hex": "7D96060A",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 430996,
+          "mnemonic": "s_nop",
+          "operand_text": "1",
+          "operands": [
+            "1"
+          ],
+          "encoding_words": [
+            "BF800001"
+          ],
+          "encoding_hex": "BF800001",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431000,
+          "mnemonic": "v_cndmask_b32_e32",
+          "operand_text": "v3, v3, v4, vcc",
+          "operands": [
+            "v3",
+            "v3",
+            "v4",
+            "vcc"
+          ],
+          "encoding_words": [
+            "00060903"
+          ],
+          "encoding_hex": "00060903",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431004,
+          "mnemonic": "s_and_b64",
+          "operand_text": "vcc, exec, s[8:9]",
+          "operands": [
+            "vcc",
+            "exec",
+            "s[8:9]"
+          ],
+          "encoding_words": [
+            "86EA087E"
+          ],
+          "encoding_hex": "86EA087E",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431008,
+          "mnemonic": "v_mov_b32_e32",
+          "operand_text": "v4, v1",
+          "operands": [
+            "v4",
+            "v1"
+          ],
+          "encoding_words": [
+            "7E080301"
+          ],
+          "encoding_hex": "7E080301",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431012,
+          "mnemonic": "s_cbranch_vccnz",
+          "operand_text": "17",
+          "operands": [
+            "17"
+          ],
+          "encoding_words": [
+            "BF870011"
+          ],
+          "encoding_hex": "BF870011",
+          "control_flow": "branch_conditional",
+          "target": {
+            "raw": "Cijk_S_GA+0x1ec",
+            "symbol": "Cijk_S_GA",
+            "offset": 492
+          },
+          "is_padding": false
+        },
+        {
+          "address": 431016,
+          "mnemonic": "s_waitcnt",
+          "operand_text": "lgkmcnt(0)",
+          "operands": [
+            "lgkmcnt(0)"
+          ],
+          "encoding_words": [
+            "BF8CC07F"
+          ],
+          "encoding_hex": "BF8CC07F",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431020,
+          "mnemonic": "v_mov_b32_e32",
+          "operand_text": "v4, s2",
+          "operands": [
+            "v4",
+            "s2"
+          ],
+          "encoding_words": [
+            "7E080202"
+          ],
+          "encoding_hex": "7E080202",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431024,
+          "mnemonic": "v_mov_b32_e32",
+          "operand_text": "v5, s3",
+          "operands": [
+            "v5",
+            "s3"
+          ],
+          "encoding_words": [
+            "7E0A0203"
+          ],
+          "encoding_hex": "7E0A0203",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431028,
+          "mnemonic": "v_mad_u64_u32",
+          "operand_text": "v[6:7], s[2:3], v2, s6, 0",
+          "operands": [
+            "v[6:7]",
+            "s[2:3]",
+            "v2",
+            "s6",
+            "0"
+          ],
+          "encoding_words": [
+            "D1E80206",
+            "02000D02"
+          ],
+          "encoding_hex": "D1E8020602000D02",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431036,
+          "mnemonic": "v_lshl_add_u64",
+          "operand_text": "v[4:5], v[0:1], 2, v[4:5]",
+          "operands": [
+            "v[4:5]",
+            "v[0:1]",
+            "2",
+            "v[4:5]"
+          ],
+          "encoding_words": [
+            "D2080004",
+            "04110500"
+          ],
+          "encoding_hex": "D208000404110500",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431044,
+          "mnemonic": "v_mad_u64_u32",
+          "operand_text": "v[8:9], s[2:3], v3, s7, 0",
+          "operands": [
+            "v[8:9]",
+            "s[2:3]",
+            "v3",
+            "s7",
+            "0"
+          ],
+          "encoding_words": [
+            "D1E80208",
+            "02000F03"
+          ],
+          "encoding_hex": "D1E8020802000F03",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431052,
+          "mnemonic": "v_lshl_add_u64",
+          "operand_text": "v[4:5], v[6:7], 2, v[4:5]",
+          "operands": [
+            "v[4:5]",
+            "v[6:7]",
+            "2",
+            "v[4:5]"
+          ],
+          "encoding_words": [
+            "D2080004",
+            "04110506"
+          ],
+          "encoding_hex": "D208000404110506",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431060,
+          "mnemonic": "v_lshl_add_u64",
+          "operand_text": "v[4:5], v[8:9], 2, v[4:5]",
+          "operands": [
+            "v[4:5]",
+            "v[8:9]",
+            "2",
+            "v[4:5]"
+          ],
+          "encoding_words": [
+            "D2080004",
+            "04110508"
+          ],
+          "encoding_hex": "D208000404110508",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431068,
+          "mnemonic": "global_load_dword",
+          "operand_text": "v4, v[4:5], off",
+          "operands": [
+            "v4",
+            "v[4:5]",
+            "off"
+          ],
+          "encoding_words": [
+            "DC508000",
+            "047F0004"
+          ],
+          "encoding_hex": "DC508000047F0004",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431076,
+          "mnemonic": "s_waitcnt",
+          "operand_text": "vmcnt(0)",
+          "operands": [
+            "vmcnt(0)"
+          ],
+          "encoding_words": [
+            "BF8C0F70"
+          ],
+          "encoding_hex": "BF8C0F70",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431080,
+          "mnemonic": "v_mul_f32_e32",
+          "operand_text": "v4, s11, v4",
+          "operands": [
+            "v4",
+            "s11",
+            "v4"
+          ],
+          "encoding_words": [
+            "0A08080B"
+          ],
+          "encoding_hex": "0A08080B",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431084,
+          "mnemonic": "s_waitcnt",
+          "operand_text": "lgkmcnt(0)",
+          "operands": [
+            "lgkmcnt(0)"
+          ],
+          "encoding_words": [
+            "BF8CC07F"
+          ],
+          "encoding_hex": "BF8CC07F",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431088,
+          "mnemonic": "v_mad_u64_u32",
+          "operand_text": "v[6:7], s[2:3], v2, s4, 0",
+          "operands": [
+            "v[6:7]",
+            "s[2:3]",
+            "v2",
+            "s4",
+            "0"
+          ],
+          "encoding_words": [
+            "D1E80206",
+            "02000902"
+          ],
+          "encoding_hex": "D1E8020602000902",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431096,
+          "mnemonic": "v_mov_b32_e32",
+          "operand_text": "v8, s0",
+          "operands": [
+            "v8",
+            "s0"
+          ],
+          "encoding_words": [
+            "7E100200"
+          ],
+          "encoding_hex": "7E100200",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431100,
+          "mnemonic": "v_mov_b32_e32",
+          "operand_text": "v9, s1",
+          "operands": [
+            "v9",
+            "s1"
+          ],
+          "encoding_words": [
+            "7E120201"
+          ],
+          "encoding_hex": "7E120201",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431104,
+          "mnemonic": "v_lshl_add_u64",
+          "operand_text": "v[6:7], v[6:7], 2, v[8:9]",
+          "operands": [
+            "v[6:7]",
+            "v[6:7]",
+            "2",
+            "v[8:9]"
+          ],
+          "encoding_words": [
+            "D2080006",
+            "04210506"
+          ],
+          "encoding_hex": "D208000604210506",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431112,
+          "mnemonic": "v_mad_u64_u32",
+          "operand_text": "v[2:3], s[2:3], v3, s5, 0",
+          "operands": [
+            "v[2:3]",
+            "s[2:3]",
+            "v3",
+            "s5",
+            "0"
+          ],
+          "encoding_words": [
+            "D1E80202",
+            "02000B03"
+          ],
+          "encoding_hex": "D1E8020202000B03",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431120,
+          "mnemonic": "v_lshl_add_u64",
+          "operand_text": "v[0:1], v[0:1], 2, v[6:7]",
+          "operands": [
+            "v[0:1]",
+            "v[0:1]",
+            "2",
+            "v[6:7]"
+          ],
+          "encoding_words": [
+            "D2080000",
+            "04190500"
+          ],
+          "encoding_hex": "D208000004190500",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431128,
+          "mnemonic": "v_lshl_add_u64",
+          "operand_text": "v[0:1], v[2:3], 2, v[0:1]",
+          "operands": [
+            "v[0:1]",
+            "v[2:3]",
+            "2",
+            "v[0:1]"
+          ],
+          "encoding_words": [
+            "D2080000",
+            "04010502"
+          ],
+          "encoding_hex": "D208000004010502",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431136,
+          "mnemonic": "global_store_dword",
+          "operand_text": "v[0:1], v4, off",
+          "operands": [
+            "v[0:1]",
+            "v4",
+            "off"
+          ],
+          "encoding_words": [
+            "DC708000",
+            "007F0400"
+          ],
+          "encoding_hex": "DC708000007F0400",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431144,
+          "mnemonic": "s_endpgm",
+          "operand_text": "",
+          "operands": [],
+          "encoding_words": [
+            "BF810000"
+          ],
+          "encoding_hex": "BF810000",
+          "control_flow": "return",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431148,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431152,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431156,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431160,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431164,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431168,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431172,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431176,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431180,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431184,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431188,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431192,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431196,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431200,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431204,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431208,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431212,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431216,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431220,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431224,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431228,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431232,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431236,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431240,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431244,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431248,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431252,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431256,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431260,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431264,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431268,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431272,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431276,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431280,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431284,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431288,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431292,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431296,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431300,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431304,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431308,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431312,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431316,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431320,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431324,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431328,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431332,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431336,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431340,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431344,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431348,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431352,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        },
+        {
+          "address": 431356,
+          "mnemonic": "s_nop",
+          "operand_text": "0",
+          "operands": [
+            "0"
+          ],
+          "encoding_words": [
+            "BF800000"
+          ],
+          "encoding_hex": "BF800000",
+          "control_flow": "linear",
+          "target": null,
+          "is_padding": false
+        }
+      ],
+      "basic_blocks": [
+        {
+          "label": "bb_0",
+          "start_address": 430592,
+          "end_address": 430660,
+          "instruction_addresses": [
+            430592,
+            430600,
+            430608,
+            430616,
+            430620,
+            430628,
+            430632,
+            430636,
+            430640,
+            430644,
+            430648,
+            430652,
+            430656
+          ],
+          "successors": [
+            "bb_4",
+            "bb_1"
+          ]
+        },
+        {
+          "label": "bb_1",
+          "start_address": 430660,
+          "end_address": 431016,
+          "instruction_addresses": [
+            430660,
+            430664,
+            430668,
+            430672,
+            430676,
+            430680,
+            430684,
+            430692,
+            430700,
+            430704,
+            430712,
+            430716,
+            430724,
+            430732,
+            430736,
+            430744,
+            430752,
+            430756,
+            430760,
+            430764,
+            430768,
+            430772,
+            430776,
+            430780,
+            430784,
+            430788,
+            430792,
+            430796,
+            430804,
+            430808,
+            430816,
+            430824,
+            430828,
+            430836,
+            430844,
+            430848,
+            430852,
+            430856,
+            430860,
+            430864,
+            430868,
+            430872,
+            430876,
+            430880,
+            430884,
+            430888,
+            430892,
+            430896,
+            430900,
+            430908,
+            430912,
+            430920,
+            430924,
+            430932,
+            430940,
+            430944,
+            430952,
+            430960,
+            430964,
+            430968,
+            430972,
+            430980,
+            430984,
+            430988,
+            430992,
+            430996,
+            431000,
+            431004,
+            431008,
+            431012
+          ],
+          "successors": [
+            "bb_3",
+            "bb_2"
+          ]
+        },
+        {
+          "label": "bb_2",
+          "start_address": 431016,
+          "end_address": 431084,
+          "instruction_addresses": [
+            431016,
+            431020,
+            431024,
+            431028,
+            431036,
+            431044,
+            431052,
+            431060,
+            431068,
+            431076,
+            431080
+          ],
+          "successors": [
+            "bb_3"
+          ]
+        },
+        {
+          "label": "bb_3",
+          "start_address": 431084,
+          "end_address": 431144,
+          "instruction_addresses": [
+            431084,
+            431088,
+            431096,
+            431100,
+            431104,
+            431112,
+            431120,
+            431128,
+            431136
+          ],
+          "successors": [
+            "bb_4"
+          ]
+        },
+        {
+          "label": "bb_4",
+          "start_address": 431144,
+          "end_address": 431360,
+          "instruction_addresses": [
+            431144,
+            431148,
+            431152,
+            431156,
+            431160,
+            431164,
+            431168,
+            431172,
+            431176,
+            431180,
+            431184,
+            431188,
+            431192,
+            431196,
+            431200,
+            431204,
+            431208,
+            431212,
+            431216,
+            431220,
+            431224,
+            431228,
+            431232,
+            431236,
+            431240,
+            431244,
+            431248,
+            431252,
+            431256,
+            431260,
+            431264,
+            431268,
+            431272,
+            431276,
+            431280,
+            431284,
+            431288,
+            431292,
+            431296,
+            431300,
+            431304,
+            431308,
+            431312,
+            431316,
+            431320,
+            431324,
+            431328,
+            431332,
+            431336,
+            431340,
+            431344,
+            431348,
+            431352,
+            431356
+          ],
+          "successors": []
+        }
+      ],
+      "instruction_count": 157,
+      "end_address": 431360,
+      "size_bytes": 768
+    }
+  ]
+}

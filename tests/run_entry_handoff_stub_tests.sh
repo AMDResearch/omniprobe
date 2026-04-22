@@ -166,6 +166,69 @@ else
 fi
 
 TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="entry_handoff_stub_fixture_gfx942_real_single_vgpr"
+REAL_GFX942_RECIPE="$OUTPUT_DIR/${TEST_NAME}.recipe.json"
+REAL_GFX942_STUB="$OUTPUT_DIR/${TEST_NAME}.stub.json"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+
+if python3 "$RECIPE_TOOL" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.ir.json" \
+    --manifest "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.manifest.json" \
+    --function Cijk_S_GA \
+    --output "$REAL_GFX942_RECIPE" > "$OUTPUT_DIR/${TEST_NAME}.recipe.out" && \
+   python3 "$STUB_TOOL" "$REAL_GFX942_RECIPE" --output "$REAL_GFX942_STUB" > "$OUTPUT_DIR/${TEST_NAME}.stub.out"; then
+    if python3 - "$REAL_GFX942_STUB" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["function"] == "Cijk_S_GA"
+assert payload["arch"] == "gfx942"
+assert payload["supported"] is True
+assert payload["supported_class"] == "wave64-single-vgpr-x-workgroup-x-kernarg-only-v1"
+assert payload["blockers"] == []
+assert payload["handoff_strategy"] == "branch-to-original-entry"
+assert payload["branch_transfer_kind"] == "s_setpc_b64"
+assert payload["branch_target_symbol"] == "Cijk_S_GA"
+required_inputs = {entry["name"]: entry for entry in payload["required_inputs"]}
+assert set(required_inputs) == {
+    "original_launch_kernarg_image",
+    "workgroup_ids",
+    "preserved_entry_workitem_vgprs",
+    "wavefront_mode",
+}
+assert required_inputs["original_launch_kernarg_image"]["source_class"] == "dispatch_carried"
+assert required_inputs["workgroup_ids"]["source_class"] == "entry_captured"
+assert required_inputs["preserved_entry_workitem_vgprs"]["source_class"] == "entry_captured"
+assert required_inputs["wavefront_mode"]["source_class"] == "descriptor_derived"
+register_plan = payload["register_plan"]
+assert any(entry["kind"] == "sgpr-pair" and entry["target"] == [0, 1] for entry in register_plan)
+assert any(
+    entry["kind"] == "sgpr" and entry["target"] == 2
+    and entry["source"] == "dispatch.workgroup_id_x"
+    for entry in register_plan
+)
+assert any(entry["kind"] == "vgpr" and entry["target"] == 0 for entry in register_plan)
+assert not any(entry["kind"] == "sgpr" and entry["source"] == "trampoline.entry.private_segment_wave_offset" for entry in register_plan)
+asm = payload["symbolic_asm"]
+assert any("s_mov_b64 s[0:1], <original_launch_kernarg_image>" in line for line in asm)
+assert any("s_mov_b32 s2, <dispatch.workgroup_id_x>" in line for line in asm)
+assert any("v_mov_b32_e32 v0, <preserved_entry_vgpr[0]>" in line for line in asm)
+assert asm[-1] == "s_setpc_b64 <original_body_entry_symbol_addr_pair>"
+PY
+    then
+        echo -e "  ${GREEN}✓ PASS${NC} - Real gfx942 single-VGPR fixture stub plan emits the expected symbolic reconstruction"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Real gfx942 single-VGPR fixture stub output was incorrect"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Real gfx942 single-VGPR fixture stub generation failed"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="entry_handoff_stub_mlk_runtime"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
 

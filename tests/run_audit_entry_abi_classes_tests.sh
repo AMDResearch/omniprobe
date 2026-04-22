@@ -161,4 +161,48 @@ PY
     fi
 fi
 
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="audit_entry_abi_classes_real_gfx942_single_vgpr_fixture"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+
+if python3 - "$REPO_ROOT" "$WORK_DIR" "$SCRIPT_DIR" <<'PY'
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+repo_root = Path(sys.argv[1]).resolve()
+work_dir = Path(sys.argv[2]).resolve()
+script_dir = Path(sys.argv[3]).resolve()
+output_json = work_dir / "real_gfx942_single_vgpr_audit.json"
+
+subprocess.run(
+    [
+        sys.executable,
+        str(repo_root / "tools" / "codeobj" / "audit_entry_abi_classes.py"),
+        "--input-ir",
+        str(script_dir / "probe_specs" / "fixtures" / "amdgpu_entry_abi_gfx942_real_single_vgpr.ir.json"),
+        "--input-manifest",
+        str(script_dir / "probe_specs" / "fixtures" / "amdgpu_entry_abi_gfx942_real_single_vgpr.manifest.json"),
+        "--output",
+        str(output_json),
+    ],
+    check=True,
+)
+
+payload = json.loads(output_json.read_text(encoding="utf-8"))
+kernels = {entry["kernel_name"]: entry for entry in payload["kernels"]}
+assert kernels["Cijk_S_GA"]["recognized_class"] == "wave64-single-vgpr-x-workgroup-x-kernarg-only-v1"
+assert kernels["Cijk_S_GA"]["implemented_in_runtime_wrapper"] is False
+assert kernels["Cijk_S_GA"]["workitem_pattern"] == "single_vgpr_workitem_id"
+assert kernels["Cijk_S_GA"]["private_pattern"] is None
+PY
+then
+    echo -e "  ${GREEN}✓ PASS${NC} - Audit tool recognizes the real gfx942 single-VGPR class while keeping runtime-wrapper support fail-closed"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Audit tool did not report the expected real gfx942 single-VGPR class"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 print_summary

@@ -12,8 +12,6 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/test_common.sh"
 
-check_omniprobe
-
 WORK_DIR="$OUTPUT_DIR/entry_wrapper_unimplemented_class"
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
@@ -82,7 +80,8 @@ run_unimplemented_class_test() {
     local arch="$1"
     local fixture_ir="$2"
     local fixture_manifest="$3"
-    local expected_class="$4"
+    local function_name="$4"
+    local expected_class="$5"
 
     TESTS_RUN=$((TESTS_RUN + 1))
     local test_name="entry_wrapper_unimplemented_class_${arch}"
@@ -96,7 +95,7 @@ run_unimplemented_class_test() {
         "$REPO_ROOT" \
         "$fixture_manifest" \
         "$fixture_ir" \
-        entry_abi_kernel \
+        "$function_name" \
         "$expected_class" > "$stdout_file" 2> "$stderr_file"; then
         if python3 - "$stdout_file" "$expected_class" <<'PY'
 from pathlib import Path
@@ -130,12 +129,21 @@ run_unimplemented_class_test \
     "gfx90a" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.ir.json" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.manifest.json" \
+    "entry_abi_kernel" \
     "wave64-packed-v0-10_10_10-flat-scratch-alias-v1"
 
 run_unimplemented_class_test \
     "gfx942" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.ir.json" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.manifest.json" \
+    "entry_abi_kernel" \
     "wave64-packed-v0-10_10_10-src-private-base-v1"
+
+run_unimplemented_class_test \
+    "gfx942_real_single_vgpr" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.manifest.json" \
+    "Cijk_S_GA" \
+    "wave64-single-vgpr-x-workgroup-x-kernarg-only-v1"
 
 print_summary

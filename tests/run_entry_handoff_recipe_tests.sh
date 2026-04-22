@@ -244,6 +244,79 @@ else
 fi
 
 TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="entry_handoff_recipe_fixture_gfx942_real_single_vgpr"
+FIXTURE_OUTPUT="$OUTPUT_DIR/${TEST_NAME}.json"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+
+if python3 "$RECIPE_TOOL" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.ir.json" \
+    --manifest "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.manifest.json" \
+    --function Cijk_S_GA \
+    --output "$FIXTURE_OUTPUT" > "$OUTPUT_DIR/${TEST_NAME}.out"; then
+    if python3 - "$FIXTURE_OUTPUT" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["function"] == "Cijk_S_GA"
+assert payload["arch"] == "gfx942"
+assert payload["supported"] is True
+assert payload["supported_class"] == "wave64-single-vgpr-x-workgroup-x-kernarg-only-v1"
+assert payload["blockers"] == []
+assert payload["descriptor_summary"]["kernarg_size"] == 304
+assert payload["descriptor_summary"]["private_segment_fixed_size"] == 0
+assert payload["descriptor_summary"]["wavefront_size"] == 64
+actions = payload["reconstruction_actions"]
+assert actions[0]["action"] == "materialize-kernarg-base-pair"
+assert actions[0]["target_sgprs"] == [0, 1]
+assert sum(1 for entry in actions if entry["action"] == "materialize-system-sgpr") == 1
+assert any(
+    entry["action"] == "materialize-system-sgpr"
+    and entry["role"] == "workgroup_id_x"
+    and entry["target_sgpr"] == 2
+    for entry in actions
+)
+workitem = next(entry for entry in actions if entry["action"] == "materialize-entry-workitem-vgprs")
+assert workitem["count"] == 1
+assert workitem["source_pattern"] == "single_vgpr_workitem_id"
+assert not any(entry["action"] == "materialize-private-segment-state" for entry in actions)
+wrapper = payload["wrapper_source_analysis"]
+assert wrapper["model"] == "direct-entry-wrapper-v1"
+assert wrapper["direct_branch_supported"] is True
+assert wrapper["reconstruction_after_clobber_supported"] is False
+assert "no-independent-kernarg-source-in-current-wrapper" in wrapper["reconstruction_after_clobber_blockers"]
+assert "no-independent-current-workgroup-id-source" in wrapper["reconstruction_after_clobber_blockers"]
+assert "no-independent-entry-workitem-vgpr-source" in wrapper["reconstruction_after_clobber_blockers"]
+assert "requires-original-private-state-or-supplemental-handoff" not in wrapper["reconstruction_after_clobber_blockers"]
+handoff = payload["supplemental_handoff_contract"]
+assert handoff["schema"] == "omniprobe.entry_handoff.hidden_v1"
+assert handoff["required"] is True
+fields = {entry["name"]: entry for entry in handoff["fields"]}
+assert set(fields) == {"original_kernarg_pointer", "workgroup_id_x", "entry_workitem_id_x"}
+assert fields["original_kernarg_pointer"]["source_class"] == "dispatch_carried"
+assert fields["workgroup_id_x"]["source_class"] == "entry_captured"
+assert fields["entry_workitem_id_x"]["source_class"] == "entry_captured"
+validation = {entry["name"]: entry for entry in handoff["validation_requirements"]}
+assert validation["wavefront_size"]["source_class"] == "descriptor_derived"
+runtime_objects = handoff["runtime_objects"]
+dispatch_payload = {entry["name"]: entry for entry in runtime_objects["dispatch_payload"]["fields"]}
+entry_snapshot = {entry["name"]: entry for entry in runtime_objects["entry_snapshot"]["fields"]}
+assert "original_kernarg_pointer" in dispatch_payload
+assert set(entry_snapshot) == {"workgroup_id_x", "entry_workitem_id_x"}
+PY
+    then
+        echo -e "  ${GREEN}✓ PASS${NC} - Real gfx942 single-VGPR fixture emits the expected symbolic reconstruction recipe"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Real gfx942 single-VGPR fixture recipe output was incorrect"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Real gfx942 single-VGPR fixture recipe generation failed"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="entry_handoff_recipe_mlk_runtime"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
 
