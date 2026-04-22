@@ -926,7 +926,10 @@ def build_entry_wrapper_ir(
                     ]
                 )
                 next_address += 8
-        elif private_pattern_class == "src_private_base":
+        elif private_pattern_class in {
+            "src_private_base",
+            "wrapper_owned_src_private_base",
+        }:
             def emit_private_address_setup() -> None:
                 nonlocal next_address
                 instructions.append(
@@ -1902,6 +1905,25 @@ def infer_private_segment_offset_source_sgpr(analysis: dict) -> int | None:
     return int(first_pair_update["offset_sgpr"])
 
 
+def infer_wrapper_owned_private_segment_offset_sgpr(descriptor: dict) -> int | None:
+    rsrc2 = descriptor.get("compute_pgm_rsrc2", {}) if isinstance(descriptor, dict) else {}
+    if not isinstance(rsrc2, dict):
+        return None
+    user_sgpr_count = rsrc2.get("user_sgpr_count")
+    if not isinstance(user_sgpr_count, int) or user_sgpr_count < 0:
+        return None
+    cursor = int(user_sgpr_count)
+    for key in (
+        "enable_sgpr_workgroup_id_x",
+        "enable_sgpr_workgroup_id_y",
+        "enable_sgpr_workgroup_id_z",
+        "enable_sgpr_workgroup_info",
+    ):
+        if int(rsrc2.get(key, 0) or 0):
+            cursor += 1
+    return cursor
+
+
 def build_entry_wrapper_workitem_spill_restore_plan(
     *,
     analysis: dict,
@@ -1944,6 +1966,17 @@ def build_entry_wrapper_workitem_spill_restore_plan(
             "entry wrapper workitem proof does not support private materialization "
             f"pattern {private_pattern_class!r}"
         )
+    private_offset_source_sgpr = infer_private_segment_offset_source_sgpr(analysis)
+    if private_pattern_class is None:
+        # When the source entry ABI has no private-segment carrier, the wrapper
+        # can still own a private tail after descriptor mutation enables the
+        # wrapper-side private segment live-in.
+        private_pattern_class = "wrapper_owned_src_private_base"
+        private_offset_source_sgpr = infer_wrapper_owned_private_segment_offset_sgpr(descriptor)
+        if private_offset_source_sgpr is None:
+            raise SystemExit(
+                "entry wrapper workitem proof could not infer a wrapper-owned private segment offset SGPR"
+            )
 
     private_segment_size = int(descriptor.get("private_segment_fixed_size", 0) or 0)
     if private_segment_size < 0:
@@ -1957,7 +1990,7 @@ def build_entry_wrapper_workitem_spill_restore_plan(
         "spill_bytes": spill_bytes,
         "private_segment_growth": private_segment_growth,
         "private_segment_pattern_class": private_pattern_class,
-        "private_segment_offset_source_sgpr": infer_private_segment_offset_source_sgpr(analysis),
+        "private_segment_offset_source_sgpr": private_offset_source_sgpr,
         "save_pair": [int(save_pair[0]), int(save_pair[1])],
         "branch_pair": [int(branch_pair[0]), int(branch_pair[1])],
         "soffset_sgpr": int(branch_pair[0]),
