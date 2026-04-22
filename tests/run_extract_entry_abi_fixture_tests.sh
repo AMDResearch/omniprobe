@@ -10,6 +10,7 @@ source "${SCRIPT_DIR}/test_common.sh"
 
 EXTRACT_TOOL="${REPO_ROOT}/tools/codeobj/extract_entry_abi_fixture.py"
 ANALYZER="${REPO_ROOT}/tools/codeobj/analyze_amdgpu_entry_abi.py"
+MODULE_LOAD_PLAIN_HSACO="${BUILD_DIR}/tests/test_kernels/module_load_kernel_plain.hsaco"
 
 echo ""
 echo "================================================================================"
@@ -145,6 +146,78 @@ then
 else
     echo -e "  ${RED}✗ FAIL${NC} - Extractor did not preserve the expected single-kernel fixture slice"
     TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="extract_entry_abi_fixture_from_code_object"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+
+if [ ! -f "$MODULE_LOAD_PLAIN_HSACO" ]; then
+    echo -e "  ${YELLOW}SKIP${NC} - Required hsaco is not built: $MODULE_LOAD_PLAIN_HSACO"
+else
+    if python3 - "$REPO_ROOT" "$WORK_DIR" "$MODULE_LOAD_PLAIN_HSACO" <<'PY'
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+repo_root = Path(sys.argv[1]).resolve()
+work_dir = Path(sys.argv[2]).resolve()
+code_object = Path(sys.argv[3]).resolve()
+
+output_ir = work_dir / "code_object_extracted.ir.json"
+output_manifest = work_dir / "code_object_extracted.manifest.json"
+
+subprocess.run(
+    [
+        sys.executable,
+        str(repo_root / "tools" / "codeobj" / "extract_entry_abi_fixture.py"),
+        "--input-code-object",
+        str(code_object),
+        "--function",
+        "mlk_xyz",
+        "--fixture-input-name",
+        "tests/probe_specs/fixtures/generated_from_code_object.hsaco",
+        "--output-ir",
+        str(output_ir),
+        "--output-manifest",
+        str(output_manifest),
+    ],
+    check=True,
+)
+
+manifest = json.loads(output_manifest.read_text(encoding="utf-8"))
+ir = json.loads(output_ir.read_text(encoding="utf-8"))
+assert manifest["input"] == "tests/probe_specs/fixtures/generated_from_code_object.hsaco"
+assert manifest["input_file"] == "tests/probe_specs/fixtures/generated_from_code_object.hsaco"
+assert [entry["name"] for entry in ir["functions"]] == ["mlk_xyz"]
+assert [entry["kernel_name"] for entry in manifest["kernels"]["descriptors"]] == ["mlk_xyz"]
+
+analyzed = json.loads(
+    subprocess.check_output(
+        [
+            sys.executable,
+            str(repo_root / "tools" / "codeobj" / "analyze_amdgpu_entry_abi.py"),
+            str(output_ir),
+            "--manifest",
+            str(output_manifest),
+            "--function",
+            "mlk_xyz",
+        ],
+        text=True,
+    )
+)
+assert analyzed["wavefront_size"] in {32, 64}
+assert analyzed["descriptor_has_kernarg_segment_ptr"] is True
+assert analyzed["entry_workitem_vgpr_count"] == 3
+PY
+    then
+        echo -e "  ${GREEN}✓ PASS${NC} - Extractor rebuilt a single-kernel fixture directly from a real code object"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Extractor code-object mode did not preserve the expected entry-ABI facts"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
 fi
 
 print_summary
