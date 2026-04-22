@@ -122,6 +122,274 @@ else
 fi
 
 TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="entry_wrapper_workitem_plan_gfx942_real_mlk_xyz"
+STDOUT_FILE="$WORK_DIR/${TEST_NAME}.stdout"
+STDERR_FILE="$WORK_DIR/${TEST_NAME}.stderr"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+echo "  Validate the offline workitem spill/restore planner derives a coherent multi-VGPR src_private_base plan for the real gfx942 mlk_xyz class"
+
+if python3 - "$REPO_ROOT" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_mlk_xyz.manifest.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_mlk_xyz.ir.json" \
+    "mlk_xyz" > "$STDOUT_FILE" 2> "$STDERR_FILE" <<'PY'
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(sys.argv[1]).resolve()
+manifest_path = Path(sys.argv[2]).resolve()
+ir_path = Path(sys.argv[3]).resolve()
+function_name = sys.argv[4]
+
+sys.path.insert(0, str(REPO_ROOT / "tools" / "codeobj"))
+
+from amdgpu_entry_abi import analyze_kernel_entry_abi  # type: ignore
+from code_object_model import CodeObjectModel  # type: ignore
+from regenerate_code_object import (  # type: ignore
+    build_entry_wrapper_handoff_recipe,
+    build_entry_wrapper_workitem_spill_restore_plan,
+    classify_entry_handoff_supported_class,
+)
+
+
+def load_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+manifest = load_json(manifest_path)
+ir = load_json(ir_path)
+model = CodeObjectModel.from_manifest(manifest)
+descriptor = model.descriptor_by_kernel_name(function_name)
+kernel_metadata = model.metadata_by_kernel_name(function_name)
+function = next(
+    entry for entry in ir.get("functions", []) if entry.get("name") == function_name
+)
+assert descriptor is not None
+
+analysis = analyze_kernel_entry_abi(
+    function=function,
+    descriptor=descriptor,
+    kernel_metadata=kernel_metadata,
+)
+supported_class, blockers = classify_entry_handoff_supported_class(analysis)
+assert supported_class == "wave64-direct-vgpr-xyz-src-private-base-v1", blockers
+assert blockers == [], blockers
+pair_candidates = analysis.get("entry_dead_sgpr_pair_candidates", [])
+assert isinstance(pair_candidates, list) and len(pair_candidates) >= 2, pair_candidates
+assert pair_candidates[0]["pair"] == [12, 13], pair_candidates
+assert pair_candidates[1]["pair"] == [14, 15], pair_candidates
+
+recipe = build_entry_wrapper_handoff_recipe(
+    function_name=function_name,
+    analysis=analysis,
+    descriptor=descriptor,
+    kernel_metadata=kernel_metadata,
+    scratch_pair=(12, 13),
+)
+assert recipe.get("supported") is True
+assert recipe.get("supported_class") == supported_class
+
+plan = build_entry_wrapper_workitem_spill_restore_plan(
+    analysis=analysis,
+    descriptor=descriptor,
+    kernel_metadata=kernel_metadata,
+    save_pair=(12, 13),
+    branch_pair=(14, 15),
+)
+assert plan["source_vgprs"] == [0, 1, 2], plan
+assert plan["pattern_class"] == "direct_vgpr_xyz", plan
+assert plan["spill_offset"] == 192, plan
+assert plan["spill_bytes"] == 12, plan
+assert plan["private_segment_growth"] == 16, plan
+assert plan["private_segment_pattern_class"] == "src_private_base", plan
+assert plan["address_vgprs"] == [40, 41], plan
+assert plan["data_pair_vgprs"] == [42, 43], plan
+assert plan["tail_data_vgpr"] == 44, plan
+assert plan["required_total_vgprs"] == 45, plan
+assert plan["save_pair"] == [12, 13], plan
+assert plan["branch_pair"] == [14, 15], plan
+assert plan["soffset_sgpr"] == 14, plan
+
+print(json.dumps({"pairs": pair_candidates[:4], "plan": plan}, indent=2))
+PY
+then
+    if python3 - "$STDOUT_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert payload["pairs"][0]["pair"] == [12, 13]
+assert payload["pairs"][1]["pair"] == [14, 15]
+assert payload["plan"]["source_vgprs"] == [0, 1, 2]
+assert payload["plan"]["private_segment_pattern_class"] == "src_private_base"
+assert payload["plan"]["address_vgprs"] == [40, 41]
+assert payload["plan"]["data_pair_vgprs"] == [42, 43]
+assert payload["plan"]["tail_data_vgpr"] == 44
+assert payload["plan"]["required_total_vgprs"] == 45
+PY
+    then
+        echo -e "  ${GREEN}✓ PASS${NC} - Offline workitem spill/restore planning now derives a real gfx942 multi-VGPR src_private_base carrier layout"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Real gfx942 mlk_xyz workitem spill/restore planning output was malformed"
+        echo "  Stdout saved to: $STDOUT_FILE"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Real gfx942 mlk_xyz workitem spill/restore planner failed unexpectedly"
+    echo "  Stdout saved to: $STDOUT_FILE"
+    echo "  Stderr saved to: $STDERR_FILE"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="entry_wrapper_workitem_ir_gfx942_real_mlk_xyz"
+STDOUT_FILE="$WORK_DIR/${TEST_NAME}.stdout"
+STDERR_FILE="$WORK_DIR/${TEST_NAME}.stderr"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+echo "  Validate direct wrapper IR construction now emits flat dwordx2+dword spill/restore for the real gfx942 mlk_xyz class"
+
+if python3 - "$REPO_ROOT" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_mlk_xyz.manifest.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_mlk_xyz.ir.json" \
+    "mlk_xyz" > "$STDOUT_FILE" 2> "$STDERR_FILE" <<'PY'
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(sys.argv[1]).resolve()
+manifest_path = Path(sys.argv[2]).resolve()
+ir_path = Path(sys.argv[3]).resolve()
+function_name = sys.argv[4]
+
+sys.path.insert(0, str(REPO_ROOT / "tools" / "codeobj"))
+
+from amdgpu_entry_abi import analyze_kernel_entry_abi  # type: ignore
+from code_object_model import CodeObjectModel  # type: ignore
+from regenerate_code_object import (  # type: ignore
+    build_entry_wrapper_ir,
+    build_entry_wrapper_workitem_spill_restore_plan,
+)
+
+
+def load_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+manifest = load_json(manifest_path)
+ir = load_json(ir_path)
+model = CodeObjectModel.from_manifest(manifest)
+descriptor = model.descriptor_by_kernel_name(function_name)
+kernel_metadata = model.metadata_by_kernel_name(function_name)
+function = next(
+    entry for entry in ir.get("functions", []) if entry.get("name") == function_name
+)
+assert descriptor is not None
+
+analysis = analyze_kernel_entry_abi(
+    function=function,
+    descriptor=descriptor,
+    kernel_metadata=kernel_metadata,
+)
+plan = build_entry_wrapper_workitem_spill_restore_plan(
+    analysis=analysis,
+    descriptor=descriptor,
+    kernel_metadata=kernel_metadata,
+    save_pair=(12, 13),
+    branch_pair=(14, 15),
+)
+wrapper = build_entry_wrapper_ir(
+    wrapper_name=function_name,
+    body_name="__body",
+    start_address=0x1000,
+    scratch_pair=(14, 15),
+    workitem_spill_restore_plan=plan,
+)
+instructions = wrapper.get("instructions", [])
+
+def find_index(mnemonic: str, operand_text: str, start: int = 0) -> int:
+    for index in range(start, len(instructions)):
+        insn = instructions[index]
+        if insn.get("mnemonic") == mnemonic and insn.get("operand_text") == operand_text:
+            return index
+    raise AssertionError(f"missing instruction: {mnemonic} {operand_text}")
+
+
+save_lo = find_index("s_mov_b32", "s12, s0")
+save_hi = find_index("s_mov_b32", "s13, s1")
+private_base_0 = find_index("s_mov_b64", "s[0:1], src_private_base")
+spill_add_0 = find_index("s_add_u32", "s0, s0, 0xc0", private_base_0 + 1)
+addr_lo_0 = find_index("v_mov_b32_e32", "v40, s0", private_base_0 + 1)
+addr_hi_0 = find_index("v_mov_b32_e32", "v41, s1", addr_lo_0 + 1)
+pair_lo_0 = find_index("v_mov_b32_e32", "v42, v0", addr_hi_0 + 1)
+pair_hi_0 = find_index("v_mov_b32_e32", "v43, v1", pair_lo_0 + 1)
+store_pair = find_index("flat_store_dwordx2", "v[40:41], v[42:43]", pair_hi_0 + 1)
+tail_copy = find_index("v_mov_b32_e32", "v44, v2", store_pair + 1)
+tail_add = find_index("s_add_u32", "s0, s0, 0x8", tail_copy + 1)
+tail_store = find_index("flat_store_dword", "v[40:41], v44", tail_add + 1)
+restore_lo_before_clobber = find_index("s_mov_b32", "s0, s12", tail_store + 1)
+restore_hi_before_clobber = find_index("s_mov_b32", "s1, s13", restore_lo_before_clobber + 1)
+clobber_v0 = find_index("v_mov_b32_e32", "v0, 0", restore_hi_before_clobber + 1)
+clobber_v1 = find_index("v_mov_b32_e32", "v1, 0", clobber_v0 + 1)
+clobber_v2 = find_index("v_mov_b32_e32", "v2, 0", clobber_v1 + 1)
+private_base_1 = find_index("s_mov_b64", "s[0:1], src_private_base", clobber_v2 + 1)
+spill_add_1 = find_index("s_add_u32", "s0, s0, 0xc0", private_base_1 + 1)
+addr_lo_1 = find_index("v_mov_b32_e32", "v40, s0", private_base_1 + 1)
+addr_hi_1 = find_index("v_mov_b32_e32", "v41, s1", addr_lo_1 + 1)
+load_pair = find_index("flat_load_dwordx2", "v[42:43], v[40:41]", addr_hi_1 + 1)
+restore_v0 = find_index("v_mov_b32_e32", "v0, v42", load_pair + 1)
+restore_v1 = find_index("v_mov_b32_e32", "v1, v43", restore_v0 + 1)
+tail_add_1 = find_index("s_add_u32", "s0, s0, 0x8", restore_v1 + 1)
+tail_load = find_index("flat_load_dword", "v44, v[40:41]", tail_add_1 + 1)
+restore_v2 = find_index("v_mov_b32_e32", "v2, v44", tail_load + 1)
+wait = find_index("s_waitcnt", "vmcnt(0)", restore_v2 + 1)
+restore_lo_after_load = find_index("s_mov_b32", "s0, s12", wait + 1)
+restore_hi_after_load = find_index("s_mov_b32", "s1, s13", restore_lo_after_load + 1)
+branch = find_index("s_setpc_b64", "s[14:15]", restore_hi_after_load + 1)
+
+assert save_lo < save_hi < private_base_0 < spill_add_0 < addr_lo_0 < addr_hi_0 < pair_lo_0 < pair_hi_0 < store_pair < tail_copy < tail_add < tail_store
+assert tail_store < restore_lo_before_clobber < restore_hi_before_clobber < clobber_v0 < clobber_v1 < clobber_v2
+assert clobber_v2 < private_base_1 < spill_add_1 < addr_lo_1 < addr_hi_1 < load_pair < restore_v0 < restore_v1 < tail_add_1 < tail_load < restore_v2 < wait
+assert wait < restore_lo_after_load < restore_hi_after_load < branch
+
+print(json.dumps({"plan": plan, "instruction_count": len(instructions)}, indent=2))
+PY
+then
+    if python3 - "$STDOUT_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert payload["plan"]["private_segment_pattern_class"] == "src_private_base"
+assert payload["plan"]["address_vgprs"] == [40, 41]
+assert payload["plan"]["data_pair_vgprs"] == [42, 43]
+assert payload["plan"]["tail_data_vgpr"] == 44
+assert payload["instruction_count"] > 0
+PY
+    then
+        echo -e "  ${GREEN}✓ PASS${NC} - Real gfx942 mlk_xyz wrapper IR now builds through flat dwordx2+dword src_private_base spill carriers"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Real gfx942 mlk_xyz wrapper IR output was malformed"
+        echo "  Stdout saved to: $STDOUT_FILE"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Real gfx942 mlk_xyz wrapper IR construction failed unexpectedly"
+    echo "  Stdout saved to: $STDOUT_FILE"
+    echo "  Stderr saved to: $STDERR_FILE"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="entry_wrapper_workitem_plan_gfx942_real_single_vgpr"
 STDOUT_FILE="$WORK_DIR/${TEST_NAME}.stdout"
 STDERR_FILE="$WORK_DIR/${TEST_NAME}.stderr"

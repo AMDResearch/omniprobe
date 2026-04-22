@@ -142,4 +142,11 @@ run_implemented_class_test \
     "Cijk_S_GA" \
     "wave64-single-vgpr-x-workgroup-x-kernarg-only-v1"
 
+run_implemented_class_test \
+    "gfx942_real_mlk_xyz" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_mlk_xyz.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_mlk_xyz.manifest.json" \
+    "mlk_xyz" \
+    "wave64-direct-vgpr-xyz-src-private-base-v1"
+
 print_summary

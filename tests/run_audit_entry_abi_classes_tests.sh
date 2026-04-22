@@ -205,4 +205,48 @@ else
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="audit_entry_abi_classes_real_gfx942_mlk_xyz_fixture"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+
+if python3 - "$REPO_ROOT" "$WORK_DIR" "$SCRIPT_DIR" <<'PY'
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+repo_root = Path(sys.argv[1]).resolve()
+work_dir = Path(sys.argv[2]).resolve()
+script_dir = Path(sys.argv[3]).resolve()
+output_json = work_dir / "real_gfx942_mlk_xyz_audit.json"
+
+subprocess.run(
+    [
+        sys.executable,
+        str(repo_root / "tools" / "codeobj" / "audit_entry_abi_classes.py"),
+        "--input-ir",
+        str(script_dir / "probe_specs" / "fixtures" / "amdgpu_entry_abi_gfx942_real_mlk_xyz.ir.json"),
+        "--input-manifest",
+        str(script_dir / "probe_specs" / "fixtures" / "amdgpu_entry_abi_gfx942_real_mlk_xyz.manifest.json"),
+        "--output",
+        str(output_json),
+    ],
+    check=True,
+)
+
+payload = json.loads(output_json.read_text(encoding="utf-8"))
+kernels = {entry["kernel_name"]: entry for entry in payload["kernels"]}
+assert kernels["mlk_xyz"]["recognized_class"] == "wave64-direct-vgpr-xyz-src-private-base-v1"
+assert kernels["mlk_xyz"]["implemented_in_runtime_wrapper"] is True
+assert kernels["mlk_xyz"]["workitem_pattern"] == "direct_vgpr_xyz"
+assert kernels["mlk_xyz"]["private_pattern"] == "src_private_base"
+PY
+then
+    echo -e "  ${GREEN}✓ PASS${NC} - Audit tool recognizes the real gfx942 multi-VGPR class and marks runtime-wrapper support implemented"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Audit tool did not report the expected real gfx942 multi-VGPR class"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 print_summary

@@ -798,6 +798,7 @@ ENTRY_WRAPPER_PROOF_BODY_PREFIX = "__omniprobe_original_body_"
 ENTRY_WRAPPER_PROOF_IMPLEMENTED_CLASSES = {
     "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1",
     "wave64-direct-vgpr-xyz-flat-scratch-alias-v1",
+    "wave64-direct-vgpr-xyz-src-private-base-v1",
     "wave64-single-vgpr-x-workgroup-x-kernarg-only-v1",
 }
 ENTRY_WRAPPER_HIDDEN_HANDOFF_POINTER_SIZE = 8
@@ -891,6 +892,8 @@ def build_entry_wrapper_ir(
             workitem_spill_restore_plan.get("private_segment_pattern_class", "") or ""
         )
         address_vgprs = workitem_spill_restore_plan.get("address_vgprs")
+        data_pair_vgprs = workitem_spill_restore_plan.get("data_pair_vgprs")
+        tail_data_vgpr = workitem_spill_restore_plan.get("tail_data_vgpr")
         private_offset_source_sgpr = workitem_spill_restore_plan.get("private_segment_offset_source_sgpr")
         if private_pattern_class in {
             "",
@@ -1046,6 +1049,174 @@ def build_entry_wrapper_ir(
                     ]
                 )
                 next_address += 12
+            elif private_pattern_class == "src_private_base":
+                if not (
+                    isinstance(address_vgprs, list)
+                    and len(address_vgprs) == 2
+                    and all(isinstance(value, int) for value in address_vgprs)
+                ):
+                    raise SystemExit(
+                        "entry wrapper workitem spill/restore requires address_vgprs for src_private_base"
+                    )
+                if len(source_vgprs) >= 2 and not (
+                    isinstance(data_pair_vgprs, list)
+                    and len(data_pair_vgprs) == 2
+                    and all(isinstance(value, int) for value in data_pair_vgprs)
+                ):
+                    raise SystemExit(
+                        "entry wrapper workitem spill/restore requires data_pair_vgprs for multi-VGPR src_private_base"
+                    )
+                if len(source_vgprs) % 2 == 1 and not isinstance(tail_data_vgpr, int):
+                    raise SystemExit(
+                        "entry wrapper workitem spill/restore requires tail_data_vgpr for odd-sized src_private_base spills"
+                    )
+                addr_lo_vgpr, addr_hi_vgpr = int(address_vgprs[0]), int(address_vgprs[1])
+                emit_private_address_setup()
+                if spill_offset:
+                    instructions.extend(
+                        [
+                            {
+                                "address": next_address,
+                                "mnemonic": "s_add_u32",
+                                "operand_text": f"s0, s0, 0x{spill_offset:x}",
+                                "operands": ["s0", "s0", f"0x{spill_offset:x}"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 4,
+                                "mnemonic": "s_addc_u32",
+                                "operand_text": "s1, s1, 0",
+                                "operands": ["s1", "s1", "0"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                        ]
+                    )
+                    next_address += 8
+                instructions.extend(
+                    [
+                        {
+                            "address": next_address,
+                            "mnemonic": "v_mov_b32_e32",
+                            "operand_text": f"v{addr_lo_vgpr}, s0",
+                            "operands": [f"v{addr_lo_vgpr}", "s0"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 4,
+                            "mnemonic": "v_mov_b32_e32",
+                            "operand_text": f"v{addr_hi_vgpr}, s1",
+                            "operands": [f"v{addr_hi_vgpr}", "s1"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                    ]
+                )
+                next_address += 8
+                if len(source_vgprs) >= 2:
+                    data_pair_lo, data_pair_hi = int(data_pair_vgprs[0]), int(data_pair_vgprs[1])
+                    instructions.extend(
+                        [
+                            {
+                                "address": next_address,
+                                "mnemonic": "v_mov_b32_e32",
+                                "operand_text": f"v{data_pair_lo}, v{source_vgprs[0]}",
+                                "operands": [f"v{data_pair_lo}", f"v{source_vgprs[0]}"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 4,
+                                "mnemonic": "v_mov_b32_e32",
+                                "operand_text": f"v{data_pair_hi}, v{source_vgprs[1]}",
+                                "operands": [f"v{data_pair_hi}", f"v{source_vgprs[1]}"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 8,
+                                "mnemonic": "flat_store_dwordx2",
+                                "operand_text": f"v[{addr_lo_vgpr}:{addr_hi_vgpr}], v[{data_pair_lo}:{data_pair_hi}]",
+                                "operands": [
+                                    f"v[{addr_lo_vgpr}:{addr_hi_vgpr}]",
+                                    f"v[{data_pair_lo}:{data_pair_hi}]",
+                                ],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                        ]
+                    )
+                    next_address += 12
+                if len(source_vgprs) % 2 == 1:
+                    current_tail_vgpr = int(tail_data_vgpr)
+                    instructions.extend(
+                        [
+                            {
+                                "address": next_address,
+                                "mnemonic": "v_mov_b32_e32",
+                                "operand_text": f"v{current_tail_vgpr}, v{source_vgprs[-1]}",
+                                "operands": [f"v{current_tail_vgpr}", f"v{source_vgprs[-1]}"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 4,
+                                "mnemonic": "s_add_u32",
+                                "operand_text": "s0, s0, 0x8",
+                                "operands": ["s0", "s0", "0x8"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 8,
+                                "mnemonic": "s_addc_u32",
+                                "operand_text": "s1, s1, 0",
+                                "operands": ["s1", "s1", "0"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 12,
+                                "mnemonic": "v_mov_b32_e32",
+                                "operand_text": f"v{addr_lo_vgpr}, s0",
+                                "operands": [f"v{addr_lo_vgpr}", "s0"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 16,
+                                "mnemonic": "v_mov_b32_e32",
+                                "operand_text": f"v{addr_hi_vgpr}, s1",
+                                "operands": [f"v{addr_hi_vgpr}", "s1"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 20,
+                                "mnemonic": "flat_store_dword",
+                                "operand_text": f"v[{addr_lo_vgpr}:{addr_hi_vgpr}], v{current_tail_vgpr}",
+                                "operands": [f"v[{addr_lo_vgpr}:{addr_hi_vgpr}]", f"v{current_tail_vgpr}"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                        ]
+                    )
+                    next_address += 24
             else:
                 emit_private_address_setup()
                 instructions.append(
@@ -1180,6 +1351,189 @@ def build_entry_wrapper_ir(
                     ]
                 )
                 next_address += 24
+            elif private_pattern_class == "src_private_base":
+                addr_lo_vgpr, addr_hi_vgpr = int(address_vgprs[0]), int(address_vgprs[1])
+                emit_private_address_setup()
+                if spill_offset:
+                    instructions.extend(
+                        [
+                            {
+                                "address": next_address,
+                                "mnemonic": "s_add_u32",
+                                "operand_text": f"s0, s0, 0x{spill_offset:x}",
+                                "operands": ["s0", "s0", f"0x{spill_offset:x}"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 4,
+                                "mnemonic": "s_addc_u32",
+                                "operand_text": "s1, s1, 0",
+                                "operands": ["s1", "s1", "0"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                        ]
+                    )
+                    next_address += 8
+                instructions.extend(
+                    [
+                        {
+                            "address": next_address,
+                            "mnemonic": "v_mov_b32_e32",
+                            "operand_text": f"v{addr_lo_vgpr}, s0",
+                            "operands": [f"v{addr_lo_vgpr}", "s0"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 4,
+                            "mnemonic": "v_mov_b32_e32",
+                            "operand_text": f"v{addr_hi_vgpr}, s1",
+                            "operands": [f"v{addr_hi_vgpr}", "s1"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                    ]
+                )
+                next_address += 8
+                if len(source_vgprs) >= 2:
+                    data_pair_lo, data_pair_hi = int(data_pair_vgprs[0]), int(data_pair_vgprs[1])
+                    instructions.extend(
+                        [
+                            {
+                                "address": next_address,
+                                "mnemonic": "flat_load_dwordx2",
+                                "operand_text": f"v[{data_pair_lo}:{data_pair_hi}], v[{addr_lo_vgpr}:{addr_hi_vgpr}]",
+                                "operands": [
+                                    f"v[{data_pair_lo}:{data_pair_hi}]",
+                                    f"v[{addr_lo_vgpr}:{addr_hi_vgpr}]",
+                                ],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 8,
+                                "mnemonic": "v_mov_b32_e32",
+                                "operand_text": f"v{source_vgprs[0]}, v{data_pair_lo}",
+                                "operands": [f"v{source_vgprs[0]}", f"v{data_pair_lo}"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 12,
+                                "mnemonic": "v_mov_b32_e32",
+                                "operand_text": f"v{source_vgprs[1]}, v{data_pair_hi}",
+                                "operands": [f"v{source_vgprs[1]}", f"v{data_pair_hi}"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                        ]
+                    )
+                    next_address += 16
+                if len(source_vgprs) % 2 == 1:
+                    current_tail_vgpr = int(tail_data_vgpr)
+                    instructions.extend(
+                        [
+                            {
+                                "address": next_address,
+                                "mnemonic": "s_add_u32",
+                                "operand_text": "s0, s0, 0x8",
+                                "operands": ["s0", "s0", "0x8"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 4,
+                                "mnemonic": "s_addc_u32",
+                                "operand_text": "s1, s1, 0",
+                                "operands": ["s1", "s1", "0"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 8,
+                                "mnemonic": "v_mov_b32_e32",
+                                "operand_text": f"v{addr_lo_vgpr}, s0",
+                                "operands": [f"v{addr_lo_vgpr}", "s0"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 12,
+                                "mnemonic": "v_mov_b32_e32",
+                                "operand_text": f"v{addr_hi_vgpr}, s1",
+                                "operands": [f"v{addr_hi_vgpr}", "s1"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 16,
+                                "mnemonic": "flat_load_dword",
+                                "operand_text": f"v{current_tail_vgpr}, v[{addr_lo_vgpr}:{addr_hi_vgpr}]",
+                                "operands": [f"v{current_tail_vgpr}", f"v[{addr_lo_vgpr}:{addr_hi_vgpr}]"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                            {
+                                "address": next_address + 24,
+                                "mnemonic": "v_mov_b32_e32",
+                                "operand_text": f"v{source_vgprs[-1]}, v{current_tail_vgpr}",
+                                "operands": [f"v{source_vgprs[-1]}", f"v{current_tail_vgpr}"],
+                                "control_flow": "linear",
+                                "target": None,
+                                "is_padding": False,
+                            },
+                        ]
+                    )
+                    next_address += 28
+                instructions.append(
+                    {
+                        "address": next_address,
+                        "mnemonic": "s_waitcnt",
+                        "operand_text": "vmcnt(0)",
+                        "operands": ["vmcnt(0)"],
+                        "control_flow": "linear",
+                        "target": None,
+                        "is_padding": False,
+                    }
+                )
+                next_address += 4
+                instructions.extend(
+                    [
+                        {
+                            "address": next_address,
+                            "mnemonic": "s_mov_b32",
+                            "operand_text": "s0, s{}".format(save_lo),
+                            "operands": ["s0", f"s{save_lo}"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                        {
+                            "address": next_address + 4,
+                            "mnemonic": "s_mov_b32",
+                            "operand_text": "s1, s{}".format(save_hi),
+                            "operands": ["s1", f"s{save_hi}"],
+                            "control_flow": "linear",
+                            "target": None,
+                            "is_padding": False,
+                        },
+                    ]
+                )
+                next_address += 8
             else:
                 emit_private_address_setup()
                 instructions.append(
@@ -2013,9 +2367,18 @@ def infer_private_segment_offset_source_sgpr(analysis: dict) -> int | None:
         ),
         None,
     )
-    if first_pair_update is None:
-        return None
-    return int(first_pair_update["offset_sgpr"])
+    if first_pair_update is not None:
+        return int(first_pair_update["offset_sgpr"])
+    system_roles = analysis.get("entry_system_sgpr_roles", [])
+    if isinstance(system_roles, list):
+        for entry in system_roles:
+            if (
+                isinstance(entry, dict)
+                and entry.get("role") == "private_segment_wave_offset"
+                and isinstance(entry.get("sgpr"), int)
+            ):
+                return int(entry["sgpr"])
+    return None
 
 
 def infer_wrapper_owned_private_segment_offset_sgpr(descriptor: dict) -> int | None:
@@ -2041,6 +2404,7 @@ def build_entry_wrapper_workitem_spill_restore_plan(
     *,
     analysis: dict,
     descriptor: dict,
+    kernel_metadata: dict | None = None,
     save_pair: tuple[int, int],
     branch_pair: tuple[int, int],
 ) -> dict:
@@ -2115,6 +2479,26 @@ def build_entry_wrapper_workitem_spill_restore_plan(
                 "only for single-VGPR entry classes"
             )
         plan["address_vgprs"] = [2, 3]
+    elif private_pattern_class == "src_private_base":
+        vgpr_count = int((kernel_metadata or {}).get("vgpr_count", 0) or 0)
+        if vgpr_count <= 0:
+            raise SystemExit(
+                "entry wrapper workitem proof requires kernel vgpr_count for src_private_base carriers"
+            )
+        addr_lo_vgpr = align_up(vgpr_count, 2)
+        addr_hi_vgpr = addr_lo_vgpr + 1
+        plan["address_vgprs"] = [addr_lo_vgpr, addr_hi_vgpr]
+        if len(source_vgprs) >= 2:
+            data_pair_lo = align_up(addr_hi_vgpr + 1, 2)
+            data_pair_hi = data_pair_lo + 1
+            plan["data_pair_vgprs"] = [data_pair_lo, data_pair_hi]
+            next_free_vgpr = data_pair_hi + 1
+        else:
+            next_free_vgpr = addr_hi_vgpr + 1
+        if len(source_vgprs) % 2 == 1:
+            plan["tail_data_vgpr"] = next_free_vgpr
+            next_free_vgpr += 1
+        plan["required_total_vgprs"] = next_free_vgpr
     return plan
 
 
@@ -2262,9 +2646,22 @@ def add_entry_wrapper_proof_intent(
         workitem_spill_restore_plan = build_entry_wrapper_workitem_spill_restore_plan(
             analysis=entry_analysis,
             descriptor=source_descriptor,
+            kernel_metadata=kernel_metadata,
             save_pair=scratch_pair,
             branch_pair=branch_scratch_pair,
         )
+        required_total_vgprs = int(
+            workitem_spill_restore_plan.get("required_total_vgprs", 0) or 0
+        )
+        if required_total_vgprs > 0:
+            apply_binary_probe_vgpr_policy(
+                manifest,
+                clone_kernel=kernel_name,
+                total_vgprs=max(
+                    int((kernel_metadata or {}).get("vgpr_count", 0) or 0),
+                    required_total_vgprs,
+                ),
+            )
         apply_binary_probe_nonleaf_policy(
             manifest,
             clone_kernel=kernel_name,
@@ -2603,6 +3000,10 @@ def add_entry_wrapper_proof_intent(
                 "private_segment_offset_source_sgpr": workitem_spill_restore_plan.get(
                     "private_segment_offset_source_sgpr"
                 ),
+                "address_vgprs": list(workitem_spill_restore_plan.get("address_vgprs", [])),
+                "data_pair_vgprs": list(workitem_spill_restore_plan.get("data_pair_vgprs", [])),
+                "tail_data_vgpr": workitem_spill_restore_plan.get("tail_data_vgpr"),
+                "required_total_vgprs": workitem_spill_restore_plan.get("required_total_vgprs"),
             }
             if workitem_spill_restore_plan is not None
             else {"enabled": False}
