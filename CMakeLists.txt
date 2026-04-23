@@ -244,12 +244,25 @@ set_target_properties(test_hip_module_dh_comms PROPERTIES
 )
 target_include_directories(test_hip_module_dh_comms PRIVATE
     ${ROOT_DIR}
+    ${ROOT_DIR}/inc
     ${LIB_DIR}
     ${DH_COMMS_INCLUDE_DIR}
 )
 target_link_libraries(test_hip_module_dh_comms PRIVATE
     amdhip64
     dh_comms
+)
+
+add_executable(test_hsa_module_launch tools/codeobj/test_hsa_module_launch.cpp)
+set_target_properties(test_hsa_module_launch PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tools
+)
+target_include_directories(test_hsa_module_launch PRIVATE
+    ${ROCM_ROOT_DIR}/include
+    ${HSA_RUNTIME_INC_PATH}
+)
+target_link_libraries(test_hsa_module_launch PRIVATE
+    ${HSA_RUNTIME_LIB}
 )
 
 add_executable(

@@ -12,6 +12,7 @@
 #include "dh_comms.h"
 #include "message.h"
 #include "message_handlers.h"
+#include "omniprobe_probe_abi_v1.h"
 
 #define CHECK_HIP(call)                                                        \
   do {                                                                         \
@@ -25,9 +26,15 @@
 
 namespace {
 
+using omniprobe::probe_abi_v1::dispatch_uniform_valid_block_dim;
+using omniprobe::probe_abi_v1::dispatch_uniform_valid_grid_dim;
+using omniprobe::probe_abi_v1::runtime_ctx_abi_version;
+using omniprobe::probe_abi_v1::runtime_storage_v2;
+
 enum class LaunchMode {
   kExplicit,
   kHiddenRaw,
+  kRuntimeStorageExplicit,
 };
 
 class CountingHandler : public dh_comms::message_handler_base {
@@ -64,6 +71,9 @@ LaunchMode parse_mode(const std::string& mode) {
   if (mode == "hidden-raw") {
     return LaunchMode::kHiddenRaw;
   }
+  if (mode == "runtime-storage-explicit") {
+    return LaunchMode::kRuntimeStorageExplicit;
+  }
   throw std::runtime_error("unsupported mode: " + mode);
 }
 
@@ -80,8 +90,9 @@ Options parse_args(int argc, char* argv[]) {
   if (argc < 4) {
     throw std::runtime_error(
         "usage: test_hip_module_dh_comms <hsaco> <kernel-name> "
-        "<explicit|hidden-raw> [--raw-kernarg-size <bytes> "
-        "--hidden-ctx-offset <bytes>] [--min-address-messages <count>]");
+        "<explicit|hidden-raw|runtime-storage-explicit> "
+        "[--raw-kernarg-size <bytes> --hidden-ctx-offset <bytes>] "
+        "[--min-address-messages <count>]");
   }
 
   Options options;
@@ -150,11 +161,37 @@ int main(int argc, char* argv[]) {
   auto* dev_ctx = comms.get_dev_rsrc_ptr();
   comms.start(options.kernel_name);
 
+  runtime_storage_v2 host_runtime_storage{};
+  runtime_storage_v2* device_runtime_storage = nullptr;
+  if (options.mode == LaunchMode::kRuntimeStorageExplicit) {
+    host_runtime_storage.dh = dev_ctx;
+    host_runtime_storage.abi_version = runtime_ctx_abi_version;
+    host_runtime_storage.flags = 0;
+    CHECK_HIP(hipMalloc(&device_runtime_storage, sizeof(host_runtime_storage)));
+    CHECK_HIP(hipMemcpy(device_runtime_storage, &host_runtime_storage,
+                        sizeof(host_runtime_storage), hipMemcpyHostToDevice));
+  }
+
   if (options.mode == LaunchMode::kExplicit) {
     void* args[] = {
         &device_data,
         &element_count_arg,
         &dev_ctx,
+    };
+    CHECK_HIP(hipModuleLaunchKernel(
+        kernel,
+        num_blocks, 1, 1,
+        blocksize, 1, 1,
+        0,
+        nullptr,
+        args,
+        nullptr));
+  } else if (options.mode == LaunchMode::kRuntimeStorageExplicit) {
+    auto* runtime_arg = device_runtime_storage;
+    void* args[] = {
+        &device_data,
+        &element_count_arg,
+        &runtime_arg,
     };
     CHECK_HIP(hipModuleLaunchKernel(
         kernel,
@@ -196,6 +233,12 @@ int main(int argc, char* argv[]) {
   CHECK_HIP(hipMemcpy(host_data.data(), device_data, element_count * sizeof(int),
                       hipMemcpyDeviceToHost));
 
+  runtime_storage_v2 observed_runtime_storage{};
+  if (device_runtime_storage != nullptr) {
+    CHECK_HIP(hipMemcpy(&observed_runtime_storage, device_runtime_storage,
+                        sizeof(observed_runtime_storage), hipMemcpyDeviceToHost));
+  }
+
   bool ok = true;
   for (size_t i = 0; i < element_count; ++i) {
     if (host_data[i] != static_cast<int>(i)) {
@@ -206,23 +249,61 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  if (device_runtime_storage != nullptr) {
+    const auto valid_mask = observed_runtime_storage.dispatch_uniform.valid_mask;
+    const bool has_grid_dim =
+        (valid_mask & dispatch_uniform_valid_grid_dim) != 0;
+    const bool has_block_dim =
+        (valid_mask & dispatch_uniform_valid_block_dim) != 0;
+    if (observed_runtime_storage.abi_version != runtime_ctx_abi_version) {
+      std::cerr << "runtime storage abi_version mismatch: expected "
+                << runtime_ctx_abi_version << " got "
+                << observed_runtime_storage.abi_version << std::endl;
+      ok = false;
+    }
+    if (observed_runtime_storage.entry_snapshot.wavefront_size == 0) {
+      std::cerr << "runtime storage entry snapshot was not populated"
+                << std::endl;
+      ok = false;
+    }
+    if (!has_grid_dim || !has_block_dim) {
+      std::cerr << "runtime storage dispatch uniform valid_mask is missing "
+                << "grid/block dimensions: 0x" << std::hex << valid_mask
+                << std::dec << std::endl;
+      ok = false;
+    }
+  }
+
   const size_t observed_total = total_messages.load(std::memory_order_relaxed);
   const size_t observed_address =
       address_messages.load(std::memory_order_relaxed);
   const size_t observed_time_interval =
       time_interval_messages.load(std::memory_order_relaxed);
 
+  if (device_runtime_storage != nullptr) {
+    CHECK_HIP(hipFree(device_runtime_storage));
+  }
   CHECK_HIP(hipFree(device_data));
   comms.delete_handlers();
   CHECK_HIP(hipModuleUnload(module));
 
   std::cout << "kernel=" << options.kernel_name
-            << " mode=" << (options.mode == LaunchMode::kExplicit ? "explicit"
-                                                                  : "hidden-raw")
+            << " mode="
+            << (options.mode == LaunchMode::kExplicit
+                    ? "explicit"
+                    : (options.mode == LaunchMode::kHiddenRaw
+                           ? "hidden-raw"
+                           : "runtime-storage-explicit"))
             << " total_messages=" << observed_total
             << " address_messages=" << observed_address
-            << " time_interval_messages=" << observed_time_interval
-            << std::endl;
+            << " time_interval_messages=" << observed_time_interval;
+  if (device_runtime_storage != nullptr) {
+    std::cout << " entry_wavefront_size="
+              << observed_runtime_storage.entry_snapshot.wavefront_size
+              << " dispatch_valid_mask=0x" << std::hex
+              << observed_runtime_storage.dispatch_uniform.valid_mask << std::dec;
+  }
+  std::cout << std::endl;
 
   if (!ok) {
     return 1;

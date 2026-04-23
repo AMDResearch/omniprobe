@@ -12,27 +12,43 @@ from pathlib import Path
 from common import detect_llvm_tool
 
 
+MANIFEST_SOURCE_FIELDS = {
+    "thunk": "thunk_source",
+    "entry-trampoline": "output",
+}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Compile generated binary probe thunk source into a linkable AMDGPU "
-            "device object using ROCm's supported HIP compilation flow."
+            "Compile generated Omniprobe binary-probe support source into either "
+            "a linkable AMDGPU device object or a standalone HSACO."
         )
     )
-    parser.add_argument(
+    manifest_group = parser.add_mutually_exclusive_group(required=True)
+    manifest_group.add_argument(
         "--thunk-manifest",
-        required=True,
         help="Thunk manifest JSON emitted by generate_binary_probe_thunks.py",
+    )
+    manifest_group.add_argument(
+        "--entry-trampoline-manifest",
+        help="Entry-trampoline manifest JSON emitted by generate_entry_trampolines.py",
     )
     parser.add_argument(
         "--output",
         required=True,
-        help="Output AMDGPU device object path",
+        help="Output AMDGPU device object or HSACO path",
     )
     parser.add_argument(
         "--arch",
         required=True,
         help="Target architecture, for example gfx1030 or gfx90a",
+    )
+    parser.add_argument(
+        "--output-format",
+        choices=("obj", "hsaco"),
+        default="obj",
+        help="Emit a linkable device object (obj) or a standalone HSACO (hsaco)",
     )
     parser.add_argument(
         "--hipcc",
@@ -47,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--llc",
         default=None,
-        help="Path to llc; auto-detected when omitted",
+        help="Path to llc; auto-detected when omitted for obj output",
     )
     parser.add_argument(
         "--dry-run",
@@ -88,15 +104,61 @@ def resolve_llc(explicit: str | None, *, dry_run: bool) -> str:
     return detect_llvm_tool("llc", explicit)
 
 
+def manifest_kind_and_path(args: argparse.Namespace) -> tuple[str, Path]:
+    if args.thunk_manifest:
+        return "thunk", Path(args.thunk_manifest).resolve()
+    return "entry-trampoline", Path(args.entry_trampoline_manifest).resolve()
+
+
+def support_source_from_manifest(*, manifest_kind: str, manifest_path: Path, manifest: dict) -> Path:
+    field = MANIFEST_SOURCE_FIELDS[manifest_kind]
+    source_value = manifest.get(field)
+    if not isinstance(source_value, str) or not source_value:
+        raise SystemExit(f"{manifest_kind} manifest {manifest_path} does not contain {field}")
+    source_path = Path(source_value).resolve()
+    if not source_path.exists():
+        raise SystemExit(f"support source not found: {source_path}")
+    return source_path
+
+
 def build_commands(
     *,
-    thunk_source: Path,
+    support_source: Path,
     output_path: Path,
     arch: str,
     hipcc: str,
-    llc: str,
+    llc: str | None,
+    output_format: str,
 ) -> dict:
     root = repo_root()
+    include_args = [
+        "-I",
+        str(root / "external/dh_comms/include"),
+        "-I",
+        str(root / "inc"),
+        "-I",
+        str(support_source.parent),
+    ]
+    if output_format == "hsaco":
+        compile_command = [
+            hipcc,
+            "-x",
+            "hip",
+            "--offload-device-only",
+            "--no-gpu-bundle-output",
+            f"--offload-arch={arch}",
+            str(support_source),
+            "-o",
+            str(output_path),
+            *include_args,
+        ]
+        return {
+            "support_source": str(support_source),
+            "compile_command": compile_command,
+            "llc_command": None,
+            "bitcode_path": None,
+        }
+
     temp_bitcode = output_path.with_suffix(output_path.suffix + ".bc")
     compile_command = [
         hipcc,
@@ -106,15 +168,10 @@ def build_commands(
         "-c",
         "-fgpu-rdc",
         f"--offload-arch={arch}",
-        str(thunk_source),
+        str(support_source),
         "-o",
         str(temp_bitcode),
-        "-I",
-        str(root / "external/dh_comms/include"),
-        "-I",
-        str(root / "inc"),
-        "-I",
-        str(thunk_source.parent),
+        *include_args,
     ]
     llc_command = [
         llc,
@@ -126,9 +183,10 @@ def build_commands(
         str(output_path),
     ]
     return {
-        "bitcode_path": str(temp_bitcode),
+        "support_source": str(support_source),
         "compile_command": compile_command,
         "llc_command": llc_command,
+        "bitcode_path": str(temp_bitcode),
     }
 
 
@@ -138,32 +196,33 @@ def run(command: list[str]) -> None:
 
 def main() -> int:
     args = parse_args()
-    thunk_manifest_path = Path(args.thunk_manifest).resolve()
+    manifest_kind, manifest_path = manifest_kind_and_path(args)
     output_path = Path(args.output).resolve()
-    thunk_manifest = load_json(thunk_manifest_path)
-    thunk_source_value = thunk_manifest.get("thunk_source")
-    if not isinstance(thunk_source_value, str) or not thunk_source_value:
-        raise SystemExit(f"thunk manifest {thunk_manifest_path} does not contain thunk_source")
-    thunk_source = Path(thunk_source_value).resolve()
-    if not thunk_source.exists():
-        raise SystemExit(f"thunk source not found: {thunk_source}")
+    manifest = load_json(manifest_path)
+    support_source = support_source_from_manifest(
+        manifest_kind=manifest_kind,
+        manifest_path=manifest_path,
+        manifest=manifest,
+    )
 
     hipcc = resolve_hipcc(args.hipcc)
-    llc = resolve_llc(args.llc, dry_run=args.dry_run)
+    llc = None if args.output_format == "hsaco" else resolve_llc(args.llc, dry_run=args.dry_run)
     commands = build_commands(
-        thunk_source=thunk_source,
+        support_source=support_source,
         output_path=output_path,
         arch=args.arch,
         hipcc=hipcc,
         llc=llc,
+        output_format=args.output_format,
     )
 
     if args.dry_run:
         json.dump(
             {
-                "thunk_manifest": str(thunk_manifest_path),
-                "thunk_source": str(thunk_source),
+                "manifest_kind": manifest_kind,
+                "manifest_path": str(manifest_path),
                 "arch": args.arch,
+                "output_format": args.output_format,
                 **commands,
             },
             sys.stdout,
@@ -174,8 +233,11 @@ def main() -> int:
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     run(commands["compile_command"])
-    run(commands["llc_command"])
-    Path(commands["bitcode_path"]).unlink(missing_ok=True)
+    if commands["llc_command"] is not None:
+        run(commands["llc_command"])
+    bitcode_path = commands.get("bitcode_path")
+    if isinstance(bitcode_path, str):
+        Path(bitcode_path).unlink(missing_ok=True)
     print(output_path)
     return 0
 
