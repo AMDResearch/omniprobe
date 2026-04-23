@@ -24,6 +24,7 @@ mkdir -p "$OUTPUT_DIR"
 HSA_LAUNCH_TEST="${BUILD_DIR}/tools/test_hsa_module_launch"
 LLVM_MC="${LLVM_MC:-/opt/rocm/llvm/bin/llvm-mc}"
 LD_LLD="${LD_LLD:-/opt/rocm/llvm/bin/ld.lld}"
+AMDGPU_ARCH_TOOL="${AMDGPU_ARCH_TOOL:-}"
 REGENERATE_CODE_OBJECT="${REPO_ROOT}/tools/codeobj/regenerate_code_object.py"
 
 if [ ! -x "$HSA_LAUNCH_TEST" ]; then
@@ -54,6 +55,30 @@ ENTRY_WRAPPER_RUNTIME_PROOF_LABEL="${ENTRY_WRAPPER_RUNTIME_PROOF_LABEL:-${ENTRY_
 ENTRY_WRAPPER_RUNTIME_PROOF_KIND="${ENTRY_WRAPPER_RUNTIME_PROOF_KIND:-synthetic}"
 ENTRY_WRAPPER_RUNTIME_PROOF_FIXTURE_IR="${SCRIPT_DIR}/probe_specs/fixtures/${ENTRY_WRAPPER_RUNTIME_PROOF_FIXTURE_BASENAME}.ir.json"
 ENTRY_WRAPPER_RUNTIME_PROOF_FIXTURE_MANIFEST="${SCRIPT_DIR}/probe_specs/fixtures/${ENTRY_WRAPPER_RUNTIME_PROOF_FIXTURE_BASENAME}.manifest.json"
+
+if [ -z "$AMDGPU_ARCH_TOOL" ]; then
+    for candidate in \
+        /opt/rocm/llvm/bin/amdgpu-arch \
+        /opt/rocm/lib/llvm/bin/amdgpu-arch \
+        /opt/rocm-7.2.0/lib/llvm/bin/amdgpu-arch \
+        /opt/rocm-7.2.2/lib/llvm/bin/amdgpu-arch; do
+        if [ -x "$candidate" ]; then
+            AMDGPU_ARCH_TOOL="$candidate"
+            break
+        fi
+    done
+fi
+
+if [ -n "$AMDGPU_ARCH_TOOL" ] && [ -x "$AMDGPU_ARCH_TOOL" ]; then
+    DETECTED_ARCHS="$("$AMDGPU_ARCH_TOOL" 2>/dev/null || true)"
+    if ! printf '%s\n' "$DETECTED_ARCHS" | grep -qx "$ENTRY_WRAPPER_RUNTIME_PROOF_ARCH"; then
+        echo -e "${YELLOW}SKIP: Available GPU architecture does not match runtime-proof target${NC}"
+        echo "  Target arch:    $ENTRY_WRAPPER_RUNTIME_PROOF_ARCH"
+        echo "  Detected archs: ${DETECTED_ARCHS:-<none>}"
+        export TESTS_RUN TESTS_PASSED TESTS_FAILED
+        return 0 2>/dev/null || exit 0
+    fi
+fi
 
 RUNTIME_FIXTURE_IR="$WORK_DIR/${ENTRY_WRAPPER_RUNTIME_PROOF_FIXTURE_BASENAME}_runtime_fixture.ir.json"
 PROOF_HSACO="$WORK_DIR/entry_wrapper_workitem_regen_${ENTRY_WRAPPER_RUNTIME_PROOF_ARCH}_${ENTRY_WRAPPER_RUNTIME_PROOF_KIND}_runtime.hsaco"
