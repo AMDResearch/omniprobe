@@ -42,6 +42,7 @@ BUNDLE_DIR="$OUTPUT_DIR/${TEST_NAME}"
 rm -rf "$BUNDLE_DIR"
 mkdir -p "$BUNDLE_DIR"
 BUNDLE_JSON="$BUNDLE_DIR/generated_probe_bundle.json"
+BUNDLE_MANIFEST="$BUNDLE_DIR/generated_probe_manifest.json"
 
 if python3 "$PREPARE_BUNDLE" "$LIFECYCLE_SPEC" \
     --output-dir "$BUNDLE_DIR" \
@@ -97,6 +98,10 @@ assert [binding["kernel_arg_name"] for binding in entry_bindings] == ["data", "s
 assert sites["kernel_entry"]["helper_context"]["builtins"] == [
     "grid_dim", "block_dim", "block_idx", "thread_idx", "dispatch_id"
 ]
+assert sites["kernel_entry"]["helper_abi"]["schema"] == "omniprobe.helper_abi.v1"
+assert sites["kernel_entry"]["helper_abi"]["model"] == "explicit_runtime_v1"
+assert sites["kernel_entry"]["helper_abi"]["compiler_generated_liveins_allowed"] is False
+assert sites["kernel_entry"]["helper_abi"]["compiler_generated_builtins_allowed"] is False
 assert sites["kernel_entry"]["event_usage"] == "dispatch_origin"
 assert sites["kernel_exit"]["event_usage"] == "dispatch_origin"
 PY
@@ -109,6 +114,40 @@ PY
     fi
 else
     echo -e "  ${RED}✗ FAIL${NC} - Lifecycle planner unexpectedly failed"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="binary_probe_plan_requires_helper_abi"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+BROKEN_MANIFEST="$OUTPUT_DIR/${TEST_NAME}.manifest.json"
+
+if python3 - "$BUNDLE_MANIFEST" "$BROKEN_MANIFEST" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+for entry in payload.get("surrogates", []):
+    if isinstance(entry, dict):
+        entry.pop("helper_abi", None)
+json.dump(payload, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
+open(sys.argv[2], "a", encoding="utf-8").write("\n")
+PY
+then
+    if python3 "$PLANNER" "$FIXTURE_MANIFEST" \
+        --probe-manifest "$BROKEN_MANIFEST" \
+        --kernel simple_kernel > "$OUTPUT_DIR/${TEST_NAME}.out" 2>&1; then
+        echo -e "  ${RED}✗ FAIL${NC} - Planner accepted a manifest without helper_abi"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    elif grep -q "missing helper_abi" "$OUTPUT_DIR/${TEST_NAME}.out"; then
+        echo -e "  ${GREEN}✓ PASS${NC} - Planner rejected manifests without helper_abi"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Planner failed for an unexpected reason"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Could not generate broken manifest fixture"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 

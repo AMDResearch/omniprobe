@@ -56,6 +56,18 @@ ALLOWED_BUILTINS = {
     "exec",
     "hw_id",
 }
+FORBIDDEN_HELPER_CONTEXT_REQUESTS = {
+    "gridDim": "use capture.builtins: [grid_dim]",
+    "blockDim": "use capture.builtins: [block_dim]",
+    "blockIdx": "use capture.builtins: [block_idx]",
+    "threadIdx": "use capture.builtins: [thread_idx]",
+    "dispatchPtr": "compiler-generated dispatch/live-in values are not part of the helper ABI",
+    "dispatch_ptr": "compiler-generated dispatch/live-in values are not part of the helper ABI",
+    "implicitarg_ptr": "compiler-generated implicitarg live-ins are not part of the helper ABI",
+    "kernarg_segment_ptr": "compiler-generated kernarg live-ins are not part of the helper ABI",
+    "private_segment_buffer": "compiler-generated private-segment live-ins are not part of the helper ABI",
+    "private_segment_wave_byte_offset": "compiler-generated private-segment live-ins are not part of the helper ABI",
+}
 ALLOWED_INSTRUCTION_FIELDS = {
     "address",
     "bytes",
@@ -64,6 +76,12 @@ ALLOWED_INSTRUCTION_FIELDS = {
     "opcode",
     "callee",
 }
+HELPER_ABI_SCHEMA = "omniprobe.helper_abi.v1"
+HELPER_ABI_MODEL = "explicit_runtime_v1"
+HELPER_ABI_NOTES = [
+    "Heavyweight helpers must not rely on compiler-generated live-ins or builtins at arbitrary insertion points.",
+    "Helpers are expected to consume Omniprobe-captured state plus runtime dispatch payload inputs instead.",
+]
 
 
 class SpecError(ValueError):
@@ -91,6 +109,14 @@ def parse_args() -> argparse.Namespace:
         help="Emit normalized JSON to stdout",
     )
     return parser.parse_args()
+
+
+def unique_ordered(values: list[str]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        if value not in result:
+            result.append(value)
+    return result
 
 
 def strip_comments(line: str) -> str:
@@ -472,6 +498,17 @@ def normalize_probe(probe: Any, defaults: dict[str, Any], probe_index: int) -> d
     ensure_keys(capture, ALLOWED_CAPTURE_KEYS, f"{context}.capture")
     kernel_args = normalize_kernel_args(capture.get("kernel_args", []), f"{context}.capture.kernel_args")
     builtins = ensure_string_list(capture.get("builtins", []), f"{context}.capture.builtins")
+    forbidden_helper_requests = sorted(
+        value for value in set(builtins) if value in FORBIDDEN_HELPER_CONTEXT_REQUESTS
+    )
+    if forbidden_helper_requests:
+        details = "; ".join(
+            f"{value}: {FORBIDDEN_HELPER_CONTEXT_REQUESTS[value]}"
+            for value in forbidden_helper_requests
+        )
+        raise SpecError(
+            f"{context}.capture.builtins: helper requests must use Omniprobe runtime-context names; {details}"
+        )
     unknown_builtins = sorted(set(builtins) - ALLOWED_BUILTINS)
     if unknown_builtins:
         raise SpecError(f"{context}.capture.builtins: unsupported values: {', '.join(unknown_builtins)}")
@@ -483,6 +520,42 @@ def normalize_probe(probe: Any, defaults: dict[str, Any], probe_index: int) -> d
         raise SpecError(
             f"{context}.capture.instruction: unsupported values: {', '.join(unknown_instruction)}"
         )
+
+    required_runtime_views: list[str] = []
+    if builtins:
+        required_runtime_views.append("runtime_ctx.dh_builtins")
+    if "dispatch_id" in builtins:
+        required_runtime_views.append("runtime_ctx.dispatch_id")
+    if any(name in {"grid_dim", "block_dim"} for name in builtins):
+        required_runtime_views.append("runtime_ctx.dispatch_uniform")
+    if any(
+        name in {"block_dim", "block_idx", "thread_idx", "lane_id", "wave_id", "wavefront_size", "exec", "hw_id"}
+        for name in builtins
+    ):
+        required_runtime_views.append("runtime_ctx.site_snapshot")
+
+    helper_abi = {
+        "schema": HELPER_ABI_SCHEMA,
+        "model": HELPER_ABI_MODEL,
+        "compiler_generated_liveins_allowed": False,
+        "compiler_generated_builtins_allowed": False,
+        "requires_wrapper_captured_state": True,
+        "requires_runtime_dispatch_payload": True,
+        "required_runtime_views": unique_ordered(required_runtime_views),
+        "helper_visible_sources": {
+            "kernel_args": [str(arg["name"]) for arg in kernel_args],
+            "instruction_fields": instruction,
+            "builtins": {
+                "requested": builtins,
+                "provider": "runtime_ctx.dh_builtins",
+            },
+            "event_payload": {
+                "contract": contract,
+                "when": when,
+            },
+        },
+        "notes": list(HELPER_ABI_NOTES),
+    }
 
     return {
         "id": probe_id,
@@ -498,6 +571,7 @@ def normalize_probe(probe: Any, defaults: dict[str, Any], probe_index: int) -> d
             "builtins": builtins,
             "instruction": instruction,
         },
+        "helper_abi": helper_abi,
     }
 
 

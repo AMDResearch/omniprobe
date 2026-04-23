@@ -10,6 +10,9 @@ Current scope:
   - validates the shared probe schema described in
     `docs/hsaco-instrumentation-architecture.md`
   - emits normalized JSON so later frontends can consume one canonical shape
+  - derives an explicit `helper_abi` contract that makes the current helper
+    policy machine-readable: helpers must consume Omniprobe-captured/runtime-
+    provided state rather than compiler-generated live-ins or builtins
 - `generate_probe_surrogates.py`
   - consumes the same v1 spec
   - emits generated surrogate HIP/C++ scaffolding plus a JSON manifest
@@ -18,6 +21,8 @@ Current scope:
   - treats `capture.builtins` as helper-context requirements rather than
     marshaled capture-struct fields, so execution-context values stay
     helper-visible instead of becoming part of the stable capture ABI
+  - propagates the derived `helper_abi` contract into surrogate manifests so
+    downstream planners can fail closed on stale or hand-edited manifests
 - `prepare_probe_bundle.py`
   - packages the user-facing path around the existing manifest/bitcode hooks
   - validates the v1 spec, generates surrogates, wraps the user helper source,

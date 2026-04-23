@@ -25,6 +25,8 @@ MEMORY_ACCESS_PREFIXES = (
     ("image_load", "load", "image"),
     ("image_store", "store", "image"),
 )
+HELPER_ABI_SCHEMA = "omniprobe.helper_abi.v1"
+HELPER_ABI_MODEL = "explicit_runtime_v1"
 
 
 def parse_args() -> argparse.Namespace:
@@ -189,6 +191,98 @@ def kernel_target_matches(entry: dict, kernel: dict) -> bool:
         if isinstance(field, str) and field
     }
     return any(candidate in values for candidate in kernel_targets if isinstance(candidate, str))
+
+
+def validate_helper_abi(entry: dict) -> dict:
+    surrogate = str(entry.get("surrogate", "<unknown>"))
+    helper_abi = entry.get("helper_abi")
+    if not isinstance(helper_abi, dict):
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} is missing helper_abi; regenerate the probe manifest with current tooling"
+        )
+    if helper_abi.get("schema") != HELPER_ABI_SCHEMA:
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} has unsupported helper_abi.schema={helper_abi.get('schema')!r}"
+        )
+    if helper_abi.get("model") != HELPER_ABI_MODEL:
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} has unsupported helper_abi.model={helper_abi.get('model')!r}"
+        )
+    if helper_abi.get("compiler_generated_liveins_allowed") is not False:
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} must reject compiler-generated live-ins in helper_abi"
+        )
+    if helper_abi.get("compiler_generated_builtins_allowed") is not False:
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} must reject compiler-generated builtins in helper_abi"
+        )
+    if helper_abi.get("requires_wrapper_captured_state") is not True:
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} must require wrapper-captured state in helper_abi"
+        )
+    if helper_abi.get("requires_runtime_dispatch_payload") is not True:
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} must require runtime dispatch payloads in helper_abi"
+        )
+
+    required_runtime_views = helper_abi.get("required_runtime_views", [])
+    if not isinstance(required_runtime_views, list) or not all(
+        isinstance(value, str) and value for value in required_runtime_views
+    ):
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} has invalid helper_abi.required_runtime_views"
+        )
+
+    helper_visible_sources = helper_abi.get("helper_visible_sources")
+    if not isinstance(helper_visible_sources, dict):
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} has invalid helper_abi.helper_visible_sources"
+        )
+    builtins_info = helper_visible_sources.get("builtins")
+    if not isinstance(builtins_info, dict):
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} has invalid helper_abi.helper_visible_sources.builtins"
+        )
+    if builtins_info.get("provider") != "runtime_ctx.dh_builtins":
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} must source helper builtins from runtime_ctx.dh_builtins"
+        )
+
+    requested_builtins = builtins_info.get("requested", [])
+    if not isinstance(requested_builtins, list) or not all(
+        isinstance(value, str) and value for value in requested_builtins
+    ):
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} has invalid helper_abi.helper_visible_sources.builtins.requested"
+        )
+    helper_context = entry.get("helper_context", {})
+    helper_context_builtins = helper_context.get("builtins", []) if isinstance(helper_context, dict) else []
+    if requested_builtins != helper_context_builtins:
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} has mismatched helper builtin requirements between helper_abi and helper_context"
+        )
+
+    event_payload = helper_visible_sources.get("event_payload")
+    if not isinstance(event_payload, dict):
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} has invalid helper_abi.helper_visible_sources.event_payload"
+        )
+    if event_payload.get("contract") != entry.get("contract"):
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} has mismatched helper_abi event contract"
+        )
+    when_values = event_payload.get("when", [])
+    if isinstance(when_values, str):
+        when_values = [when_values]
+    if not isinstance(when_values, list) or not all(isinstance(value, str) and value for value in when_values):
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} has invalid helper_abi.helper_visible_sources.event_payload.when"
+        )
+    if str(entry.get("when", "")) not in when_values:
+        raise SystemExit(
+            f"probe manifest surrogate {surrogate} helper_abi does not cover when={entry.get('when')!r}"
+        )
+    return helper_abi
 
 
 def bind_capture_fields(kernel: dict, struct_fields: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -388,6 +482,7 @@ def instruction_matches_selector(
 
 
 def planned_site_base(entry: dict, kernel: dict) -> tuple[dict, list[dict], list[dict]]:
+    helper_abi = validate_helper_abi(entry)
     capture_layout = entry.get("capture_layout", {})
     struct_fields = capture_layout.get("struct_fields", []) if isinstance(capture_layout, dict) else []
     event_fields = capture_layout.get("event_fields", []) if isinstance(capture_layout, dict) else []
@@ -411,6 +506,7 @@ def planned_site_base(entry: dict, kernel: dict) -> tuple[dict, list[dict], list
             "event_fields": event_fields,
         },
         "helper_context": entry.get("helper_context", {}),
+        "helper_abi": helper_abi,
         "event_usage": entry.get("event_usage"),
         "capture_bindings": bindings,
         "unresolved_captures": unresolved,

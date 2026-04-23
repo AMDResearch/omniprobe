@@ -233,6 +233,7 @@ def expand_probe_sites(spec: dict[str, object]) -> list[dict[str, object]]:
                     "target": probe["target"],
                     "payload": probe["payload"],
                     "capture": probe["capture"],
+                    "helper_abi": probe["helper_abi"],
                     "event_usage": probe["inject"].get("event_usage"),
                 }
             )
@@ -364,6 +365,11 @@ def render_source(spec: dict[str, object], sites: list[dict[str, object]], manif
         lines.append(f"// Probe: {entry['probe_id']}")
         lines.append(f"// Surrogate: {entry['surrogate']}")
         lines.append(f"// Contract: {entry['contract']}")
+        helper_abi = entry.get("helper_abi", {})
+        if isinstance(helper_abi, dict):
+            model = helper_abi.get("model")
+            if isinstance(model, str) and model:
+                lines.append(f"// Helper ABI: {model}")
         helper_context = entry["helper_context"]["builtins"]
         if helper_context:
             lines.append(
@@ -393,6 +399,7 @@ def flatten_manifest_entries(sites: list[dict[str, object]]) -> list[dict[str, o
         manifest["helper_context"] = {
             "builtins": capture["builtins"],
         }
+        manifest["helper_abi"] = site["helper_abi"]
         event_usage = site.get("event_usage")
         if isinstance(event_usage, str) and event_usage:
             manifest["event_usage"] = event_usage
