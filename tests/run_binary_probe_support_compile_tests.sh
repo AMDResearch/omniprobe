@@ -89,6 +89,43 @@ else
 fi
 
 TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="binary_probe_support_compile_prefers_hipcc_toolchain_llc"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+TOOLCHAIN_ROOT="$OUTPUT_DIR/${TEST_NAME}.toolchain"
+TOOLCHAIN_DRYRUN_JSON="$OUTPUT_DIR/${TEST_NAME}.json"
+rm -rf "$TOOLCHAIN_ROOT"
+mkdir -p "$TOOLCHAIN_ROOT/bin" "$TOOLCHAIN_ROOT/lib/llvm/bin"
+touch "$TOOLCHAIN_ROOT/bin/hipcc" "$TOOLCHAIN_ROOT/lib/llvm/bin/llc"
+
+if python3 "$SUPPORT_COMPILER" \
+    --thunk-manifest "$THUNK_MANIFEST" \
+    --output "$OUTPUT_DIR/${TEST_NAME}.o" \
+    --arch gfx1030 \
+    --hipcc "$TOOLCHAIN_ROOT/bin/hipcc" \
+    --dry-run > "$TOOLCHAIN_DRYRUN_JSON"; then
+    if python3 - "$TOOLCHAIN_DRYRUN_JSON" "$TOOLCHAIN_ROOT/lib/llvm/bin/llc" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+expected_llc = Path(sys.argv[2])
+llc_command = payload["llc_command"]
+assert Path(llc_command[0]).samefile(expected_llc)
+PY
+    then
+        echo -e "  ${GREEN}✓ PASS${NC} - Support compile resolves llc from the selected hipcc toolchain"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Dry-run support compile did not follow the selected hipcc toolchain for llc"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Toolchain-aware dry-run support compile failed"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="binary_probe_entry_trampoline_compile_dry_run"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
 TRAMPOLINE_DRYRUN_JSON="$OUTPUT_DIR/${TEST_NAME}.json"

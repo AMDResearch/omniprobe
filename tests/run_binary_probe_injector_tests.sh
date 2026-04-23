@@ -674,6 +674,153 @@ run_entry_missing_helper_abi_rejection_test() {
     fi
 }
 
+run_basic_block_resume_rejection_test() {
+    local arch="$1"
+    local ir_fixture="$2"
+    local manifest_fixture="$3"
+    local function_name="$4"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    local test_name="binary_probe_inject_basic_block_${arch}_reject_unsupported_resume"
+    echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $test_name"
+    local out_ir="$OUTPUT_DIR/${test_name}.ir.json"
+    local resume_plan_json="$OUTPUT_DIR/${test_name}.plan.json"
+    local resume_thunk_json="$OUTPUT_DIR/${test_name}.thunks.json"
+    python3 - "$resume_plan_json" "$resume_thunk_json" "$function_name" <<'PY'
+import json
+import sys
+
+helper_abi = {
+    "schema": "omniprobe.helper_abi.v1",
+    "model": "explicit_runtime_v1",
+    "compiler_generated_liveins_allowed": False,
+    "compiler_generated_builtins_allowed": False,
+    "requires_wrapper_captured_state": True,
+    "requires_runtime_dispatch_payload": True,
+    "required_runtime_views": [],
+    "helper_visible_sources": {
+        "kernel_args": [],
+        "instruction_fields": [],
+        "builtins": {
+            "requested": [],
+            "provider": "runtime_ctx.dh_builtins",
+        },
+        "event_payload": {
+            "contract": "basic_block_v1",
+            "when": ["basic_block"],
+        },
+    },
+    "notes": [],
+}
+
+plan = {
+    "kernels": [
+        {
+            "source_kernel": sys.argv[3],
+            "clone_kernel": f"__amd_crk_{sys.argv[3]}",
+            "hidden_omniprobe_ctx": {"offset": 0},
+            "planned_sites": [
+                {
+                    "binary_site_id": 0,
+                    "status": "planned",
+                    "contract": "basic_block_v1",
+                    "when": "basic_block",
+                    "helper_context": {"builtins": []},
+                    "helper_abi": helper_abi,
+                    "event_materialization": {
+                        "block_id": {"kind": "static_block_id", "value": 0},
+                    },
+                    "injection_point": {
+                        "kind": "basic_block",
+                        "block_id": 0,
+                        "block_label": "bb0",
+                        "start_address": 0,
+                    },
+                }
+            ],
+        }
+    ]
+}
+
+thunks = {
+    "thunks": [
+        {
+            "source_kernel": sys.argv[3],
+            "thunk": f"__omniprobe_basic_block_{sys.argv[3]}_thunk",
+            "when": "basic_block",
+            "contract": "basic_block_v1",
+            "helper_context": {
+                "builtins": [],
+            },
+            "helper_abi": helper_abi,
+            "capture_bindings": [],
+            "call_layout": {
+                "hidden_ctx": {"c_type": "runtime_ctx *", "size_bytes": 8},
+                "capture": {"c_type": "void *", "size_bytes": 8},
+                "timestamp": {"c_type": "uint64_t", "size_bytes": 8},
+                "event": [{"name": "block_id", "c_type": "uint32_t", "size_bytes": 4}],
+            },
+            "call_arguments": [
+                {
+                    "kind": "hidden_ctx",
+                    "name": "runtime",
+                    "c_type": "runtime_ctx *",
+                    "size_bytes": 8,
+                    "kernel_arg_offset": 0,
+                    "vgprs": [0, 1],
+                },
+                {
+                    "kind": "capture",
+                    "name": "captures",
+                    "c_type": "uint64_t",
+                    "size_bytes": 8,
+                    "kernel_arg_offset": 8,
+                    "vgprs": [2, 3],
+                },
+                {
+                    "kind": "timestamp",
+                    "name": "timestamp",
+                    "c_type": "uint64_t",
+                    "size_bytes": 8,
+                    "vgprs": [4, 5],
+                },
+                {
+                    "kind": "event",
+                    "name": "block_id",
+                    "c_type": "uint32_t",
+                    "size_bytes": 4,
+                    "vgprs": [6],
+                },
+            ],
+        }
+    ]
+}
+
+json.dump(plan, open(sys.argv[1], "w", encoding="utf-8"), indent=2)
+open(sys.argv[1], "a", encoding="utf-8").write("\n")
+json.dump(thunks, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
+open(sys.argv[2], "a", encoding="utf-8").write("\n")
+PY
+
+    if python3 "$INJECTOR" "$ir_fixture" \
+        --plan "$resume_plan_json" \
+        --thunk-manifest "$resume_thunk_json" \
+        --manifest "$manifest_fixture" \
+        --function "$function_name" \
+        --output "$out_ir" > "$OUTPUT_DIR/${test_name}.out" 2>&1; then
+        echo -e "  ${RED}✗ FAIL${NC} - ${arch} basic-block injector unexpectedly accepted an unsupported mid-kernel resume shape"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    else
+        if grep -q 'missing-private-segment-wave-offset-livein' "$OUTPUT_DIR/${test_name}.out"; then
+            echo -e "  ${GREEN}✓ PASS${NC} - ${arch} basic-block injector rejected kernels without the required private-segment resume facts"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            echo -e "  ${RED}✗ FAIL${NC} - ${arch} unsupported-resume rejection reason was incorrect"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    fi
+}
+
 run_basic_block_inject_test() {
     local arch="$1"
     local ir_fixture="$2"
@@ -734,6 +881,11 @@ assert spill["sgpr_spill_bytes"] == 104
 assert spill["private_segment_growth"] == 240
 assert spill["private_segment_pattern_class"] == "flat_scratch_alias_init"
 assert spill["private_segment_offset_source_sgpr"] == 11
+resume = meta["mid_kernel_resume_profile"]
+assert resume["supported"] is True
+assert resume["supported_class"] == "wave64-packed-v0-10_10_10-unpack-flat-scratch-alias-mid-kernel-private-spill-v1"
+assert resume["resume_requirements"]["spill_storage_class"] == "private_segment_tail"
+assert "runtime.site_snapshot" in resume["resume_requirements"]["helper_runtime_views"]
 sites = meta["injected_sites"]
 assert [site["block_id"] for site in sites] == [0]
 assert [site["start_address"] for site in sites] == [6400]
@@ -947,5 +1099,10 @@ run_entry_missing_helper_abi_rejection_test \
     "gfx942" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.ir.json" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.manifest.json"
+run_basic_block_resume_rejection_test \
+    "gfx942_single" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.manifest.json" \
+    "Cijk_S_GA"
 
 print_summary

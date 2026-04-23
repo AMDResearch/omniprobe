@@ -4,10 +4,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from copy import deepcopy
 from pathlib import Path
 
+from amdgpu_entry_abi import analyze_kernel_entry_abi
 from disasm_to_ir import build_basic_blocks
 from helper_abi_contract import validate_helper_abi_entry
+from mid_kernel_resume_profile import build_mid_kernel_resume_profile
 from plan_hidden_abi import build_kernel_plan
 
 MEMORY_ACCESS_PREFIXES = (
@@ -26,6 +29,24 @@ MEMORY_ACCESS_PREFIXES = (
     ("image_load", "load", "image"),
     ("image_store", "store", "image"),
 )
+
+ENTRY_ABI_RSRC2_FIELDS = (
+    "enable_sgpr_workgroup_id_x",
+    "enable_sgpr_workgroup_id_y",
+    "enable_sgpr_workgroup_id_z",
+    "enable_sgpr_workgroup_info",
+    "enable_vgpr_workitem_id",
+)
+
+ENTRY_ABI_KERNEL_CODE_FIELDS = (
+    "enable_sgpr_dispatch_ptr",
+    "enable_sgpr_queue_ptr",
+    "enable_sgpr_dispatch_id",
+)
+
+MID_KERNEL_WHENS = {"basic_block", "memory_op"}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -113,6 +134,11 @@ def kernel_records(manifest: dict) -> list[dict]:
     return [kernel for kernel in kernels if isinstance(kernel, dict)]
 
 
+def kernel_descriptor_records(manifest: dict) -> list[dict]:
+    descriptors = manifest.get("kernels", {}).get("descriptors", [])
+    return [descriptor for descriptor in descriptors if isinstance(descriptor, dict)]
+
+
 def function_records(ir: dict | None) -> list[dict]:
     if not isinstance(ir, dict):
         return []
@@ -147,6 +173,79 @@ def visible_kernel_args(kernel: dict) -> list[dict]:
             continue
         visible.append(arg)
     return visible
+
+
+def kernel_identity_values(kernel: dict) -> set[str]:
+    return {
+        str(field)
+        for field in (kernel.get("name"), kernel.get("symbol"))
+        if isinstance(field, str) and field
+    }
+
+
+def find_kernel_descriptor(manifest: dict, kernel: dict) -> dict | None:
+    identities = kernel_identity_values(kernel)
+    for descriptor in kernel_descriptor_records(manifest):
+        values = {
+            str(field)
+            for field in (descriptor.get("kernel_name"), descriptor.get("name"))
+            if isinstance(field, str) and field
+        }
+        if values & identities:
+            return descriptor
+    return None
+
+
+def source_entry_abi_from_descriptor(
+    descriptor: dict | None,
+    *,
+    function: dict | None,
+    kernel_metadata: dict | None,
+) -> dict:
+    if not isinstance(descriptor, dict):
+        return {}
+
+    payload: dict[str, object] = {}
+    compute_pgm_rsrc2 = descriptor.get("compute_pgm_rsrc2", {})
+    if isinstance(compute_pgm_rsrc2, dict):
+        payload["compute_pgm_rsrc2"] = {
+            field: int(compute_pgm_rsrc2.get(field, 0) or 0)
+            for field in ENTRY_ABI_RSRC2_FIELDS
+        }
+
+    kernel_code_properties = descriptor.get("kernel_code_properties", {})
+    if isinstance(kernel_code_properties, dict):
+        payload["kernel_code_properties"] = {
+            field: int(kernel_code_properties.get(field, 0) or 0)
+            for field in ENTRY_ABI_KERNEL_CODE_FIELDS
+        }
+
+    workitem_encoding = None
+    if isinstance(compute_pgm_rsrc2, dict):
+        encoded = compute_pgm_rsrc2.get("enable_vgpr_workitem_id")
+        if isinstance(encoded, int) and encoded >= 0:
+            workitem_encoding = encoded
+            payload["entry_workitem_vgpr_count"] = min(encoded + 1, 3)
+    if function is None:
+        return payload
+
+    analysis = analyze_kernel_entry_abi(
+        function=function,
+        descriptor=descriptor,
+        kernel_metadata=kernel_metadata,
+    )
+    analyzed_count = analysis.get("entry_workitem_vgpr_count")
+    if isinstance(analyzed_count, int):
+        payload["entry_workitem_vgpr_count"] = analyzed_count
+    if isinstance(analysis.get("entry_system_sgpr_roles"), list):
+        payload["entry_system_sgpr_roles"] = analysis.get("entry_system_sgpr_roles")
+    if isinstance(analysis.get("observed_workitem_id_materialization"), dict):
+        payload["observed_workitem_id_materialization"] = analysis.get(
+            "observed_workitem_id_materialization"
+        )
+    if workitem_encoding is not None and "entry_workitem_vgpr_count" not in payload:
+        payload["entry_workitem_vgpr_count"] = min(workitem_encoding + 1, 3)
+    return payload
 
 
 def match_selected_kernels(kernels: list[dict], selectors: list[str]) -> list[dict]:
@@ -255,6 +354,21 @@ def unsupported_site(entry: dict, kernel: dict, reason: str) -> dict:
         "kernel": kernel_name,
         "status": "unsupported",
         "reason": reason,
+    }
+
+
+def unsupported_planned_site(site: dict, kernel: dict, reason: str) -> dict:
+    kernel_name = kernel.get("name") or kernel.get("symbol")
+    return {
+        "probe_id": site.get("probe_id"),
+        "surrogate": site.get("surrogate"),
+        "helper": site.get("helper"),
+        "contract": site.get("contract"),
+        "when": site.get("when"),
+        "kernel": kernel_name,
+        "status": "unsupported",
+        "reason": reason,
+        "injection_point": deepcopy(site.get("injection_point", {})),
     }
 
 
@@ -631,11 +745,19 @@ def plan_entry_for_kernel(entry: dict, kernel: dict, function: dict | None) -> t
     ]
 
 
-def plan_kernel(kernel: dict, surrogates: list[dict], pointer_size: int, alignment: int, ir: dict | None) -> dict:
+def plan_kernel(
+    kernel: dict,
+    surrogates: list[dict],
+    pointer_size: int,
+    alignment: int,
+    ir: dict | None,
+    manifest: dict,
+) -> dict:
     hidden_plan = build_kernel_plan(kernel, pointer_size=pointer_size, alignment=alignment)
     planned_sites: list[dict] = []
     unsupported_sites: list[dict] = []
     function = find_kernel_function(ir, kernel)
+    descriptor = find_kernel_descriptor(manifest, kernel)
 
     for entry in surrogates:
         if not kernel_target_matches(entry, kernel):
@@ -644,7 +766,55 @@ def plan_kernel(kernel: dict, surrogates: list[dict], pointer_size: int, alignme
         planned_sites.extend(planned)
         unsupported_sites.extend(unsupported)
 
-    return {
+    source_entry_abi = source_entry_abi_from_descriptor(
+        descriptor,
+        function=function,
+        kernel_metadata=kernel,
+    )
+    mid_kernel_resume_profile = None
+    has_mid_kernel_sites = any(
+        str(site.get("when", "") or "") in MID_KERNEL_WHENS for site in planned_sites
+    )
+    if has_mid_kernel_sites and function is not None and isinstance(descriptor, dict):
+        entry_analysis = analyze_kernel_entry_abi(
+            function=function,
+            descriptor=descriptor,
+            kernel_metadata=kernel,
+        )
+        mid_kernel_resume_profile = build_mid_kernel_resume_profile(
+            function_name=str(function.get("name") or kernel.get("name") or kernel.get("symbol") or ""),
+            arch=ir.get("arch") if isinstance(ir, dict) else None,
+            analysis=entry_analysis,
+            descriptor=descriptor,
+            kernel_metadata=kernel,
+        )
+        supported = bool(mid_kernel_resume_profile.get("supported", False))
+        blockers = [
+            str(value)
+            for value in mid_kernel_resume_profile.get("blockers", [])
+            if isinstance(value, str) and value
+        ]
+        annotated_planned_sites: list[dict] = []
+        for site in planned_sites:
+            when = str(site.get("when", "") or "")
+            if when not in MID_KERNEL_WHENS:
+                annotated_planned_sites.append(site)
+                continue
+            if supported:
+                annotated_site = deepcopy(site)
+                annotated_site["mid_kernel_resume_profile"] = deepcopy(mid_kernel_resume_profile)
+                annotated_planned_sites.append(annotated_site)
+                continue
+            reason = "mid-kernel binary-safe resume is unsupported"
+            if blockers:
+                reason += f": {', '.join(blockers)}"
+            rejected_site = unsupported_planned_site(site, kernel, reason)
+            rejected_site["mid_kernel_resume_profile"] = deepcopy(mid_kernel_resume_profile)
+            rejected_site["blockers"] = blockers
+            unsupported_sites.append(rejected_site)
+        planned_sites = annotated_planned_sites
+
+    result = {
         "source_kernel": kernel.get("name") or kernel.get("symbol"),
         "source_symbol": kernel.get("symbol"),
         "clone_kernel": hidden_plan["hidden_abi_clone_name"],
@@ -654,6 +824,11 @@ def plan_kernel(kernel: dict, surrogates: list[dict], pointer_size: int, alignme
         "unsupported_sites": unsupported_sites,
         "notes": hidden_plan["notes"],
     }
+    if source_entry_abi:
+        result["source_entry_abi"] = source_entry_abi
+    if isinstance(mid_kernel_resume_profile, dict):
+        result["mid_kernel_resume_profile"] = mid_kernel_resume_profile
+    return result
 
 
 def render_plan(
@@ -679,6 +854,7 @@ def render_plan(
             pointer_size,
             alignment,
             ir,
+            manifest,
         )
         for kernel in selected_kernels
     ]

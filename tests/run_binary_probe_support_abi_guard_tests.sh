@@ -10,11 +10,15 @@ source "${SCRIPT_DIR}/test_common.sh"
 
 HIPCC="${HIPCC:-/opt/rocm/bin/hipcc}"
 LLVM_MC="${LLVM_MC:-/opt/rocm/llvm/bin/llvm-mc}"
+LLVM_OBJDUMP="${LLVM_OBJDUMP:-/opt/rocm/llvm/bin/llvm-objdump}"
 LD_LLD="${LD_LLD:-/opt/rocm/llvm/bin/ld.lld}"
 CLANG_OFFLOAD_BUNDLER="${CLANG_OFFLOAD_BUNDLER:-/opt/rocm/llvm/bin/clang-offload-bundler}"
 AMDGPU_ARCH_TOOL="${AMDGPU_ARCH_TOOL:-/opt/rocm/llvm/bin/amdgpu-arch}"
 if [ ! -x "$AMDGPU_ARCH_TOOL" ]; then
     AMDGPU_ARCH_TOOL="/opt/rocm/bin/amdgpu-arch"
+fi
+if [ ! -x "$LLVM_OBJDUMP" ] && [ -x "/opt/rocm/lib/llvm/bin/llvm-objdump" ]; then
+    LLVM_OBJDUMP="/opt/rocm/lib/llvm/bin/llvm-objdump"
 fi
 
 INSPECT_CODE_OBJECT="${REPO_ROOT}/tools/codeobj/inspect_code_object.py"
@@ -24,7 +28,7 @@ GENERATE_THUNKS="${REPO_ROOT}/tools/codeobj/generate_binary_probe_thunks.py"
 REGENERATE_CODE_OBJECT="${REPO_ROOT}/tools/codeobj/regenerate_code_object.py"
 DISASM_TO_IR="${REPO_ROOT}/tools/codeobj/disasm_to_ir.py"
 
-if [ ! -x "$HIPCC" ] || [ ! -x "$LLVM_MC" ] || [ ! -x "$LD_LLD" ] || [ ! -x "$CLANG_OFFLOAD_BUNDLER" ] || [ ! -x "$AMDGPU_ARCH_TOOL" ]; then
+if [ ! -x "$HIPCC" ] || [ ! -x "$LLVM_MC" ] || [ ! -x "$LLVM_OBJDUMP" ] || [ ! -x "$LD_LLD" ] || [ ! -x "$CLANG_OFFLOAD_BUNDLER" ] || [ ! -x "$AMDGPU_ARCH_TOOL" ]; then
     echo -e "${YELLOW}SKIP: Required ROCm toolchain components not found${NC}"
     export TESTS_RUN TESTS_PASSED TESTS_FAILED
     return 0 2>/dev/null || exit 0
@@ -208,6 +212,7 @@ run_regen() {
         --probe-plan "$plan_json" \
         --thunk-manifest "$thunk_manifest" \
         --hipcc "$HIPCC" \
+        --llvm-objdump "$LLVM_OBJDUMP" \
         --llvm-mc "$LLVM_MC" \
         --ld-lld "$LD_LLD" \
         --clang-offload-bundler "$CLANG_OFFLOAD_BUNDLER"
@@ -268,6 +273,10 @@ report = json.load(open(sys.argv[1], encoding="utf-8"))
 binary_probe = report.get("binary_probe", {})
 assert binary_probe.get("instrumentation_mode") == "binary-safe"
 assert binary_probe.get("abi_delta", {}).get("missing_features") == []
+resume = binary_probe.get("mid_kernel_resume_profile", {})
+assert resume.get("supported") is True
+assert "memory_op" in resume.get("supported_modes", [])
+assert resume.get("helper_policy", {}).get("compiler_generated_liveins_allowed") is False
 CHECK
 then
     echo -e "  ${GREEN}✓ PASS${NC} - Simple helper remained ABI-compatible with the source kernel"
@@ -338,6 +347,9 @@ binary_probe = report.get("binary_probe", {})
 assert binary_probe.get("instrumentation_mode") == "abi-changing-required"
 missing = binary_probe.get("abi_delta", {}).get("missing_features", [])
 assert any(entry.get("field") == "compute_pgm_rsrc2.enable_vgpr_workitem_id" for entry in missing)
+resume = binary_probe.get("mid_kernel_resume_profile", {})
+assert resume.get("supported") is True
+assert "memory_op" in resume.get("supported_modes", [])
 CHECK
 then
     echo -e "  ${GREEN}✓ PASS${NC} - ABI guard rejected a helper that requested unsupported entry state"
@@ -364,6 +376,7 @@ if python3 "$REGENERATE_CODE_OBJECT" \
     --probe-plan "$BROKEN_DIR/probe.plan.json" \
     --thunk-manifest "$BROKEN_DIR/probe.thunks.broken.json" \
     --hipcc "$HIPCC" \
+    --llvm-objdump "$LLVM_OBJDUMP" \
     --llvm-mc "$LLVM_MC" \
     --ld-lld "$LD_LLD" \
     --clang-offload-bundler "$CLANG_OFFLOAD_BUNDLER" >"$BROKEN_DIR/regen.log" 2>&1; then

@@ -90,13 +90,16 @@ run_suite "Entry handoff recipe" "${SCRIPT_DIR}/run_entry_handoff_recipe_tests.s
 # Suite 7: Entry resume matrix
 run_suite "Entry resume matrix" "${SCRIPT_DIR}/run_entry_resume_matrix_tests.sh"
 
-# Suite 8: Entry handoff stub
+# Suite 8: Mid-kernel resume matrix
+run_suite "Mid-kernel resume matrix" "${SCRIPT_DIR}/run_mid_kernel_resume_matrix_tests.sh"
+
+# Suite 9: Entry handoff stub
 run_suite "Entry handoff stub" "${SCRIPT_DIR}/run_entry_handoff_stub_tests.sh"
 
-# Suite 9: Binary probe injector
+# Suite 10: Binary probe injector
 run_suite "Binary probe injector" "${SCRIPT_DIR}/run_binary_probe_injector_tests.sh"
 
-# Suite 9: Binary probe support compile
+# Suite 11: Binary probe support compile
 run_suite "Binary probe support compile" "${SCRIPT_DIR}/run_binary_probe_support_compile_tests.sh"
 
 # Suite 10: Binary probe cache preparation

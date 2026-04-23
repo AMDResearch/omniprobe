@@ -18,6 +18,7 @@ from amdgpu_entry_abi import (
     entry_livein_sgprs as tracked_entry_livein_sgprs,
 )
 from helper_abi_contract import validate_helper_abi_entry
+from mid_kernel_resume_profile import build_mid_kernel_resume_profile
 
 
 def parse_args() -> argparse.Namespace:
@@ -1316,6 +1317,24 @@ def validate_planned_sites_helper_abi(sites: list[dict], *, mode: str) -> None:
         validate_helper_abi_entry(site, entry_kind=f"planned {mode} site")
 
 
+def require_supported_mid_kernel_resume_profile(
+    *,
+    function_name: str,
+    rewrite_mode: str,
+    profile: dict[str, Any],
+) -> None:
+    if bool(profile.get("supported")):
+        return
+    blockers = profile.get("blockers", [])
+    if not isinstance(blockers, list) or not blockers:
+        blockers = ["unsupported-mid-kernel-resume-profile"]
+    blocker_text = ", ".join(str(blocker) for blocker in blockers)
+    raise SystemExit(
+        f"function {function_name!r} does not satisfy {rewrite_mode} mid-kernel resume requirements: "
+        f"{blocker_text}"
+    )
+
+
 SUPPORTED_BINARY_HELPER_BUILTINS = {
     "grid_dim",
     "block_dim",
@@ -2292,6 +2311,18 @@ def inject_memory_stubs(
         descriptor=descriptor,
         kernel_metadata=kernel_metadata,
     )
+    mid_kernel_resume_profile = build_mid_kernel_resume_profile(
+        function_name=function_name,
+        arch=ir.get("arch"),
+        analysis=entry_analysis,
+        descriptor=descriptor,
+        kernel_metadata=kernel_metadata,
+    )
+    require_supported_mid_kernel_resume_profile(
+        function_name=function_name,
+        rewrite_mode="memory_op",
+        profile=mid_kernel_resume_profile,
+    )
     kernarg_base = analysis["inferred_kernarg_base"]
     if kernarg_base is None or not analysis.get("descriptor_has_kernarg_segment_ptr", False):
         raise SystemExit(
@@ -2443,6 +2474,7 @@ def inject_memory_stubs(
             "builtin_snapshot_sgpr_count": builtin_snapshot_plan["snapshot_sgpr_count"],
             "preserved_low_vgprs": spill_plan,
             "private_segment_growth": spill_plan["private_segment_growth"],
+            "mid_kernel_resume_profile": mid_kernel_resume_profile,
             "injected_sites": injected_sites,
             "total_sgprs": scalar_plan["total_sgprs"],
         }
@@ -2704,6 +2736,18 @@ def inject_basic_block_stubs(
         descriptor=descriptor,
         kernel_metadata=kernel_metadata,
     )
+    mid_kernel_resume_profile = build_mid_kernel_resume_profile(
+        function_name=function_name,
+        arch=ir.get("arch"),
+        analysis=entry_analysis,
+        descriptor=descriptor,
+        kernel_metadata=kernel_metadata,
+    )
+    require_supported_mid_kernel_resume_profile(
+        function_name=function_name,
+        rewrite_mode="basic_block",
+        profile=mid_kernel_resume_profile,
+    )
     kernarg_base = analysis["inferred_kernarg_base"]
     if kernarg_base is None or not analysis.get("descriptor_has_kernarg_segment_ptr", False):
         raise SystemExit(
@@ -2857,6 +2901,7 @@ def inject_basic_block_stubs(
             "builtin_snapshot_sgpr_count": builtin_snapshot_plan["snapshot_sgpr_count"],
             "preserved_low_vgprs": spill_plan,
             "private_segment_growth": spill_plan["private_segment_growth"],
+            "mid_kernel_resume_profile": mid_kernel_resume_profile,
             "injected_sites": injected_sites,
             "total_sgprs": scalar_plan["total_sgprs"],
         }

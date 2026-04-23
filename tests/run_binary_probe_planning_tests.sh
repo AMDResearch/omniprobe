@@ -19,6 +19,11 @@ MEMORY_SPEC="${SCRIPT_DIR}/probe_specs/memory_trace_v1.yaml"
 BASIC_BLOCK_SPEC="${SCRIPT_DIR}/probe_specs/basic_block_timing_v1.yaml"
 CALL_SPEC="${SCRIPT_DIR}/probe_specs/call_trace_v1.yaml"
 MEMORY_HELPER_SOURCE="${SCRIPT_DIR}/probe_specs/helpers/memory_trace.hip"
+BASIC_BLOCK_HELPER_SOURCE="${SCRIPT_DIR}/probe_specs/helpers/basic_block_timing.hip"
+ENTRY_ABI_GFX1030_MANIFEST="${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx1030.manifest.json"
+ENTRY_ABI_GFX1030_IR="${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx1030.ir.json"
+ENTRY_ABI_GFX942_SINGLE_MANIFEST="${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.manifest.json"
+ENTRY_ABI_GFX942_SINGLE_IR="${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.ir.json"
 
 echo ""
 echo "================================================================================"
@@ -152,6 +157,73 @@ else
 fi
 
 TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="binary_probe_plan_emits_source_entry_abi"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+ENTRY_ABI_MANIFEST="$OUTPUT_DIR/${TEST_NAME}.manifest.json"
+ENTRY_ABI_PLAN="$OUTPUT_DIR/${TEST_NAME}.json"
+
+if python3 - "$FIXTURE_MANIFEST" "$ENTRY_ABI_MANIFEST" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+payload["kernels"]["descriptors"] = [
+    {
+        "name": "simple_kernel.kd",
+        "kernel_name": "simple_kernel",
+        "compute_pgm_rsrc2": {
+            "enable_sgpr_workgroup_id_x": 1,
+            "enable_sgpr_workgroup_id_y": 0,
+            "enable_sgpr_workgroup_id_z": 0,
+            "enable_sgpr_workgroup_info": 0,
+            "enable_vgpr_workitem_id": 0,
+            "user_sgpr_count": 2
+        },
+        "kernel_code_properties": {
+            "enable_sgpr_kernarg_segment_ptr": 1,
+            "enable_sgpr_dispatch_id": 0
+        }
+    }
+]
+json.dump(payload, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
+open(sys.argv[2], "a", encoding="utf-8").write("\n")
+PY
+then
+    if python3 "$PLANNER" "$ENTRY_ABI_MANIFEST" \
+        --probe-bundle "$BUNDLE_JSON" \
+        --kernel simple_kernel \
+        --output "$ENTRY_ABI_PLAN" > "$OUTPUT_DIR/${TEST_NAME}.out"; then
+        if python3 - "$ENTRY_ABI_PLAN" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+kernel = payload["kernels"][0]
+entry_abi = kernel["source_entry_abi"]
+assert entry_abi["compute_pgm_rsrc2"]["enable_sgpr_workgroup_id_x"] == 1
+assert entry_abi["compute_pgm_rsrc2"]["enable_sgpr_workgroup_id_y"] == 0
+assert entry_abi["compute_pgm_rsrc2"]["enable_sgpr_workgroup_id_z"] == 0
+assert entry_abi["compute_pgm_rsrc2"]["enable_vgpr_workitem_id"] == 0
+assert entry_abi["entry_workitem_vgpr_count"] == 1
+assert entry_abi["kernel_code_properties"]["enable_sgpr_dispatch_id"] == 0
+PY
+        then
+            echo -e "  ${GREEN}✓ PASS${NC} - Planner includes source entry ABI shape for thunk generation"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            echo -e "  ${RED}✗ FAIL${NC} - Planner output did not contain the expected source_entry_abi payload"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Planner failed on manifest with descriptor-backed source entry ABI"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Could not generate descriptor-backed manifest fixture"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="binary_probe_generate_lifecycle_thunks"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
 THUNK_SOURCE="$OUTPUT_DIR/${TEST_NAME}.hip"
@@ -177,7 +249,7 @@ PY
            grep -q 'runtime.raw_hidden_ctx = hidden_ctx;' "$THUNK_SOURCE" && \
            grep -q 'runtime.entry_snapshot = &runtime_storage->entry_snapshot;' "$THUNK_SOURCE" && \
            grep -q 'runtime.dispatch_uniform = &runtime_storage->dispatch_uniform;' "$THUNK_SOURCE" && \
-           grep -q 'runtime.site_snapshot = &__omniprobe_site_snapshot;' "$THUNK_SOURCE" && \
+           grep -q 'runtime.site_snapshot = &__omniprobe_site_snapshot_storage;' "$THUNK_SOURCE" && \
            grep -q 'entry_snapshot->workgroup_x = static_cast<uint32_t>(blockIdx.x);' "$THUNK_SOURCE" && \
            grep -q 'entry_snapshot->timestamp = timestamp;' "$THUNK_SOURCE" && \
            grep -q 'captures.data = static_cast<uint64_t>(capture_data);' "$THUNK_SOURCE" && \
@@ -449,6 +521,189 @@ PY
     fi
 else
     echo -e "  ${RED}✗ FAIL${NC} - Memory-op thunk generation failed"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="binary_probe_plan_basic_block_gfx1030_mid_kernel_profile"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+GFX1030_SPEC="$OUTPUT_DIR/${TEST_NAME}.yaml"
+GFX1030_BUNDLE_DIR="$OUTPUT_DIR/${TEST_NAME}_bundle"
+GFX1030_BUNDLE_JSON="$GFX1030_BUNDLE_DIR/generated_probe_bundle.json"
+GFX1030_IR="$OUTPUT_DIR/${TEST_NAME}.ir.json"
+GFX1030_PLAN="$OUTPUT_DIR/${TEST_NAME}.json"
+rm -rf "$GFX1030_BUNDLE_DIR"
+mkdir -p "$GFX1030_BUNDLE_DIR"
+
+cat > "$GFX1030_SPEC" <<YAML
+version: 1
+
+helpers:
+  source: ${BASIC_BLOCK_HELPER_SOURCE}
+  namespace: omniprobe_user
+
+defaults:
+  emission: scalar
+  lane_headers: false
+  state: none
+
+probes:
+  - id: gfx1030_mid_kernel_profile
+    target:
+      kernels: ["entry_abi_kernel"]
+    inject:
+      when: basic_block
+      helper: basic_block_timing_probe
+      contract: basic_block_v1
+    payload:
+      mode: scalar
+      message: time_interval
+    capture:
+      builtins: [dispatch_id]
+YAML
+
+if ! python3 - "$ENTRY_ABI_GFX1030_IR" "$GFX1030_IR" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+fn = payload["functions"][0]
+instructions = fn["instructions"]
+start = int(instructions[0]["address"])
+mid = int(instructions[8]["address"])
+end = int(instructions[-1]["address"]) + 4
+fn["start_address"] = start
+fn["end_address"] = end
+fn["basic_blocks"] = [
+    {
+        "id": 0,
+        "label": "bb0",
+        "start_address": start,
+        "end_address": mid,
+    },
+    {
+        "id": 1,
+        "label": "bb1",
+        "start_address": mid,
+        "end_address": end,
+    },
+]
+json.dump(payload, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
+open(sys.argv[2], "a", encoding="utf-8").write("\n")
+PY
+then
+    echo -e "  ${RED}✗ FAIL${NC} - Could not materialize gfx1030 CFG-backed IR fixture"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+elif python3 "$PREPARE_BUNDLE" "$GFX1030_SPEC" \
+    --output-dir "$GFX1030_BUNDLE_DIR" \
+    --skip-compile > "$OUTPUT_DIR/${TEST_NAME}.bundle.out" && \
+   python3 "$PLANNER" "$ENTRY_ABI_GFX1030_MANIFEST" \
+      --ir "$GFX1030_IR" \
+      --probe-bundle "$GFX1030_BUNDLE_JSON" \
+      --kernel entry_abi_kernel \
+      --output "$GFX1030_PLAN" > "$OUTPUT_DIR/${TEST_NAME}.out"; then
+    if python3 - "$GFX1030_PLAN" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["supported"] is True
+assert payload["unsupported_site_count"] == 0
+kernel = payload["kernels"][0]
+resume = kernel["mid_kernel_resume_profile"]
+assert resume["supported"] is True
+assert resume["supported_class"] == "wave32-direct-vgpr-xyz-setreg-flat-scratch-mid-kernel-private-spill-v1"
+assert "basic_block" in resume["supported_modes"]
+assert len(kernel["planned_sites"]) == 1
+site_resume = kernel["planned_sites"][0]["mid_kernel_resume_profile"]
+assert site_resume["supported_class"] == resume["supported_class"]
+assert site_resume["helper_policy"]["compiler_generated_liveins_allowed"] is False
+PY
+    then
+        echo -e "  ${GREEN}✓ PASS${NC} - Planner attaches descriptor-backed gfx1030 mid-kernel resume classes to supported basic-block sites"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - gfx1030 mid-kernel resume profile planning content was incorrect"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - gfx1030 mid-kernel profile planning unexpectedly failed"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="binary_probe_plan_basic_block_gfx942_rejects_unsupported_mid_kernel_profile"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+GFX942_SPEC="$OUTPUT_DIR/${TEST_NAME}.yaml"
+GFX942_BUNDLE_DIR="$OUTPUT_DIR/${TEST_NAME}_bundle"
+GFX942_BUNDLE_JSON="$GFX942_BUNDLE_DIR/generated_probe_bundle.json"
+GFX942_PLAN="$OUTPUT_DIR/${TEST_NAME}.json"
+rm -rf "$GFX942_BUNDLE_DIR"
+mkdir -p "$GFX942_BUNDLE_DIR"
+
+cat > "$GFX942_SPEC" <<YAML
+version: 1
+
+helpers:
+  source: ${BASIC_BLOCK_HELPER_SOURCE}
+  namespace: omniprobe_user
+
+defaults:
+  emission: scalar
+  lane_headers: false
+  state: none
+
+probes:
+  - id: gfx942_mid_kernel_profile
+    target:
+      kernels: ["Cijk_S_GA"]
+    inject:
+      when: basic_block
+      helper: basic_block_timing_probe
+      contract: basic_block_v1
+    payload:
+      mode: scalar
+      message: time_interval
+    capture:
+      builtins: [dispatch_id]
+YAML
+
+if python3 "$PREPARE_BUNDLE" "$GFX942_SPEC" \
+    --output-dir "$GFX942_BUNDLE_DIR" \
+    --skip-compile > "$OUTPUT_DIR/${TEST_NAME}.bundle.out"; then
+    if python3 "$PLANNER" "$ENTRY_ABI_GFX942_SINGLE_MANIFEST" \
+        --ir "$ENTRY_ABI_GFX942_SINGLE_IR" \
+        --probe-bundle "$GFX942_BUNDLE_JSON" \
+        --kernel Cijk_S_GA \
+        --output "$GFX942_PLAN" > "$OUTPUT_DIR/${TEST_NAME}.out" 2>&1; then
+        echo -e "  ${RED}✗ FAIL${NC} - Planner unexpectedly accepted an unsupported gfx942 mid-kernel resume shape"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    elif python3 - "$GFX942_PLAN" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["supported"] is False
+assert payload["planned_site_count"] == 0
+assert payload["unsupported_site_count"] > 0
+kernel = payload["kernels"][0]
+resume = kernel["mid_kernel_resume_profile"]
+assert resume["supported"] is False
+assert resume["supported_class"] is None
+assert "missing-private-segment-wave-offset-livein" in resume["blockers"]
+first = kernel["unsupported_sites"][0]
+assert first["when"] == "basic_block"
+assert "missing-private-segment-wave-offset-livein" in first["reason"]
+PY
+    then
+        echo -e "  ${GREEN}✓ PASS${NC} - Planner fail-closed rejected unsupported gfx942 mid-kernel resume sites before injection"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Unsupported gfx942 mid-kernel resume rejection details were incorrect"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Could not generate gfx942 mid-kernel profile probe bundle"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 

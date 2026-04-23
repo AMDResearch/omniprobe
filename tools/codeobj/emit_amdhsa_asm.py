@@ -467,6 +467,16 @@ def infer_resource_reservations(function: dict, kernel_metadata: dict) -> dict:
     }
 
 
+def uses_cdna_kernel_directives(arch: str | None) -> bool:
+    return isinstance(arch, str) and arch.startswith("gfx94")
+
+
+def align_up(value: int, alignment: int) -> int:
+    if alignment <= 0:
+        return value
+    return ((value + alignment - 1) // alignment) * alignment
+
+
 def explicit_next_free_vgpr(kernel_metadata: dict, descriptor: dict) -> int:
     granulated = descriptor.get("compute_pgm_rsrc1", {}).get("granulated_workitem_vgpr_count")
     if isinstance(granulated, int):
@@ -493,6 +503,7 @@ def render_kernel_descriptor(
     kernel_metadata: dict,
     descriptor_symbol: dict | None,
     preserve_descriptor_bytes: bool,
+    arch: str | None,
 ) -> list[str]:
     if preserve_descriptor_bytes and descriptor.get("bytes_hex"):
         descriptor_name = descriptor.get("name", f"{function['name']}.kd")
@@ -523,6 +534,7 @@ def render_kernel_descriptor(
     descriptor_name = descriptor.get("name", f"{function['name']}.kd")
     next_free_vgpr = explicit_next_free_vgpr(kernel_metadata, descriptor)
     next_free_sgpr = explicit_next_free_sgpr(kernel_metadata, descriptor)
+    is_cdna = uses_cdna_kernel_directives(arch)
 
     lines = [
         ".rodata",
@@ -530,61 +542,101 @@ def render_kernel_descriptor(
     ]
     lines.extend(emit_binding(descriptor_name, descriptor_symbol))
     lines.extend(emit_visibility(descriptor_name, descriptor_symbol))
-    lines.extend([
-        f".amdhsa_kernel {function['name']}",
-        f"  .amdhsa_group_segment_fixed_size {descriptor.get('group_segment_fixed_size', 0)}",
-        f"  .amdhsa_private_segment_fixed_size {descriptor.get('private_segment_fixed_size', 0)}",
-        f"  .amdhsa_kernarg_size {descriptor.get('kernarg_size', 0)}",
-        f"  .amdhsa_float_round_mode_32 {rsrc1.get('float_round_mode_32', 0)}",
-        f"  .amdhsa_float_round_mode_16_64 {rsrc1.get('float_round_mode_16_64', 0)}",
-        f"  .amdhsa_float_denorm_mode_32 {rsrc1.get('float_denorm_mode_32', 0)}",
-        f"  .amdhsa_float_denorm_mode_16_64 {rsrc1.get('float_denorm_mode_16_64', 0)}",
-        f"  .amdhsa_dx10_clamp {rsrc1.get('enable_dx10_clamp', 0)}",
-        f"  .amdhsa_ieee_mode {rsrc1.get('enable_ieee_mode', 0)}",
-        f"  .amdhsa_fp16_overflow {rsrc1.get('fp16_overflow', 0)}",
-        f"  .amdhsa_workgroup_processor_mode {rsrc1.get('workgroup_processor_mode', 0)}",
-        f"  .amdhsa_memory_ordered {rsrc1.get('memory_ordered', 0)}",
-        f"  .amdhsa_forward_progress {rsrc1.get('forward_progress', 0)}",
-        f"  .amdhsa_user_sgpr_private_segment_buffer {properties.get('enable_sgpr_private_segment_buffer', 0)}",
-        f"  .amdhsa_user_sgpr_dispatch_ptr {properties.get('enable_sgpr_dispatch_ptr', 0)}",
-        f"  .amdhsa_user_sgpr_queue_ptr {properties.get('enable_sgpr_queue_ptr', 0)}",
-        f"  .amdhsa_user_sgpr_kernarg_segment_ptr {properties.get('enable_sgpr_kernarg_segment_ptr', 0)}",
-        f"  .amdhsa_user_sgpr_dispatch_id {properties.get('enable_sgpr_dispatch_id', 0)}",
-        f"  .amdhsa_user_sgpr_flat_scratch_init {properties.get('enable_sgpr_flat_scratch_init', 0)}",
-        f"  .amdhsa_user_sgpr_private_segment_size {properties.get('enable_sgpr_private_segment_size', 0)}",
-        f"  .amdhsa_system_sgpr_workgroup_id_x {rsrc2.get('enable_sgpr_workgroup_id_x', 0)}",
-        f"  .amdhsa_system_sgpr_workgroup_id_y {rsrc2.get('enable_sgpr_workgroup_id_y', 0)}",
-        f"  .amdhsa_system_sgpr_workgroup_id_z {rsrc2.get('enable_sgpr_workgroup_id_z', 0)}",
-        f"  .amdhsa_system_sgpr_workgroup_info {rsrc2.get('enable_sgpr_workgroup_info', 0)}",
-        f"  .amdhsa_system_sgpr_private_segment_wavefront_offset {rsrc2.get('enable_private_segment', 0)}",
-        f"  .amdhsa_system_vgpr_workitem_id {rsrc2.get('enable_vgpr_workitem_id', 0)}",
-        f"  .amdhsa_user_sgpr_count {rsrc2.get('user_sgpr_count', 0)}",
-        f"  .amdhsa_exception_fp_ieee_invalid_op {rsrc2.get('exception_fp_ieee_invalid_op', 0)}",
-        f"  .amdhsa_exception_fp_denorm_src {rsrc2.get('exception_fp_denorm_src', 0)}",
-        f"  .amdhsa_exception_fp_ieee_div_zero {rsrc2.get('exception_fp_ieee_div_zero', 0)}",
-        f"  .amdhsa_exception_fp_ieee_overflow {rsrc2.get('exception_fp_ieee_overflow', 0)}",
-        f"  .amdhsa_exception_fp_ieee_underflow {rsrc2.get('exception_fp_ieee_underflow', 0)}",
-        f"  .amdhsa_exception_fp_ieee_inexact {rsrc2.get('exception_fp_ieee_inexact', 0)}",
-        f"  .amdhsa_exception_int_div_zero {rsrc2.get('exception_int_div_zero', 0)}",
-        f"  .amdhsa_next_free_vgpr {next_free_vgpr}",
-        f"  .amdhsa_next_free_sgpr {next_free_sgpr}",
-        f"  .amdhsa_reserve_vcc {reservations['reserve_vcc']}",
-        f"  .amdhsa_reserve_flat_scratch {reservations['reserve_flat_scratch']}",
-    ])
+    lines.extend(
+        [
+            f".amdhsa_kernel {function['name']}",
+            f"  .amdhsa_group_segment_fixed_size {descriptor.get('group_segment_fixed_size', 0)}",
+            f"  .amdhsa_private_segment_fixed_size {descriptor.get('private_segment_fixed_size', 0)}",
+            f"  .amdhsa_kernarg_size {descriptor.get('kernarg_size', 0)}",
+            f"  .amdhsa_user_sgpr_count {rsrc2.get('user_sgpr_count', 0)}",
+        ]
+    )
+    if not is_cdna:
+        lines.append(
+            f"  .amdhsa_user_sgpr_private_segment_buffer {properties.get('enable_sgpr_private_segment_buffer', 0)}"
+        )
+    lines.extend(
+        [
+            f"  .amdhsa_user_sgpr_dispatch_ptr {properties.get('enable_sgpr_dispatch_ptr', 0)}",
+            f"  .amdhsa_user_sgpr_queue_ptr {properties.get('enable_sgpr_queue_ptr', 0)}",
+            f"  .amdhsa_user_sgpr_kernarg_segment_ptr {properties.get('enable_sgpr_kernarg_segment_ptr', 0)}",
+            f"  .amdhsa_user_sgpr_dispatch_id {properties.get('enable_sgpr_dispatch_id', 0)}",
+        ]
+    )
+    if is_cdna:
+        lines.extend(
+            [
+                "  .amdhsa_user_sgpr_kernarg_preload_length "
+                f"{properties.get('kernarg_preload_spec_length', 0)}",
+                "  .amdhsa_user_sgpr_kernarg_preload_offset "
+                f"{properties.get('kernarg_preload_spec_offset', 0)}",
+            ]
+        )
+    else:
+        lines.append(
+            f"  .amdhsa_user_sgpr_flat_scratch_init {properties.get('enable_sgpr_flat_scratch_init', 0)}"
+        )
+    lines.append(
+        f"  .amdhsa_user_sgpr_private_segment_size {properties.get('enable_sgpr_private_segment_size', 0)}"
+    )
     if properties.get("enable_wavefront_size32", 0):
         lines.append("  .amdhsa_wavefront_size32 1")
-    if properties.get("uses_dynamic_stack", 0):
-        lines.append("  .amdhsa_uses_dynamic_stack 1")
-    if properties.get("kernarg_preload_spec_length", 0):
+    lines.append(f"  .amdhsa_uses_dynamic_stack {properties.get('uses_dynamic_stack', 0)}")
+    if is_cdna:
+        lines.append(f"  .amdhsa_enable_private_segment {rsrc2.get('enable_private_segment', 0)}")
+    else:
         lines.append(
-            "  .amdhsa_user_sgpr_kernarg_preload_length "
-            f"{properties.get('kernarg_preload_spec_length', 0)}"
+            f"  .amdhsa_system_sgpr_private_segment_wavefront_offset {rsrc2.get('enable_private_segment', 0)}"
         )
-    if properties.get("kernarg_preload_spec_offset", 0):
-        lines.append(
-            "  .amdhsa_user_sgpr_kernarg_preload_offset "
-            f"{properties.get('kernarg_preload_spec_offset', 0)}"
+    lines.extend(
+        [
+            f"  .amdhsa_system_sgpr_workgroup_id_x {rsrc2.get('enable_sgpr_workgroup_id_x', 0)}",
+            f"  .amdhsa_system_sgpr_workgroup_id_y {rsrc2.get('enable_sgpr_workgroup_id_y', 0)}",
+            f"  .amdhsa_system_sgpr_workgroup_id_z {rsrc2.get('enable_sgpr_workgroup_id_z', 0)}",
+            f"  .amdhsa_system_sgpr_workgroup_info {rsrc2.get('enable_sgpr_workgroup_info', 0)}",
+            f"  .amdhsa_system_vgpr_workitem_id {rsrc2.get('enable_vgpr_workitem_id', 0)}",
+            f"  .amdhsa_next_free_vgpr {next_free_vgpr}",
+            f"  .amdhsa_next_free_sgpr {next_free_sgpr}",
+        ]
+    )
+    if is_cdna:
+        lines.append(f"  .amdhsa_accum_offset {max(4, align_up(next_free_vgpr, 4))}")
+    lines.append(f"  .amdhsa_reserve_vcc {reservations['reserve_vcc']}")
+    if not is_cdna:
+        lines.append(f"  .amdhsa_reserve_flat_scratch {reservations['reserve_flat_scratch']}")
+    lines.extend(
+        [
+            f"  .amdhsa_float_round_mode_32 {rsrc1.get('float_round_mode_32', 0)}",
+            f"  .amdhsa_float_round_mode_16_64 {rsrc1.get('float_round_mode_16_64', 0)}",
+            f"  .amdhsa_float_denorm_mode_32 {rsrc1.get('float_denorm_mode_32', 0)}",
+            f"  .amdhsa_float_denorm_mode_16_64 {rsrc1.get('float_denorm_mode_16_64', 0)}",
+            f"  .amdhsa_dx10_clamp {rsrc1.get('enable_dx10_clamp', 0)}",
+            f"  .amdhsa_ieee_mode {rsrc1.get('enable_ieee_mode', 0)}",
+            f"  .amdhsa_fp16_overflow {rsrc1.get('fp16_overflow', 0)}",
+        ]
+    )
+    if is_cdna:
+        lines.append(f"  .amdhsa_tg_split {rsrc1.get('workgroup_processor_mode', 0)}")
+    else:
+        lines.extend(
+            [
+                f"  .amdhsa_workgroup_processor_mode {rsrc1.get('workgroup_processor_mode', 0)}",
+                f"  .amdhsa_memory_ordered {rsrc1.get('memory_ordered', 0)}",
+                f"  .amdhsa_forward_progress {rsrc1.get('forward_progress', 0)}",
+                f"  .amdhsa_shared_vgpr_count {rsrc3.get('shared_vgpr_count', 0)}",
+            ]
         )
+    lines.extend(
+        [
+            f"  .amdhsa_exception_fp_ieee_invalid_op {rsrc2.get('exception_fp_ieee_invalid_op', 0)}",
+            f"  .amdhsa_exception_fp_denorm_src {rsrc2.get('exception_fp_denorm_src', 0)}",
+            f"  .amdhsa_exception_fp_ieee_div_zero {rsrc2.get('exception_fp_ieee_div_zero', 0)}",
+            f"  .amdhsa_exception_fp_ieee_overflow {rsrc2.get('exception_fp_ieee_overflow', 0)}",
+            f"  .amdhsa_exception_fp_ieee_underflow {rsrc2.get('exception_fp_ieee_underflow', 0)}",
+            f"  .amdhsa_exception_fp_ieee_inexact {rsrc2.get('exception_fp_ieee_inexact', 0)}",
+            f"  .amdhsa_exception_int_div_zero {rsrc2.get('exception_int_div_zero', 0)}",
+        ]
+    )
     if rsrc3.get("inst_pref_size", 0):
         lines.append(f"  .amdhsa_inst_pref_size {rsrc3.get('inst_pref_size', 0)}")
     lines.append(".end_amdhsa_kernel")
@@ -839,6 +891,7 @@ def main() -> int:
                     descriptor_symbol,
                     args.preserve_descriptor_bytes
                     and descriptor.get("name") not in descriptor_regen_names,
+                    ir.get("arch"),
                 )
             )
             if args.function and function["name"] == args.function:

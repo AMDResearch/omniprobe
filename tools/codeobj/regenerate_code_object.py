@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import struct
 import shutil
@@ -263,11 +264,11 @@ def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def reject_unsupported_binary_probe_sites(probe_plan: dict, *, kernel_name: str) -> None:
+def find_probe_kernel_plan(probe_plan: dict, *, kernel_name: str) -> dict | None:
     kernels = probe_plan.get("kernels", [])
     if not isinstance(kernels, list):
-        return
-    kernel_plan = next(
+        return None
+    return next(
         (
             entry
             for entry in kernels
@@ -280,8 +281,45 @@ def reject_unsupported_binary_probe_sites(probe_plan: dict, *, kernel_name: str)
         ),
         None,
     )
+
+
+def reject_unsupported_binary_probe_sites(probe_plan: dict, *, kernel_name: str) -> None:
+    kernel_plan = find_probe_kernel_plan(probe_plan, kernel_name=kernel_name)
     if not isinstance(kernel_plan, dict):
         return
+    unsupported_sites = [
+        entry
+        for entry in kernel_plan.get("unsupported_sites", [])
+        if isinstance(entry, dict)
+    ]
+    if unsupported_sites:
+        reasons: list[str] = []
+        for site in unsupported_sites:
+            when = str(site.get("when", "") or "")
+            reason = str(site.get("reason", "unsupported binary probe site") or "unsupported binary probe site")
+            if when:
+                reasons.append(f"{when}: {reason}")
+            else:
+                reasons.append(reason)
+        detail = "; ".join(dict.fromkeys(reasons))
+        raise SystemExit(
+            f"binary probe plan contains unsupported sites for kernel {kernel_name!r}: {detail}"
+        )
+    mid_kernel_resume_profile = kernel_plan.get("mid_kernel_resume_profile")
+    if isinstance(mid_kernel_resume_profile, dict) and not bool(
+        mid_kernel_resume_profile.get("supported", False)
+    ):
+        blockers = [
+            str(value)
+            for value in mid_kernel_resume_profile.get("blockers", [])
+            if isinstance(value, str) and value
+        ]
+        reason = "mid-kernel binary-safe resume is unsupported"
+        if blockers:
+            reason += f": {', '.join(blockers)}"
+        raise SystemExit(
+            f"binary probe plan marks kernel {kernel_name!r} unsupported for mid-kernel insertion: {reason}"
+        )
     for site in kernel_plan.get("planned_sites", []):
         if not isinstance(site, dict):
             continue
@@ -3639,18 +3677,43 @@ def format_support_wrapper_abi_incompatibility(*, clone_kernel: str, abi_delta: 
     )
 
 
-def resolve_llvm_objdump() -> str:
+def resolve_llvm_objdump(*, explicit: str | None = None, hipcc: str | None = None) -> str:
+    if explicit:
+        return explicit
+    env_value = os.environ.get("LLVM_OBJDUMP")
+    if env_value:
+        return env_value
+    hipcc_candidates: list[str] = []
+    if hipcc:
+        hipcc_candidates.append(hipcc)
+    env_hipcc = os.environ.get("HIPCC")
+    if env_hipcc:
+        hipcc_candidates.append(env_hipcc)
+    for hipcc_candidate in hipcc_candidates:
+        hipcc_path = Path(hipcc_candidate).expanduser()
+        for root in hipcc_path.parents:
+            tool_path = root / "lib/llvm/bin/llvm-objdump"
+            if tool_path.exists():
+                return str(tool_path)
     discovered = shutil.which("llvm-objdump")
     if discovered:
         return discovered
     rocm_candidate = Path("/opt/rocm/llvm/bin/llvm-objdump")
     if rocm_candidate.exists():
         return str(rocm_candidate)
+    rocm_lib_candidate = Path("/opt/rocm/lib/llvm/bin/llvm-objdump")
+    if rocm_lib_candidate.exists():
+        return str(rocm_lib_candidate)
     raise SystemExit("llvm-objdump is required to inspect binary probe support register usage")
 
 
-def inspect_amdgpu_object_register_footprint(object_path: Path) -> dict[str, int]:
-    command = [resolve_llvm_objdump(), "-d", str(object_path)]
+def inspect_amdgpu_object_register_footprint(
+    object_path: Path,
+    *,
+    llvm_objdump: str | None = None,
+    hipcc: str | None = None,
+) -> dict[str, int]:
+    command = [resolve_llvm_objdump(explicit=llvm_objdump, hipcc=hipcc), "-d", str(object_path)]
     completed = subprocess.run(command, check=True, capture_output=True, text=True)
     max_vgpr = -1
     max_sgpr = -1
@@ -3879,6 +3942,7 @@ def main() -> int:
         extra_link_objects: list[Path] = []
         binary_probe_mode: str | None = None
         binary_probe_abi_delta: dict | None = None
+        binary_probe_mid_kernel_resume_profile: dict | None = None
         support_wrapper_footprint_report: dict | None = None
         support_object_footprint_report: dict | None = None
         mutation_modes = [
@@ -4310,17 +4374,58 @@ def main() -> int:
             if bool(args.probe_plan) != bool(args.thunk_manifest):
                 raise SystemExit("--probe-plan and --thunk-manifest must be provided together")
             if args.probe_plan and args.thunk_manifest:
-                reject_unsupported_binary_probe_sites(
-                    load_json(Path(args.probe_plan).resolve()),
+                probe_plan_path = Path(args.probe_plan).resolve()
+                probe_plan_payload = load_json(probe_plan_path)
+                probe_kernel_plan = find_probe_kernel_plan(
+                    probe_plan_payload,
                     kernel_name=kernel_name,
                 )
+                if isinstance(probe_kernel_plan, dict):
+                    profile = probe_kernel_plan.get("mid_kernel_resume_profile")
+                    if isinstance(profile, dict):
+                        binary_probe_mid_kernel_resume_profile = deepcopy(profile)
+                try:
+                    reject_unsupported_binary_probe_sites(
+                        probe_plan_payload,
+                        kernel_name=kernel_name,
+                    )
+                except SystemExit:
+                    if report_path is not None:
+                        partial_report = {
+                            "operation": "whole-object-regeneration-scaffold",
+                            "scope": "single-kernel-noop",
+                            "input_code_object": str(input_path) if input_path else None,
+                            "input_ir_source": str(input_ir_path) if input_ir_path else None,
+                            "output_code_object": str(output_path),
+                            "mode": args.mode,
+                            "kernel_name": kernel_name,
+                            "kernel_count": len(model.kernel_names()),
+                            "primary_kernel_count": primary_kernel_count,
+                            "manifest": str(working_manifest_path),
+                            "asm_manifest": str(asm_manifest_path),
+                            "ir": str(ir_path),
+                            "asm": str(asm_path),
+                            "object": str(obj_path),
+                            "rebuild_report": str(rebuild_report_path),
+                            "temp_dir": str(temp_dir_path),
+                            "clone_result": clone_result,
+                            "binary_probe": {},
+                        }
+                        if binary_probe_mid_kernel_resume_profile is not None:
+                            partial_report["binary_probe"][
+                                "mid_kernel_resume_profile"
+                            ] = binary_probe_mid_kernel_resume_profile
+                        report_path.write_text(
+                            json.dumps(partial_report, indent=2) + "\n", encoding="utf-8"
+                        )
+                    raise
                 inject_tool = tool_dir / "inject_probe_calls.py"
                 inject_command = [
                     args.python,
                     str(inject_tool),
                     str(ir_path),
                     "--plan",
-                    str(Path(args.probe_plan).resolve()),
+                    str(probe_plan_path),
                     "--thunk-manifest",
                     str(Path(args.thunk_manifest).resolve()),
                     "--manifest",
@@ -4347,6 +4452,9 @@ def main() -> int:
                     or instrumentation_map.get("lifecycle_entry_stub")
                     or instrumentation_map.get("lifecycle_exit_stub", {})
                 )
+                instrumentation_profile = instrumentation.get("mid_kernel_resume_profile")
+                if isinstance(instrumentation_profile, dict):
+                    binary_probe_mid_kernel_resume_profile = instrumentation_profile
                 total_probe_sgprs = int(instrumentation.get("total_sgprs", 0) or 0)
                 total_probe_vgprs = int(instrumentation.get("total_vgprs", 0) or 0)
                 private_segment_growth = int(instrumentation.get("private_segment_growth", 0) or 0)
@@ -4435,7 +4543,11 @@ def main() -> int:
                         args=args,
                         tool_dir=tool_dir,
                     )
-                    support_footprint = inspect_amdgpu_object_register_footprint(support_object_path)
+                    support_footprint = inspect_amdgpu_object_register_footprint(
+                        support_object_path,
+                        llvm_objdump=args.llvm_objdump,
+                        hipcc=args.hipcc,
+                    )
                     support_wrapper_footprint = inspect_probe_support_wrapper_footprint(
                         thunk_manifest_path=Path(args.thunk_manifest).resolve(),
                         arch=arch,
@@ -4484,6 +4596,10 @@ def main() -> int:
                                     "abi_delta": binary_probe_abi_delta,
                                 },
                             }
+                            if binary_probe_mid_kernel_resume_profile is not None:
+                                partial_report["binary_probe"][
+                                    "mid_kernel_resume_profile"
+                                ] = binary_probe_mid_kernel_resume_profile
                             report_path.write_text(
                                 json.dumps(partial_report, indent=2) + "\n", encoding="utf-8"
                             )
@@ -4664,6 +4780,10 @@ def main() -> int:
                 "support_wrapper_footprint": support_wrapper_footprint_report,
                 "abi_delta": binary_probe_abi_delta,
             }
+            if binary_probe_mid_kernel_resume_profile is not None:
+                report["binary_probe"]["mid_kernel_resume_profile"] = (
+                    binary_probe_mid_kernel_resume_profile
+                )
         if extra_link_objects:
             report["extra_link_objects"] = [str(path) for path in extra_link_objects]
         if report_path is not None:

@@ -125,6 +125,76 @@ def probe_helper_namespace(bundle: dict) -> str | None:
     return str(namespace) if isinstance(namespace, str) and namespace else None
 
 
+def requested_helper_builtins(site: dict) -> set[str]:
+    helper_context = site.get("helper_context", {})
+    if not isinstance(helper_context, dict):
+        return set()
+    builtins = helper_context.get("builtins", [])
+    if not isinstance(builtins, list):
+        return set()
+    return {
+        str(name)
+        for name in builtins
+        if isinstance(name, str) and name
+    }
+
+
+def source_entry_abi(kernel: dict) -> dict:
+    payload = kernel.get("source_entry_abi", {})
+    return payload if isinstance(payload, dict) else {}
+
+
+def source_rsrc2(kernel: dict) -> dict:
+    payload = source_entry_abi(kernel).get("compute_pgm_rsrc2", {})
+    return payload if isinstance(payload, dict) else {}
+
+
+def source_workgroup_id_available(kernel: dict, component: str) -> bool:
+    value = source_rsrc2(kernel).get(f"enable_sgpr_workgroup_id_{component}")
+    if isinstance(value, int):
+        return value != 0
+    return True
+
+
+def source_workitem_vgpr_count(kernel: dict) -> int:
+    payload = source_entry_abi(kernel)
+    count = payload.get("entry_workitem_vgpr_count")
+    if isinstance(count, int):
+        return max(0, min(3, count))
+    encoded = source_rsrc2(kernel).get("enable_vgpr_workitem_id")
+    if isinstance(encoded, int) and encoded >= 0:
+        return min(encoded + 1, 3)
+    return 3
+
+
+def source_thread_component_available(kernel: dict, component: str) -> bool:
+    required = {"x": 1, "y": 2, "z": 3}.get(component, 1)
+    return source_workitem_vgpr_count(kernel) >= required
+
+
+def dispatch_origin_guard_lines(kernel: dict) -> list[str]:
+    conditions = ["blockIdx.x == 0"]
+    if source_workgroup_id_available(kernel, "y"):
+        conditions.append("blockIdx.y == 0")
+    if source_workgroup_id_available(kernel, "z"):
+        conditions.append("blockIdx.z == 0")
+    if source_thread_component_available(kernel, "x"):
+        conditions.append("threadIdx.x == 0")
+    if source_thread_component_available(kernel, "y"):
+        conditions.append("threadIdx.y == 0")
+    if source_thread_component_available(kernel, "z"):
+        conditions.append("threadIdx.z == 0")
+    conditions.append("__omniprobe_lane_id == 0")
+    if len(conditions) <= 3:
+        return [f"  if (!({' && '.join(conditions)})) {{"]
+    first = " && ".join(conditions[:3])
+    second = " && ".join(conditions[3:])
+    return [
+        f"  if (!({first} &&",
+        f"        {second})) {{",
+    ]
+
+
 def render_binding_line(binding: dict, captures_type: str, field: dict) -> str:
     requested_name = sanitize_identifier(str(field.get("name", "value")))
     field_type = cpp_type_for_field(field)
@@ -245,14 +315,12 @@ def render_site_event_unpack_lines(contract: str) -> list[str]:
     ]
 
 
-def render_site_event_locals(contract: str, when: str) -> list[str]:
+def render_site_event_locals(kernel: dict, contract: str, when: str) -> list[str]:
     if contract != "kernel_lifecycle_v1":
         return []
     if when == "kernel_entry":
         return [
-            "  if (!(blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 &&",
-            "        threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0 &&",
-            "        __omniprobe_lane_id == 0)) {",
+            *dispatch_origin_guard_lines(kernel),
             "    return;",
             "  }",
             "  const auto *__omniprobe_event_snapshot = runtime.entry_snapshot;",
@@ -276,22 +344,57 @@ def render_site_event_locals(contract: str, when: str) -> list[str]:
         ]
     return [
         "  const uint32_t __omniprobe_event_workgroup_x = static_cast<uint32_t>(blockIdx.x);",
-        "  const uint32_t __omniprobe_event_workgroup_y = static_cast<uint32_t>(blockIdx.y);",
-        "  const uint32_t __omniprobe_event_workgroup_z = static_cast<uint32_t>(blockIdx.z);",
+        (
+            "  const uint32_t __omniprobe_event_workgroup_y = static_cast<uint32_t>(blockIdx.y);"
+            if source_workgroup_id_available(kernel, "y")
+            else "  const uint32_t __omniprobe_event_workgroup_y = 0u;"
+        ),
+        (
+            "  const uint32_t __omniprobe_event_workgroup_z = static_cast<uint32_t>(blockIdx.z);"
+            if source_workgroup_id_available(kernel, "z")
+            else "  const uint32_t __omniprobe_event_workgroup_z = 0u;"
+        ),
         "  const uint32_t __omniprobe_event_thread_x = static_cast<uint32_t>(threadIdx.x);",
-        "  const uint32_t __omniprobe_event_thread_y = static_cast<uint32_t>(threadIdx.y);",
-        "  const uint32_t __omniprobe_event_thread_z = static_cast<uint32_t>(threadIdx.z);",
+        (
+            "  const uint32_t __omniprobe_event_thread_y = static_cast<uint32_t>(threadIdx.y);"
+            if source_thread_component_available(kernel, "y")
+            else "  const uint32_t __omniprobe_event_thread_y = 0u;"
+        ),
+        (
+            "  const uint32_t __omniprobe_event_thread_z = static_cast<uint32_t>(threadIdx.z);"
+            if source_thread_component_available(kernel, "z")
+            else "  const uint32_t __omniprobe_event_thread_z = 0u;"
+        ),
         "  const uint32_t __omniprobe_event_block_dim_x = static_cast<uint32_t>(blockDim.x);",
         "  const uint32_t __omniprobe_event_block_dim_y = static_cast<uint32_t>(blockDim.y);",
         "  const uint32_t __omniprobe_event_block_dim_z = static_cast<uint32_t>(blockDim.z);",
         "  const uint32_t __omniprobe_event_lane_id = static_cast<uint32_t>(__lane_id());",
         "  const uint32_t __omniprobe_event_wavefront_size = static_cast<uint32_t>(warpSize);",
-        "  const uint32_t __omniprobe_event_linear_tid = static_cast<uint32_t>(",
-        "      threadIdx.x + blockDim.x * (threadIdx.y + blockDim.y * threadIdx.z));",
-        "  const uint32_t __omniprobe_event_wave_id =",
-        "      __omniprobe_event_wavefront_size == 0",
-        "          ? 0",
-        "          : (__omniprobe_event_linear_tid / __omniprobe_event_wavefront_size);",
+        (
+            "  const uint32_t __omniprobe_event_linear_tid = static_cast<uint32_t>(threadIdx.x + "
+            "blockDim.x * (threadIdx.y + blockDim.y * threadIdx.z));"
+            if source_thread_component_available(kernel, "z")
+            else (
+                "  const uint32_t __omniprobe_event_linear_tid = static_cast<uint32_t>(threadIdx.x + "
+                "blockDim.x * threadIdx.y);"
+                if source_thread_component_available(kernel, "y")
+                else "  const uint32_t __omniprobe_event_linear_tid = static_cast<uint32_t>(threadIdx.x);"
+            )
+        ),
+        (
+            "  const uint32_t __omniprobe_event_wave_id ="
+            if source_thread_component_available(kernel, "y")
+            else "  const uint32_t __omniprobe_event_wave_id = 0u;"
+        ),
+        *(
+            [
+                "      __omniprobe_event_wavefront_size == 0",
+                "          ? 0",
+                "          : (__omniprobe_event_linear_tid / __omniprobe_event_wavefront_size);",
+            ]
+            if source_thread_component_available(kernel, "y")
+            else []
+        ),
         "  const uint32_t __omniprobe_event_hw_id = static_cast<uint32_t>(__smid());",
         "  const uint64_t __omniprobe_event_exec_mask = __builtin_amdgcn_read_exec();",
     ]
@@ -317,30 +420,98 @@ def render_runtime_init_lines() -> list[str]:
     ]
 
 
-def render_site_snapshot_capture_lines() -> list[str]:
-    return [
-        "  site_snapshot_v1 __omniprobe_site_snapshot{};",
-        "  __omniprobe_site_snapshot.workgroup_x = static_cast<uint32_t>(blockIdx.x);",
-        "  __omniprobe_site_snapshot.workgroup_y = static_cast<uint32_t>(blockIdx.y);",
-        "  __omniprobe_site_snapshot.workgroup_z = static_cast<uint32_t>(blockIdx.z);",
-        "  __omniprobe_site_snapshot.thread_x = static_cast<uint32_t>(threadIdx.x);",
-        "  __omniprobe_site_snapshot.thread_y = static_cast<uint32_t>(threadIdx.y);",
-        "  __omniprobe_site_snapshot.thread_z = static_cast<uint32_t>(threadIdx.z);",
-        "  __omniprobe_site_snapshot.block_dim_x = static_cast<uint32_t>(blockDim.x);",
-        "  __omniprobe_site_snapshot.block_dim_y = static_cast<uint32_t>(blockDim.y);",
-        "  __omniprobe_site_snapshot.block_dim_z = static_cast<uint32_t>(blockDim.z);",
-        "  __omniprobe_site_snapshot.lane_id = static_cast<uint32_t>(__lane_id());",
-        "  __omniprobe_site_snapshot.wavefront_size = static_cast<uint32_t>(warpSize);",
-        "  const uint32_t __omniprobe_site_linear_tid = static_cast<uint32_t>(",
-        "      threadIdx.x + blockDim.x * (threadIdx.y + blockDim.y * threadIdx.z));",
-        "  __omniprobe_site_snapshot.wave_id =",
-        "      __omniprobe_site_snapshot.wavefront_size == 0",
-        "          ? 0u",
-        "          : (__omniprobe_site_linear_tid / __omniprobe_site_snapshot.wavefront_size);",
-        "  __omniprobe_site_snapshot.hw_id = static_cast<uint32_t>(__smid());",
-        "  __omniprobe_site_snapshot.exec_mask = __builtin_amdgcn_read_exec();",
-        "  runtime.site_snapshot = &__omniprobe_site_snapshot;",
+def render_site_snapshot_capture_lines(kernel: dict, site: dict) -> list[str]:
+    builtins = requested_helper_builtins(site)
+    needs_block_idx = "block_idx" in builtins
+    needs_thread_idx = "thread_idx" in builtins
+    needs_block_dim = "block_dim" in builtins
+    needs_lane = "lane_id" in builtins
+    needs_wavefront = "wavefront_size" in builtins or "wave_num" in builtins
+    needs_wave_num = "wave_num" in builtins
+    needs_hw = "hw_id" in builtins
+    needs_exec = "exec" in builtins
+
+    lines = [
+        "  site_snapshot_v1 __omniprobe_site_snapshot_storage{};",
     ]
+    if needs_block_idx or not builtins:
+        lines.append("  __omniprobe_site_snapshot_storage.workgroup_x = static_cast<uint32_t>(blockIdx.x);")
+        lines.append(
+            (
+                "  __omniprobe_site_snapshot_storage.workgroup_y = static_cast<uint32_t>(blockIdx.y);"
+                if source_workgroup_id_available(kernel, 'y')
+                else "  __omniprobe_site_snapshot_storage.workgroup_y = 0u;"
+            )
+        )
+        lines.append(
+            (
+                "  __omniprobe_site_snapshot_storage.workgroup_z = static_cast<uint32_t>(blockIdx.z);"
+                if source_workgroup_id_available(kernel, 'z')
+                else "  __omniprobe_site_snapshot_storage.workgroup_z = 0u;"
+            )
+        )
+    if needs_thread_idx or not builtins:
+        lines.append("  __omniprobe_site_snapshot_storage.thread_x = static_cast<uint32_t>(threadIdx.x);")
+        lines.append(
+            (
+                "  __omniprobe_site_snapshot_storage.thread_y = static_cast<uint32_t>(threadIdx.y);"
+                if source_thread_component_available(kernel, 'y')
+                else "  __omniprobe_site_snapshot_storage.thread_y = 0u;"
+            )
+        )
+        lines.append(
+            (
+                "  __omniprobe_site_snapshot_storage.thread_z = static_cast<uint32_t>(threadIdx.z);"
+                if source_thread_component_available(kernel, 'z')
+                else "  __omniprobe_site_snapshot_storage.thread_z = 0u;"
+            )
+        )
+    if needs_block_dim or not builtins:
+        lines.extend(
+            [
+                "  __omniprobe_site_snapshot_storage.block_dim_x = static_cast<uint32_t>(blockDim.x);",
+                "  __omniprobe_site_snapshot_storage.block_dim_y = static_cast<uint32_t>(blockDim.y);",
+                "  __omniprobe_site_snapshot_storage.block_dim_z = static_cast<uint32_t>(blockDim.z);",
+            ]
+        )
+    if needs_lane or not builtins:
+        lines.append("  __omniprobe_site_snapshot_storage.lane_id = static_cast<uint32_t>(__lane_id());")
+    if needs_wavefront or not builtins:
+        lines.append(
+            "  __omniprobe_site_snapshot_storage.wavefront_size = static_cast<uint32_t>(warpSize);"
+        )
+    else:
+        lines.append("  __omniprobe_site_snapshot_storage.wavefront_size = 1u;")
+    if needs_wave_num or not builtins:
+        if source_thread_component_available(kernel, "z"):
+            lines.extend(
+                [
+                    "  const uint32_t __omniprobe_site_linear_tid = static_cast<uint32_t>(",
+                    "      threadIdx.x + blockDim.x * (threadIdx.y + blockDim.y * threadIdx.z));",
+                ]
+            )
+        elif source_thread_component_available(kernel, "y"):
+            lines.append(
+                "  const uint32_t __omniprobe_site_linear_tid = static_cast<uint32_t>(threadIdx.x + blockDim.x * threadIdx.y);"
+            )
+        else:
+            lines.append(
+                "  const uint32_t __omniprobe_site_linear_tid = static_cast<uint32_t>(threadIdx.x);"
+            )
+        lines.extend(
+            [
+                "  __omniprobe_site_snapshot_storage.wave_id =",
+                "      __omniprobe_site_snapshot_storage.wavefront_size == 0",
+                "          ? 0u",
+                "          : (__omniprobe_site_linear_tid / __omniprobe_site_snapshot_storage.wavefront_size);",
+            ]
+        )
+    if needs_hw or not builtins:
+        lines.append("  __omniprobe_site_snapshot_storage.hw_id = static_cast<uint32_t>(__smid());")
+    if needs_exec or not builtins:
+        lines.append("  __omniprobe_site_snapshot_storage.exec_mask = __builtin_amdgcn_read_exec();")
+    lines.append("  runtime.site_snapshot = &__omniprobe_site_snapshot_storage;")
+    return lines
 
 
 def render_dh_builtin_capture_lines(when: str) -> list[str]:
@@ -419,7 +590,7 @@ def render_dh_builtin_capture_lines(when: str) -> list[str]:
         "  runtime.dh_builtins = &__omniprobe_dh_builtins;",
     ]
 
-def render_entry_snapshot_capture_lines(when: str) -> list[str]:
+def render_entry_snapshot_capture_lines(kernel: dict, when: str) -> list[str]:
     if when != "kernel_entry":
         return []
     return [
@@ -428,15 +599,29 @@ def render_entry_snapshot_capture_lines(when: str) -> list[str]:
         "    return;",
         "  }",
         "  const uint32_t __omniprobe_lane_id = static_cast<uint32_t>(__lane_id());",
-        "  if (blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 &&",
-        "      threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0 &&",
-        "      __omniprobe_lane_id == 0) {",
+        *dispatch_origin_guard_lines(kernel),
         "    entry_snapshot->workgroup_x = static_cast<uint32_t>(blockIdx.x);",
-        "    entry_snapshot->workgroup_y = static_cast<uint32_t>(blockIdx.y);",
-        "    entry_snapshot->workgroup_z = static_cast<uint32_t>(blockIdx.z);",
+        (
+            "    entry_snapshot->workgroup_y = static_cast<uint32_t>(blockIdx.y);"
+            if source_workgroup_id_available(kernel, "y")
+            else "    entry_snapshot->workgroup_y = 0u;"
+        ),
+        (
+            "    entry_snapshot->workgroup_z = static_cast<uint32_t>(blockIdx.z);"
+            if source_workgroup_id_available(kernel, "z")
+            else "    entry_snapshot->workgroup_z = 0u;"
+        ),
         "    entry_snapshot->thread_x = static_cast<uint32_t>(threadIdx.x);",
-        "    entry_snapshot->thread_y = static_cast<uint32_t>(threadIdx.y);",
-        "    entry_snapshot->thread_z = static_cast<uint32_t>(threadIdx.z);",
+        (
+            "    entry_snapshot->thread_y = static_cast<uint32_t>(threadIdx.y);"
+            if source_thread_component_available(kernel, "y")
+            else "    entry_snapshot->thread_y = 0u;"
+        ),
+        (
+            "    entry_snapshot->thread_z = static_cast<uint32_t>(threadIdx.z);"
+            if source_thread_component_available(kernel, "z")
+            else "    entry_snapshot->thread_z = 0u;"
+        ),
         "    entry_snapshot->block_dim_x = static_cast<uint32_t>(blockDim.x);",
         "    entry_snapshot->block_dim_y = static_cast<uint32_t>(blockDim.y);",
         "    entry_snapshot->block_dim_z = static_cast<uint32_t>(blockDim.z);",
@@ -499,10 +684,10 @@ def render_thunk_function(kernel: dict, site: dict) -> tuple[str, dict]:
         *parameter_lines,
         ") {",
         *render_runtime_init_lines(),
-        *render_site_snapshot_capture_lines(),
-        *render_entry_snapshot_capture_lines(when),
+        *render_site_snapshot_capture_lines(kernel, site),
+        *render_entry_snapshot_capture_lines(kernel, when),
         *render_dh_builtin_capture_lines(when),
-        *render_site_event_locals(contract, when),
+        *render_site_event_locals(kernel, contract, when),
         *render_site_event_unpack_lines(contract),
         f"  {captures_type} captures{{}};",
     ]

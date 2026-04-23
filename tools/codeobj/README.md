@@ -162,9 +162,20 @@ Current scope:
   - encodes the current helper-side policy that heavyweight helpers must rely
     on Omniprobe-captured/runtime-provided state rather than compiler-generated
     live-ins or builtins
+- `mid_kernel_resume_profile.py`
+  - normalizes the current binary-safe mid-kernel save/restore contract into a
+    reusable profile built from descriptor facts plus observed entry/private
+    materialization patterns
+  - defines the current private-segment spill classes, helper runtime views,
+    and fail-closed blockers for basic-block and memory-op insertion paths
+- `emit_mid_kernel_resume_matrix.py`
+  - lifts multiple mid-kernel resume profiles into a normalized matrix across
+    `gfx1030` / `gfx942` kernel families
+  - summarizes which private-segment spill/reconstruction class each kernel
+    falls into and records unsupported shapes explicitly
 - `emit_entry_handoff_stub.py`
   - turns a supported handoff recipe into an explicit symbolic branch-to-entry
-    stub plan
+  stub plan
   - emits register reconstruction assignments, required runtime inputs, and a
     symbolic `s_setpc_b64` transfer shape for the original body entry
 - `test_hidden_kernarg_repack.cpp`

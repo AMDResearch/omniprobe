@@ -94,9 +94,25 @@ def resolve_hipcc(explicit: str | None) -> str:
     return str(Path("/opt/rocm/bin/hipcc"))
 
 
-def resolve_llc(explicit: str | None, *, dry_run: bool) -> str:
+def resolve_llc_near_hipcc(hipcc: str) -> str | None:
+    hipcc_path = Path(hipcc).expanduser()
+    candidate_roots = [*hipcc_path.parents]
+    for root in candidate_roots:
+        tool_path = root / "lib/llvm/bin/llc"
+        if tool_path.exists():
+            return str(tool_path)
+    return None
+
+
+def resolve_llc(explicit: str | None, *, hipcc: str, dry_run: bool) -> str:
     if explicit:
         return explicit
+    env_value = os.environ.get("LLC")
+    if env_value:
+        return env_value
+    adjacent = resolve_llc_near_hipcc(hipcc)
+    if adjacent:
+        return adjacent
     if dry_run:
         discovered = shutil.which("llc")
         if discovered:
@@ -224,7 +240,11 @@ def main() -> int:
     )
 
     hipcc = resolve_hipcc(args.hipcc)
-    llc = None if args.output_format == "hsaco" else resolve_llc(args.llc, dry_run=args.dry_run)
+    llc = None if args.output_format == "hsaco" else resolve_llc(
+        args.llc,
+        hipcc=hipcc,
+        dry_run=args.dry_run,
+    )
     commands = build_commands(
         support_source=support_source,
         output_path=output_path,
