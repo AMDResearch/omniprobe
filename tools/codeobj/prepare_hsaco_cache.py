@@ -19,6 +19,7 @@ from common import (
     get_instrumented_name,
     sanitize_bundle_id,
 )
+from helper_abi_contract import validate_helper_abi_entry
 
 
 def parse_args() -> argparse.Namespace:
@@ -646,6 +647,11 @@ def probe_kernel_rewrite_eligibility(kernel_plan: dict) -> tuple[bool, list[str]
     for site in planned_sites:
         if not isinstance(site, dict):
             reasons.append("probe plan contains an invalid site record")
+            continue
+        try:
+            validate_helper_abi_entry(site, entry_kind="planned cache-rewrite site")
+        except SystemExit as exc:
+            reasons.append(str(exc))
             continue
         contract = str(site.get("contract", ""))
         when = str(site.get("when", ""))

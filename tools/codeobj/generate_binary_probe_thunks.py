@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from amdgpu_calling_convention import layout_call_arguments
+from helper_abi_contract import validate_helper_abi_entry
 
 
 TYPE_MAP = {
@@ -450,6 +451,7 @@ def render_entry_snapshot_capture_lines(when: str) -> list[str]:
 
 
 def render_thunk_function(kernel: dict, site: dict) -> tuple[str, dict]:
+    helper_abi = validate_helper_abi_entry(site, entry_kind="planned site")
     contract = str(site.get("contract", ""))
     when = str(site.get("when", ""))
     if contract not in CONTRACT_EVENT_ARGUMENTS:
@@ -531,6 +533,8 @@ def render_thunk_function(kernel: dict, site: dict) -> tuple[str, dict]:
             if contract == "memory_op_v1"
             else "direct"
         ),
+        "helper_context": site.get("helper_context", {}),
+        "helper_abi": helper_abi,
         "capture_bindings": capture_bindings,
     }
     return "\n".join(lines), manifest_entry

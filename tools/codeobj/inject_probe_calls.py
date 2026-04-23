@@ -17,6 +17,7 @@ from amdgpu_entry_abi import (
     analyze_kernel_entry_abi,
     entry_livein_sgprs as tracked_entry_livein_sgprs,
 )
+from helper_abi_contract import validate_helper_abi_entry
 
 
 def parse_args() -> argparse.Namespace:
@@ -1308,6 +1309,11 @@ def planned_helper_builtins(site: dict) -> list[str]:
     if not isinstance(builtins, list):
         return []
     return [str(value) for value in builtins if isinstance(value, str) and value]
+
+
+def validate_planned_sites_helper_abi(sites: list[dict], *, mode: str) -> None:
+    for site in sites:
+        validate_helper_abi_entry(site, entry_kind=f"planned {mode} site")
 
 
 SUPPORTED_BINARY_HELPER_BUILTINS = {
@@ -3115,15 +3121,19 @@ def main() -> int:
             "binary rewrite currently supports one instrumentation mode per kernel; split lifecycle, basic_block, and memory_op probes into separate rewrites"
         )
     if entry_site is not None:
+        validate_planned_sites_helper_abi([entry_site], mode="kernel_entry")
         thunk = find_thunk(thunk_manifest, kernel_plan, "kernel_entry")
         rewrite_mode = "lifecycle"
     elif exit_site is not None:
+        validate_planned_sites_helper_abi([exit_site], mode="kernel_exit")
         thunk = find_thunk(thunk_manifest, kernel_plan, "kernel_exit")
         rewrite_mode = "lifecycle"
     elif basic_block_sites:
+        validate_planned_sites_helper_abi(basic_block_sites, mode="basic_block")
         thunk = find_thunk(thunk_manifest, kernel_plan, "basic_block")
         rewrite_mode = "basic_block"
     elif memory_sites:
+        validate_planned_sites_helper_abi(memory_sites, mode="memory_op")
         thunk = find_thunk(thunk_manifest, kernel_plan, "memory_op")
         rewrite_mode = "memory_op"
     else:

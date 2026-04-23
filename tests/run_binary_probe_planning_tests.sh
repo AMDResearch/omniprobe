@@ -205,6 +205,44 @@ else
 fi
 
 TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="binary_probe_thunks_require_helper_abi"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+BROKEN_PLAN="$OUTPUT_DIR/${TEST_NAME}.plan.json"
+BROKEN_THUNK_SOURCE="$OUTPUT_DIR/${TEST_NAME}.hip"
+
+if python3 - "$LIFECYCLE_PLAN" "$BROKEN_PLAN" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+for kernel in payload.get("kernels", []):
+    if not isinstance(kernel, dict):
+        continue
+    for site in kernel.get("planned_sites", []):
+        if isinstance(site, dict):
+            site.pop("helper_abi", None)
+json.dump(payload, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
+open(sys.argv[2], "a", encoding="utf-8").write("\n")
+PY
+then
+    if python3 "$THUNK_GENERATOR" "$BROKEN_PLAN" \
+        --probe-bundle "$BUNDLE_JSON" \
+        --output "$BROKEN_THUNK_SOURCE" > "$OUTPUT_DIR/${TEST_NAME}.out" 2>&1; then
+        echo -e "  ${RED}✗ FAIL${NC} - Thunk generator accepted a plan without helper_abi"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    elif grep -q "missing helper_abi" "$OUTPUT_DIR/${TEST_NAME}.out"; then
+        echo -e "  ${GREEN}✓ PASS${NC} - Thunk generator rejected plans without helper_abi"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Thunk generator failed for an unexpected reason"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Could not generate broken plan fixture"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="binary_probe_plan_memory_op"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
 MEMORY_BUNDLE_DIR="$OUTPUT_DIR/${TEST_NAME}_bundle"

@@ -90,14 +90,38 @@ prepare_shared_artifacts "binary_probe_injector_entry" "$ENTRY_SPEC"
 
 ENTRY_BACKEND_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_entry_backend.plan.json"
 ENTRY_BACKEND_THUNK_JSON="$OUTPUT_DIR/binary_probe_injector_entry_backend.thunks.json"
+ENTRY_BACKEND_MISSING_HELPER_ABI_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_entry_backend_missing_helper_abi.plan.json"
 BASIC_BLOCK_BACKEND_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_basic_block_backend.plan.json"
 BASIC_BLOCK_BACKEND_THUNK_JSON="$OUTPUT_DIR/binary_probe_injector_basic_block_backend.thunks.json"
 BASIC_BLOCK_BACKEND_BUILTINS_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_basic_block_backend_builtins.plan.json"
 BASIC_BLOCK_BACKEND_UNSUPPORTED_BUILTINS_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_basic_block_backend_unsupported_builtins.plan.json"
 
-python3 - "$ENTRY_BACKEND_PLAN_JSON" "$ENTRY_BACKEND_THUNK_JSON" <<'PY'
+python3 - "$ENTRY_BACKEND_PLAN_JSON" "$ENTRY_BACKEND_THUNK_JSON" "$ENTRY_BACKEND_MISSING_HELPER_ABI_PLAN_JSON" <<'PY'
 import json
 import sys
+
+helper_abi = {
+    "schema": "omniprobe.helper_abi.v1",
+    "model": "explicit_runtime_v1",
+    "compiler_generated_liveins_allowed": False,
+    "compiler_generated_builtins_allowed": False,
+    "requires_wrapper_captured_state": True,
+    "requires_runtime_dispatch_payload": True,
+    "required_runtime_views": [],
+    "helper_visible_sources": {
+        "kernel_args": [],
+        "instruction_fields": [],
+        "builtins": {
+            "requested": [],
+            "provider": "runtime_ctx.dh_builtins",
+        },
+        "event_payload": {
+            "contract": "kernel_lifecycle_v1",
+            "when": ["kernel_entry"],
+        },
+    },
+    "notes": [],
+}
 
 plan = {
     "kernels": [
@@ -112,6 +136,10 @@ plan = {
                     "status": "planned",
                     "contract": "kernel_lifecycle_v1",
                     "when": "kernel_entry",
+                    "helper_context": {
+                        "builtins": [],
+                    },
+                    "helper_abi": helper_abi,
                 }
             ],
         }
@@ -162,6 +190,10 @@ thunks = {
 
 json.dump(plan, open(sys.argv[1], "w", encoding="utf-8"), indent=2)
 open(sys.argv[1], "a", encoding="utf-8").write("\n")
+broken_plan = json.loads(json.dumps(plan))
+broken_plan["kernels"][0]["planned_sites"][0].pop("helper_abi", None)
+json.dump(broken_plan, open(sys.argv[3], "w", encoding="utf-8"), indent=2)
+open(sys.argv[3], "a", encoding="utf-8").write("\n")
 json.dump(thunks, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
 open(sys.argv[2], "a", encoding="utf-8").write("\n")
 PY
@@ -169,6 +201,29 @@ PY
 python3 - "$BASIC_BLOCK_BACKEND_PLAN_JSON" "$BASIC_BLOCK_BACKEND_THUNK_JSON" "$BASIC_BLOCK_BACKEND_BUILTINS_PLAN_JSON" "$BASIC_BLOCK_BACKEND_UNSUPPORTED_BUILTINS_PLAN_JSON" <<'PY'
 import json
 import sys
+
+helper_abi = {
+    "schema": "omniprobe.helper_abi.v1",
+    "model": "explicit_runtime_v1",
+    "compiler_generated_liveins_allowed": False,
+    "compiler_generated_builtins_allowed": False,
+    "requires_wrapper_captured_state": True,
+    "requires_runtime_dispatch_payload": True,
+    "required_runtime_views": [],
+    "helper_visible_sources": {
+        "kernel_args": [],
+        "instruction_fields": [],
+        "builtins": {
+            "requested": [],
+            "provider": "runtime_ctx.dh_builtins",
+        },
+        "event_payload": {
+            "contract": "basic_block_v1",
+            "when": ["basic_block"],
+        },
+    },
+    "notes": [],
+}
 
 plan = {
     "kernels": [
@@ -187,6 +242,7 @@ plan = {
                     "helper_context": {
                         "builtins": [],
                     },
+                    "helper_abi": helper_abi,
                     "injection_point": {
                         "kind": "basic_block",
                         "block_id": 0,
@@ -206,9 +262,23 @@ plan = {
 
 plan_with_builtins = json.loads(json.dumps(plan))
 plan_with_builtins["kernels"][0]["planned_sites"][0]["helper_context"]["builtins"] = ["block_idx", "thread_idx", "dispatch_id"]
+plan_with_builtins["kernels"][0]["planned_sites"][0]["helper_abi"]["required_runtime_views"] = [
+    "runtime_ctx.dh_builtins",
+    "runtime_ctx.dispatch_id",
+    "runtime_ctx.site_snapshot",
+]
+plan_with_builtins["kernels"][0]["planned_sites"][0]["helper_abi"]["helper_visible_sources"]["builtins"]["requested"] = [
+    "block_idx", "thread_idx", "dispatch_id"
+]
 
 plan_with_unsupported_builtins = json.loads(json.dumps(plan))
 plan_with_unsupported_builtins["kernels"][0]["planned_sites"][0]["helper_context"]["builtins"] = ["queue_ptr"]
+plan_with_unsupported_builtins["kernels"][0]["planned_sites"][0]["helper_abi"]["required_runtime_views"] = [
+    "runtime_ctx.dh_builtins"
+]
+plan_with_unsupported_builtins["kernels"][0]["planned_sites"][0]["helper_abi"]["helper_visible_sources"]["builtins"]["requested"] = [
+    "queue_ptr"
+]
 
 thunks = {
     "thunks": [
@@ -573,6 +643,37 @@ PY
     fi
 }
 
+run_entry_missing_helper_abi_rejection_test() {
+    local arch="$1"
+    local ir_fixture="$2"
+    local manifest_fixture="$3"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    local test_name="binary_probe_inject_entry_${arch}_reject_missing_helper_abi"
+    echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $test_name"
+    local adjusted_manifest="$OUTPUT_DIR/${test_name}.manifest.json"
+    local out_ir="$OUTPUT_DIR/${test_name}.ir.json"
+    make_high_vgpr_entry_manifest "$manifest_fixture" "$adjusted_manifest"
+
+    if python3 "$INJECTOR" "$ir_fixture" \
+        --plan "$ENTRY_BACKEND_MISSING_HELPER_ABI_PLAN_JSON" \
+        --thunk-manifest "$ENTRY_BACKEND_THUNK_JSON" \
+        --manifest "$adjusted_manifest" \
+        --function entry_abi_kernel \
+        --output "$out_ir" > "$OUTPUT_DIR/${test_name}.out" 2>&1; then
+        echo -e "  ${RED}✗ FAIL${NC} - ${arch} entry injector unexpectedly accepted a plan without helper_abi"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    else
+        if grep -q 'missing helper_abi' "$OUTPUT_DIR/${test_name}.out"; then
+            echo -e "  ${GREEN}✓ PASS${NC} - ${arch} entry injector rejected plans without helper_abi"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            echo -e "  ${RED}✗ FAIL${NC} - ${arch} missing-helper_abi rejection reason was incorrect"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    fi
+}
+
 run_basic_block_inject_test() {
     local arch="$1"
     local ir_fixture="$2"
@@ -842,5 +943,9 @@ run_entry_backend_pattern_test \
     "none" \
     "s_mov_b64 s[0:1], src_private_base" \
     "restore_v0"
+run_entry_missing_helper_abi_rejection_test \
+    "gfx942" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.manifest.json"
 
 print_summary
