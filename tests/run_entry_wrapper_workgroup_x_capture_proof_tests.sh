@@ -101,7 +101,7 @@ assert field["name"] == "workgroup_id_x"
 assert field["offset"] == 8
 assert field["kind"] == "u32_from_sgpr"
 assert field["store_opcode"] == "flat_store_dword"
-assert field["source_sgpr"] == 14
+assert field["source_sgpr"] == 8
 assert field["address_vgprs"] == [4, 5]
 assert field["data_vgpr"] == 6
 PY
@@ -117,7 +117,7 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="entry_wrapper_workgroup_x_capture_asm"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
-echo "  Validate the rebuilt assembly restores s8:s9 and emits the expected capture store"
+echo "  Validate the rebuilt assembly restores the original kernarg pair and emits the expected capture store"
 
 if [ -f "$PROOF_ASM" ] && \
    python3 - "$PROOF_REPORT" "$PROOF_ASM" <<'PY'
@@ -128,23 +128,24 @@ from pathlib import Path
 report = json.load(open(sys.argv[1], encoding="utf-8"))
 asm = Path(sys.argv[2]).read_text(encoding="utf-8")
 lo, hi = report["entry_wrapper_result"]["scratch_pair"]
-offset = report["entry_wrapper_result"]["wrapper_hidden_handoff"]["offset"]
+hidden = report["entry_wrapper_result"]["wrapper_hidden_handoff"]
+offset = hidden["offset"]
+load_lo, load_hi = hidden["load_source_pair"]
+field = hidden["captured_entry_snapshot_fields"][0]
+restore_field = hidden["consumed_fields"][0]
+target_lo, target_hi = restore_field["target_pair"]
 needles = [
-    f"s_load_dwordx2 s[{lo}:{hi}], s[8:9], 0x{offset:x}",
-    "s_mov_b32 s8, 0",
-    "s_mov_b32 s9, 0",
-    f"s_load_dwordx2 s[8:9], s[{lo}:{hi}], 0x0",
-    f"s_load_dwordx2 s[{lo}:{hi}], s[8:9], 0x{offset:x}",
+    f"s_load_dwordx2 s[{lo}:{hi}], s[{load_lo}:{load_hi}], 0x{offset:x}",
+    f"s_load_dwordx2 s[{target_lo}:{target_hi}], s[{lo}:{hi}], 0x{restore_field['offset']:x}",
     f"s_add_u32 s{lo}, s{lo}, 0x8",
     f"s_addc_u32 s{hi}, s{hi}, 0",
     f"v_mov_b32_e32 v4, s{lo}",
     f"v_mov_b32_e32 v5, s{hi}",
-    "v_mov_b32_e32 v6, s14",
+    f"v_mov_b32_e32 v6, s{field['source_sgpr']}",
     "flat_store_dword v[4:5], v6",
 ]
 for needle in needles:
     assert needle in asm, needle
-assert asm.count(f"s_load_dwordx2 s[{lo}:{hi}], s[8:9], 0x{offset:x}") == 2
 PY
 then
     echo -e "  ${GREEN}✓ PASS${NC} - Rebuilt assembly contains the expected wrapper-side capture sequence"

@@ -101,12 +101,12 @@ assert scratch_pair[0] % 2 == 0
 assert scratch_pair[1] == scratch_pair[0] + 1
 recipe = entry.get("entry_handoff_recipe", {})
 assert recipe.get("supported") is True
-assert recipe.get("supported_class") == "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1"
+assert recipe.get("supported_class") == "wave64-direct-vgpr-xyz-src-private-base-v1"
 assert recipe.get("wrapper_strategy", {}).get("branch_target_symbol") == "mlk"
 assert recipe.get("wrapper_strategy", {}).get("scratch_pair") == scratch_pair
 actions = recipe.get("reconstruction_actions", [])
 assert actions[0]["action"] == "materialize-kernarg-base-pair"
-assert actions[0]["target_sgprs"] == [8, 9]
+assert actions[0]["target_sgprs"] == [0, 1]
 wrapper = recipe.get("wrapper_source_analysis", {})
 assert wrapper.get("model") == "direct-entry-wrapper-v1"
 assert wrapper.get("direct_branch_supported") is True
@@ -178,7 +178,14 @@ assert "__omniprobe_original_body_mlk" in helper_symbols
 descriptor = next(entry for entry in manifest["kernels"]["descriptors"] if entry.get("kernel_name") == "mlk")
 assert descriptor.get("name") == "mlk.kd"
 assert int(descriptor.get("kernarg_size", 0)) == 272
-assert int(descriptor.get("private_segment_fixed_size", 0)) == 208
+assert int(descriptor.get("private_segment_fixed_size", 0)) == 176
+kernel = next(
+    entry for entry in manifest["kernels"]["metadata"]["kernels"]
+    if entry.get("name") == "mlk"
+)
+assert int(kernel.get("kernarg_segment_size", 0)) == 272
+assert int(kernel.get("private_segment_fixed_size", 0)) == 176
+assert int(kernel.get("wavefront_size", 0)) == 64
 PY
 then
     echo -e "  ${GREEN}✓ PASS${NC} - Rebuilt manifest preserved the exported kernel contract and helper body symbol"

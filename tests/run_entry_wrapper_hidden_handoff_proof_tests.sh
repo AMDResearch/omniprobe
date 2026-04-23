@@ -105,7 +105,7 @@ assert hidden.get("offset") >= 16
 assert hidden.get("size") == 8
 assert isinstance(hidden.get("instrumented_kernarg_length"), int)
 assert hidden.get("instrumented_kernarg_length") >= hidden.get("offset") + hidden.get("size")
-assert hidden.get("load_source_pair") == [8, 9]
+assert hidden.get("load_source_pair") == [4, 5]
 assert hidden.get("pointer_load_opcode") == "s_load_dwordx2"
 fields = hidden.get("consumed_fields", [])
 assert len(fields) == 1
@@ -113,9 +113,12 @@ assert fields[0]["name"] == "original_kernarg_pointer"
 assert fields[0]["offset"] == 0
 assert fields[0]["kind"] == "u64"
 assert fields[0]["load_opcode"] == "s_load_dwordx2"
+assert fields[0]["target_pair"] is None
+assert fields[0]["target_sgpr"] is None
+assert fields[0]["clobber_target_before_load"] is False
 recipe = entry.get("entry_handoff_recipe", {})
 assert recipe.get("supported") is True
-assert recipe.get("supported_class") == "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1"
+assert recipe.get("supported_class") == "wave64-direct-vgpr-xyz-src-private-base-v1"
 PY
 then
     echo -e "  ${GREEN}✓ PASS${NC} - Entry-wrapper hidden-handoff report captured the expected ABI growth"
@@ -142,8 +145,9 @@ asm = Path(sys.argv[2]).read_text(encoding="utf-8")
 lo, hi = report["entry_wrapper_result"]["scratch_pair"]
 hidden = report["entry_wrapper_result"]["wrapper_hidden_handoff"]
 offset = hidden["offset"]
+load_lo, load_hi = hidden["load_source_pair"]
 needles = [
-    f"s_load_dwordx2 s[{lo}:{hi}], s[8:9], 0x{offset:x}",
+    f"s_load_dwordx2 s[{lo}:{hi}], s[{load_lo}:{load_hi}], 0x{offset:x}",
     f"s_load_dwordx2 s[{lo}:{hi}], s[{lo}:{hi}], 0x0",
     "s_waitcnt lgkmcnt(0)",
     f"s_getpc_b64 s[{lo}:{hi}]",

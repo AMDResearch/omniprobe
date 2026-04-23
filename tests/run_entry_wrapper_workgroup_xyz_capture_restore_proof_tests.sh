@@ -136,29 +136,31 @@ from pathlib import Path
 report = json.load(open(sys.argv[1], encoding="utf-8"))
 asm = Path(sys.argv[2]).read_text(encoding="utf-8")
 lo, hi = report["entry_wrapper_result"]["scratch_pair"]
-offset = report["entry_wrapper_result"]["wrapper_hidden_handoff"]["offset"]
+hidden = report["entry_wrapper_result"]["wrapper_hidden_handoff"]
+offset = hidden["offset"]
+load_lo, load_hi = hidden["load_source_pair"]
+captured = hidden["captured_entry_snapshot_fields"]
+consumed = hidden["consumed_fields"]
+kernarg_field = consumed[-1]
+target_lo, target_hi = kernarg_field["target_pair"]
 needles = [
-    f"s_load_dwordx2 s[{lo}:{hi}], s[8:9], 0x{offset:x}",
-    "v_mov_b32_e32 v6, s14",
-    "v_mov_b32_e32 v6, s15",
-    "v_mov_b32_e32 v6, s16",
+    f"s_load_dwordx2 s[{lo}:{hi}], s[{load_lo}:{load_hi}], 0x{offset:x}",
     "flat_store_dword v[4:5], v6",
-    "s_mov_b32 s14, 0",
-    "s_mov_b32 s15, 0",
-    "s_mov_b32 s16, 0",
-    f"s_load_dword s14, s[{lo}:{hi}], 0x8",
-    f"s_load_dword s15, s[{lo}:{hi}], 0xc",
-    f"s_load_dword s16, s[{lo}:{hi}], 0x10",
-    "s_mov_b32 s8, 0",
-    "s_mov_b32 s9, 0",
-    f"s_load_dwordx2 s[8:9], s[{lo}:{hi}], 0x0",
+    f"s_load_dwordx2 s[{target_lo}:{target_hi}], s[{lo}:{hi}], 0x{kernarg_field['offset']:x}",
 ]
 for needle in needles:
     assert needle in asm, needle
 assert asm.count("flat_store_dword v[4:5], v6") == 3
-assert asm.index("v_mov_b32_e32 v6, s14") < asm.index("s_mov_b32 s14, 0")
-assert asm.index("v_mov_b32_e32 v6, s15") < asm.index("s_mov_b32 s15, 0")
-assert asm.index("v_mov_b32_e32 v6, s16") < asm.index("s_mov_b32 s16, 0")
+for field in captured:
+    name = field["name"]
+    source = int(field["source_sgpr"])
+    consumed_field = next(item for item in consumed if item["name"] == name)
+    target = int(consumed_field["target_sgpr"])
+    field_offset = int(field["offset"])
+    assert f"v_mov_b32_e32 v6, s{source}" in asm
+    assert f"s_mov_b32 s{target}, 0" in asm
+    assert f"s_load_dword s{target}, s[{lo}:{hi}], 0x{field_offset:x}" in asm
+    assert asm.index(f"v_mov_b32_e32 v6, s{source}") < asm.index(f"s_mov_b32 s{target}, 0")
 PY
 then
     echo -e "  ${GREEN}✓ PASS${NC} - Rebuilt assembly contains the expected closed-loop capture/restore sequence"

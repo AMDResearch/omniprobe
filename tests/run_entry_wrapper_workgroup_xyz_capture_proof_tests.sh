@@ -96,9 +96,9 @@ assert hidden.get("restored_actions") == ["materialize-kernarg-base-pair"]
 captured = hidden.get("captured_entry_snapshot_fields", [])
 assert len(captured) == 3
 expected = [
-    ("workgroup_id_x", 8, 14),
-    ("workgroup_id_y", 12, 15),
-    ("workgroup_id_z", 16, 16),
+    ("workgroup_id_x", 8, 8),
+    ("workgroup_id_y", 12, 9),
+    ("workgroup_id_z", 16, 10),
 ]
 for field, (name, offset, sgpr) in zip(captured, expected):
     assert field["name"] == name
@@ -132,20 +132,22 @@ from pathlib import Path
 report = json.load(open(sys.argv[1], encoding="utf-8"))
 asm = Path(sys.argv[2]).read_text(encoding="utf-8")
 lo, hi = report["entry_wrapper_result"]["scratch_pair"]
-offset = report["entry_wrapper_result"]["wrapper_hidden_handoff"]["offset"]
+hidden = report["entry_wrapper_result"]["wrapper_hidden_handoff"]
+offset = hidden["offset"]
+load_lo, load_hi = hidden["load_source_pair"]
+restore_field = hidden["consumed_fields"][0]
+target_lo, target_hi = restore_field["target_pair"]
+caught = hidden["captured_entry_snapshot_fields"]
 needles = [
-    f"s_load_dwordx2 s[{lo}:{hi}], s[8:9], 0x{offset:x}",
-    "s_mov_b32 s8, 0",
-    "s_mov_b32 s9, 0",
-    f"s_load_dwordx2 s[8:9], s[{lo}:{hi}], 0x0",
-    "v_mov_b32_e32 v6, s14",
-    "v_mov_b32_e32 v6, s15",
-    "v_mov_b32_e32 v6, s16",
+    f"s_load_dwordx2 s[{lo}:{hi}], s[{load_lo}:{load_hi}], 0x{offset:x}",
+    f"s_load_dwordx2 s[{target_lo}:{target_hi}], s[{lo}:{hi}], 0x{restore_field['offset']:x}",
     "flat_store_dword v[4:5], v6",
 ]
 for needle in needles:
     assert needle in asm, needle
 assert asm.count("flat_store_dword v[4:5], v6") == 3
+for field in caught:
+    assert f"v_mov_b32_e32 v6, s{field['source_sgpr']}" in asm
 assert f"s_add_u32 s{lo}, s{lo}, 0x8" in asm
 assert f"s_add_u32 s{lo}, s{lo}, 0xc" in asm
 assert f"s_add_u32 s{lo}, s{lo}, 0x10" in asm
