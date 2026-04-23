@@ -87,10 +87,13 @@ run_suite "AMDGPU entry ABI" "${SCRIPT_DIR}/run_amdgpu_entry_abi_tests.sh"
 # Suite 6: Entry handoff recipe
 run_suite "Entry handoff recipe" "${SCRIPT_DIR}/run_entry_handoff_recipe_tests.sh"
 
-# Suite 7: Entry handoff stub
+# Suite 7: Entry resume matrix
+run_suite "Entry resume matrix" "${SCRIPT_DIR}/run_entry_resume_matrix_tests.sh"
+
+# Suite 8: Entry handoff stub
 run_suite "Entry handoff stub" "${SCRIPT_DIR}/run_entry_handoff_stub_tests.sh"
 
-# Suite 8: Binary probe injector
+# Suite 9: Binary probe injector
 run_suite "Binary probe injector" "${SCRIPT_DIR}/run_binary_probe_injector_tests.sh"
 
 # Suite 9: Binary probe support compile

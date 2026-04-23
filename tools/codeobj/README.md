@@ -153,6 +153,15 @@ Current scope:
   - now distinguishes dispatch-carried hidden payload from entry-captured
     workgroup/wave/lane state so the recipe does not over-claim what the host
     can pre-populate once per dispatch
+- `emit_entry_resume_matrix.py`
+  - lifts multiple handoff recipe cases into a normalized resume/re-entry
+    matrix across supported kernel families
+  - summarizes per-class reconstruction actions, current wrapper blockers, and
+    the split between dispatch-carried payload, entry snapshot fields, and
+    validation-time requirements
+  - encodes the current helper-side policy that heavyweight helpers must rely
+    on Omniprobe-captured/runtime-provided state rather than compiler-generated
+    live-ins or builtins
 - `emit_entry_handoff_stub.py`
   - turns a supported handoff recipe into an explicit symbolic branch-to-entry
     stub plan
