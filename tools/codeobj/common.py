@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -186,3 +187,62 @@ def find_amdgpu_metadata_note(path: Path) -> dict | None:
             }
 
     return None
+
+
+def ensure_ir_function_has_terminal_s_endpgm(ir: dict, *, function_name: str) -> bool:
+    functions = ir.get("functions", [])
+    if not isinstance(functions, list):
+        raise SystemExit("IR payload did not contain a functions list")
+
+    function = next(
+        (
+            entry
+            for entry in functions
+            if isinstance(entry, dict) and entry.get("name") == function_name
+        ),
+        None,
+    )
+    if function is None:
+        raise SystemExit(f"function {function_name!r} was not found in the IR payload")
+
+    instructions = function.get("instructions", [])
+    if not isinstance(instructions, list) or not instructions:
+        raise SystemExit(f"function {function_name!r} did not contain any instructions")
+
+    if any(
+        isinstance(insn, dict) and insn.get("mnemonic") == "s_endpgm"
+        for insn in instructions[-2:]
+    ):
+        return False
+
+    last = instructions[-1]
+    if not isinstance(last, dict):
+        raise SystemExit(f"function {function_name!r} ended with a malformed instruction record")
+
+    encoding_words = last.get("encoding_words", [])
+    size_bytes = 4 * len(encoding_words) if isinstance(encoding_words, list) and encoding_words else 4
+    next_address = int(last["address"]) + size_bytes
+    instructions.append(
+        {
+            "address": next_address,
+            "mnemonic": "s_endpgm",
+            "operand_text": "",
+            "operands": [],
+        }
+    )
+    next_address += 4
+    function["end_address"] = next_address
+    function["size_bytes"] = next_address - int(instructions[0]["address"])
+    return True
+
+
+def write_runtime_safe_fixture_ir(
+    source_path: Path,
+    output_path: Path,
+    *,
+    function_name: str,
+) -> bool:
+    ir = json.loads(source_path.read_text(encoding="utf-8"))
+    changed = ensure_ir_function_has_terminal_s_endpgm(ir, function_name=function_name)
+    output_path.write_text(json.dumps(ir, indent=2) + "\n", encoding="utf-8")
+    return changed

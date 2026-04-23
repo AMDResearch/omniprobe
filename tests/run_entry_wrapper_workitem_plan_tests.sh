@@ -1133,11 +1133,320 @@ else
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="entry_wrapper_workitem_plan_gfx1030_direct"
+STDOUT_FILE="$WORK_DIR/${TEST_NAME}.stdout"
+STDERR_FILE="$WORK_DIR/${TEST_NAME}.stderr"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+echo "  Validate the offline workitem spill/restore planner derives the wave32 setreg-flat-scratch carrier plan for gfx1030"
+
+if python3 - "$REPO_ROOT" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx1030.manifest.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx1030.ir.json" \
+    "entry_abi_kernel" > "$STDOUT_FILE" 2> "$STDERR_FILE" <<'PY'
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(sys.argv[1]).resolve()
+manifest_path = Path(sys.argv[2]).resolve()
+ir_path = Path(sys.argv[3]).resolve()
+function_name = sys.argv[4]
+
+sys.path.insert(0, str(REPO_ROOT / "tools" / "codeobj"))
+
+from code_object_model import CodeObjectModel  # type: ignore
+from regenerate_code_object import (  # type: ignore
+    build_entry_wrapper_workitem_spill_restore_plan,
+    validate_entry_wrapper_proof_preconditions,
+)
+
+
+def load_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+manifest = load_json(manifest_path)
+ir = load_json(ir_path)
+model = CodeObjectModel.from_manifest(manifest)
+descriptor = model.descriptor_by_kernel_name(function_name)
+assert descriptor is not None
+
+_, analysis, recipe, kernel_metadata, scratch_pair = validate_entry_wrapper_proof_preconditions(
+    manifest,
+    ir,
+    kernel_name=function_name,
+)
+pair_candidates = analysis.get("entry_dead_sgpr_pair_candidates", [])
+assert isinstance(pair_candidates, list) and len(pair_candidates) >= 2, pair_candidates
+assert list(scratch_pair) == [12, 13], scratch_pair
+assert pair_candidates[1]["pair"] == [14, 15], pair_candidates
+assert analysis["entry_wrapper_supported_class"] == "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1"
+assert recipe.get("supported") is True
+assert recipe.get("supported_class") == "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1"
+
+plan = build_entry_wrapper_workitem_spill_restore_plan(
+    analysis=analysis,
+    descriptor=descriptor,
+    kernel_metadata=kernel_metadata,
+    save_pair=(12, 13),
+    branch_pair=(14, 15),
+)
+assert plan["source_vgprs"] == [0, 1, 2], plan
+assert plan["pattern_class"] == "direct_vgpr_xyz", plan
+assert plan["spill_offset"] == 528, plan
+assert plan["spill_bytes"] == 12, plan
+assert plan["private_segment_growth"] == 16, plan
+assert plan["private_segment_pattern_class"] == "setreg_flat_scratch_init", plan
+assert plan["private_segment_offset_source_sgpr"] == 11, plan
+assert plan["save_pair"] == [12, 13], plan
+assert plan["branch_pair"] == [14, 15], plan
+assert plan["soffset_sgpr"] == 14, plan
+
+print(json.dumps(plan, indent=2))
+PY
+then
+    if python3 - "$STDOUT_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert payload["source_vgprs"] == [0, 1, 2]
+assert payload["spill_offset"] == 528
+assert payload["spill_bytes"] == 12
+assert payload["private_segment_growth"] == 16
+assert payload["private_segment_pattern_class"] == "setreg_flat_scratch_init"
+assert payload["private_segment_offset_source_sgpr"] == 11
+PY
+    then
+        echo -e "  ${GREEN}✓ PASS${NC} - gfx1030 workitem spill/restore planning produces the expected wave32 setreg-flat-scratch carrier"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - gfx1030 workitem spill/restore planning output was malformed"
+        echo "  Stdout saved to: $STDOUT_FILE"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - gfx1030 workitem spill/restore planner failed unexpectedly"
+    echo "  Stdout saved to: $STDOUT_FILE"
+    echo "  Stderr saved to: $STDERR_FILE"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="entry_wrapper_workitem_ir_gfx1030_direct"
+STDOUT_FILE="$WORK_DIR/${TEST_NAME}.stdout"
+STDERR_FILE="$WORK_DIR/${TEST_NAME}.stderr"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+echo "  Validate direct wrapper IR construction emits the wave32 buffer spill/restore sequence for gfx1030"
+
+if python3 - "$REPO_ROOT" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx1030.manifest.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx1030.ir.json" \
+    "entry_abi_kernel" > "$STDOUT_FILE" 2> "$STDERR_FILE" <<'PY'
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(sys.argv[1]).resolve()
+manifest_path = Path(sys.argv[2]).resolve()
+ir_path = Path(sys.argv[3]).resolve()
+function_name = sys.argv[4]
+
+sys.path.insert(0, str(REPO_ROOT / "tools" / "codeobj"))
+
+from code_object_model import CodeObjectModel  # type: ignore
+from regenerate_code_object import (  # type: ignore
+    build_entry_wrapper_ir,
+    build_entry_wrapper_workitem_spill_restore_plan,
+    validate_entry_wrapper_proof_preconditions,
+)
+
+
+def load_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+manifest = load_json(manifest_path)
+ir = load_json(ir_path)
+model = CodeObjectModel.from_manifest(manifest)
+descriptor = model.descriptor_by_kernel_name(function_name)
+assert descriptor is not None
+
+_, analysis, _, kernel_metadata, scratch_pair = validate_entry_wrapper_proof_preconditions(
+    manifest,
+    ir,
+    kernel_name=function_name,
+)
+plan = build_entry_wrapper_workitem_spill_restore_plan(
+    analysis=analysis,
+    descriptor=descriptor,
+    kernel_metadata=kernel_metadata,
+    save_pair=(scratch_pair[0], scratch_pair[1]),
+    branch_pair=(14, 15),
+)
+wrapper = build_entry_wrapper_ir(
+    wrapper_name=function_name,
+    body_name="__body",
+    start_address=0x1000,
+    scratch_pair=(14, 15),
+    workitem_spill_restore_plan=plan,
+)
+instructions = wrapper.get("instructions", [])
+
+def find_index(mnemonic: str, operand_text: str, start: int = 0) -> int:
+    for index in range(start, len(instructions)):
+        insn = instructions[index]
+        if insn.get("mnemonic") == mnemonic and insn.get("operand_text") == operand_text:
+            return index
+    raise AssertionError(f"missing instruction: {mnemonic} {operand_text}")
+
+
+save_lo = find_index("s_mov_b32", "s12, s0")
+save_hi = find_index("s_mov_b32", "s13, s1")
+private_add_0 = find_index("s_add_u32", "s0, s0, s11", save_hi + 1)
+private_addc_0 = find_index("s_addc_u32", "s1, s1, 0", private_add_0 + 1)
+soffset_0 = find_index("s_mov_b32", "s14, 0", private_addc_0 + 1)
+store_v0 = find_index("buffer_store_dword", "v0, off, s[0:3], s14 offset:528", soffset_0 + 1)
+store_v1 = find_index("buffer_store_dword", "v1, off, s[0:3], s14 offset:532", store_v0 + 1)
+store_v2 = find_index("buffer_store_dword", "v2, off, s[0:3], s14 offset:536", store_v1 + 1)
+restore_lo_before_clobber = find_index("s_mov_b32", "s0, s12", store_v2 + 1)
+restore_hi_before_clobber = find_index("s_mov_b32", "s1, s13", restore_lo_before_clobber + 1)
+clobber_v0 = find_index("v_mov_b32_e32", "v0, 0", restore_hi_before_clobber + 1)
+clobber_v1 = find_index("v_mov_b32_e32", "v1, 0", clobber_v0 + 1)
+clobber_v2 = find_index("v_mov_b32_e32", "v2, 0", clobber_v1 + 1)
+private_add_1 = find_index("s_add_u32", "s0, s0, s11", clobber_v2 + 1)
+private_addc_1 = find_index("s_addc_u32", "s1, s1, 0", private_add_1 + 1)
+soffset_1 = find_index("s_mov_b32", "s14, 0", private_addc_1 + 1)
+load_v0 = find_index("buffer_load_dword", "v0, off, s[0:3], s14 offset:528", soffset_1 + 1)
+load_v1 = find_index("buffer_load_dword", "v1, off, s[0:3], s14 offset:532", load_v0 + 1)
+load_v2 = find_index("buffer_load_dword", "v2, off, s[0:3], s14 offset:536", load_v1 + 1)
+wait = find_index("s_waitcnt", "vmcnt(0)", load_v2 + 1)
+restore_lo_after_load = find_index("s_mov_b32", "s0, s12", wait + 1)
+restore_hi_after_load = find_index("s_mov_b32", "s1, s13", restore_lo_after_load + 1)
+getpc = find_index("s_getpc_b64", "s[14:15]", restore_hi_after_load + 1)
+add_lo = find_index("s_add_u32", "s14, s14, __body@rel32@lo+4", getpc + 1)
+add_hi = find_index("s_addc_u32", "s15, s15, __body@rel32@hi+4", add_lo + 1)
+branch = find_index("s_setpc_b64", "s[14:15]", add_hi + 1)
+
+assert save_lo < save_hi < private_add_0 < private_addc_0 < soffset_0 < store_v0 < store_v1 < store_v2
+assert store_v2 < restore_lo_before_clobber < restore_hi_before_clobber < clobber_v0 < clobber_v1 < clobber_v2
+assert clobber_v2 < private_add_1 < private_addc_1 < soffset_1 < load_v0 < load_v1 < load_v2 < wait
+assert wait < restore_lo_after_load < restore_hi_after_load < getpc < add_lo < add_hi < branch
+
+print(json.dumps({"plan": plan, "instruction_count": len(instructions)}, indent=2))
+PY
+then
+    if python3 - "$STDOUT_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert payload["plan"]["private_segment_pattern_class"] == "setreg_flat_scratch_init"
+assert payload["plan"]["save_pair"] == [12, 13]
+assert payload["plan"]["branch_pair"] == [14, 15]
+assert payload["instruction_count"] > 0
+PY
+    then
+        echo -e "  ${GREEN}✓ PASS${NC} - gfx1030 wrapper IR now builds through the expected wave32 buffer spill/restore carrier"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - gfx1030 wrapper IR output was malformed"
+        echo "  Stdout saved to: $STDOUT_FILE"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - gfx1030 wrapper IR construction failed unexpectedly"
+    echo "  Stdout saved to: $STDOUT_FILE"
+    echo "  Stderr saved to: $STDERR_FILE"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 if [ ! -x "$LLVM_MC" ] || [ ! -x "$LD_LLD" ]; then
     echo -e "\n${YELLOW}SKIP${NC} - Packed fixture regeneration tests require llvm-mc and ld.lld"
     echo "  Expected: $LLVM_MC"
     echo "  Expected: $LD_LLD"
 else
+    TESTS_RUN=$((TESTS_RUN + 1))
+    TEST_NAME="entry_wrapper_workitem_regen_gfx1030_direct"
+    PROOF_HSACO="$WORK_DIR/${TEST_NAME}.hsaco"
+    PROOF_REPORT="$WORK_DIR/${TEST_NAME}.report.json"
+    PROOF_MANIFEST="$WORK_DIR/${TEST_NAME}.manifest.json"
+    PROOF_IR="$WORK_DIR/${TEST_NAME}.ir.json"
+    STDOUT_FILE="$WORK_DIR/${TEST_NAME}.stdout"
+    STDERR_FILE="$WORK_DIR/${TEST_NAME}.stderr"
+    echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+    echo "  Validate gfx1030 fixtures round-trip through regenerate_code_object proof mode"
+
+    if python3 "$REGENERATE_CODE_OBJECT" \
+        --input-ir "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx1030.ir.json" \
+        --manifest "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx1030.manifest.json" \
+        --output "$PROOF_HSACO" \
+        --report-output "$PROOF_REPORT" \
+        --add-entry-wrapper-workitem-vgpr-capture-restore-proof \
+        --kernel entry_abi_kernel \
+        --keep-temp-dir \
+        --llvm-mc "$LLVM_MC" \
+        --ld-lld "$LD_LLD" > "$STDOUT_FILE" 2> "$STDERR_FILE" && \
+       python3 "$INSPECT_CODE_OBJECT" "$PROOF_HSACO" --output "$PROOF_MANIFEST" >/dev/null && \
+       python3 "$DISASM_TO_IR" "$PROOF_HSACO" --manifest "$PROOF_MANIFEST" --output "$PROOF_IR" >/dev/null; then
+        if python3 - "$PROOF_REPORT" "$PROOF_IR" <<'PY'
+import json
+import sys
+
+report = json.load(open(sys.argv[1], encoding="utf-8"))
+ir = json.load(open(sys.argv[2], encoding="utf-8"))
+
+assert report["input_code_object"] is None
+assert report["input_ir_source"].endswith("amdgpu_entry_abi_gfx1030.ir.json")
+entry = report["entry_wrapper_result"]
+assert entry["mode"] == "entry-wrapper-workitem-vgpr-capture-restore-proof"
+assert entry["source_kernel"] == "entry_abi_kernel"
+assert entry["entry_handoff_recipe"]["supported_class"] == "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1"
+workitem = entry["workitem_spill_restore"]
+assert workitem["source_vgprs"] == [0, 1, 2]
+assert workitem["spill_offset"] == 528
+assert workitem["spill_bytes"] == 12
+assert workitem["private_segment_growth"] == 16
+assert workitem["private_segment_pattern_class"] == "setreg_flat_scratch_init"
+assert workitem["private_segment_offset_source_sgpr"] == 11
+assert workitem["save_pair"] == [12, 13]
+assert workitem["soffset_sgpr"] == 14
+
+wrapper = next(fn for fn in ir["functions"] if fn.get("name") == "entry_abi_kernel")
+instructions = [(insn.get("mnemonic"), insn.get("operand_text")) for insn in wrapper.get("instructions", [])]
+assert ("buffer_store_dword", "v0, off, s[0:3], s14 offset:528") in instructions
+assert ("buffer_store_dword", "v1, off, s[0:3], s14 offset:532") in instructions
+assert ("buffer_store_dword", "v2, off, s[0:3], s14 offset:536") in instructions
+assert ("buffer_load_dword", "v0, off, s[0:3], s14 offset:528") in instructions
+assert ("buffer_load_dword", "v1, off, s[0:3], s14 offset:532") in instructions
+assert ("buffer_load_dword", "v2, off, s[0:3], s14 offset:536") in instructions
+assert ("s_setpc_b64", "s[14:15]") in instructions
+PY
+        then
+            echo -e "  ${GREEN}✓ PASS${NC} - gfx1030 fixture proof survives the regenerate/rebuild/disassemble path"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            echo -e "  ${RED}✗ FAIL${NC} - gfx1030 regeneration proof output was incorrect"
+            echo "  Report saved to: $PROOF_REPORT"
+            echo "  IR saved to: $PROOF_IR"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - gfx1030 regeneration proof failed unexpectedly"
+        echo "  Stdout saved to: $STDOUT_FILE"
+        echo "  Stderr saved to: $STDERR_FILE"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+
     TESTS_RUN=$((TESTS_RUN + 1))
     TEST_NAME="entry_wrapper_workitem_regen_gfx90a_packed"
     PROOF_HSACO="$WORK_DIR/${TEST_NAME}.hsaco"

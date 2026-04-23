@@ -61,38 +61,25 @@ echo "==========================================================================
 echo "  Launch test: $HSA_LAUNCH_TEST"
 echo "================================================================================"
 
-python3 - "$SCRIPT_DIR" "$RUNTIME_FIXTURE_IR" <<'PY'
-import json
+python3 - "$REPO_ROOT" "$SCRIPT_DIR" "$RUNTIME_FIXTURE_IR" <<'PY'
 import sys
 from pathlib import Path
 
-script_dir = Path(sys.argv[1]).resolve()
-output_path = Path(sys.argv[2]).resolve()
+repo_root = Path(sys.argv[1]).resolve()
+script_dir = Path(sys.argv[2]).resolve()
+output_path = Path(sys.argv[3]).resolve()
 source_path = script_dir / "probe_specs" / "fixtures" / "amdgpu_entry_abi_gfx942.ir.json"
 
-ir = json.loads(source_path.read_text(encoding="utf-8"))
-function = next(fn for fn in ir["functions"] if fn.get("name") == "entry_abi_kernel")
-instructions = function["instructions"]
-last = instructions[-1]
-encoding_words = last.get("encoding_words", [])
-size_bytes = 4 * len(encoding_words) if encoding_words else 4
-next_address = int(last["address"]) + size_bytes
+sys.path.insert(0, str(repo_root / "tools" / "codeobj"))
 
-if not any(insn.get("mnemonic") == "s_endpgm" for insn in instructions[-2:]):
-    instructions.append(
-        {
-            "address": next_address,
-            "mnemonic": "s_endpgm",
-            "operand_text": "",
-            "operands": [],
-        }
-    )
-    next_address += 4
+from common import write_runtime_safe_fixture_ir  # type: ignore
 
-function["end_address"] = next_address
-function["size_bytes"] = next_address - int(instructions[0]["address"])
 
-output_path.write_text(json.dumps(ir, indent=2) + "\n", encoding="utf-8")
+write_runtime_safe_fixture_ir(
+    source_path,
+    output_path,
+    function_name="entry_abi_kernel",
+)
 PY
 
 python3 "$REGENERATE_CODE_OBJECT" \
