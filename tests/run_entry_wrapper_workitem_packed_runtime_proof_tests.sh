@@ -1,18 +1,17 @@
 #!/bin/bash
 ################################################################################
-# Entry-wrapper packed-workitem runtime proof tests
+# Entry-wrapper synthetic runtime proof tests
 #
-# Validates a hardware-backed launch slice for the packed wave64 gfx942 class:
-#   1. materialize a runtime-safe variant of the packed entry_abi fixture by
-#      appending s_endpgm to the synthetic source body
+# Validates a hardware-backed launch slice for entry-wrapper proof fixtures:
+#   1. materialize a runtime-safe variant of the synthetic entry_abi fixture by
+#      appending s_endpgm to the source body
 #   2. rebuild it with --add-entry-wrapper-workitem-vgpr-capture-restore-proof
 #   3. launch it through the HSA runtime and confirm the wrapper + handoff path
-#      executes to completion on real gfx942 hardware
+#      executes to completion on matching hardware
 #
-# This intentionally proves hardware legality of the wrapper-owned packed
-# spill/restore and branch handoff sequence. The original packed fixture body is
-# only an ABI slice, so it is not expected to be launchable without a terminal
-# instruction.
+# This intentionally proves hardware legality of the wrapper-owned spill/restore
+# and branch handoff sequence. The synthetic entry_abi fixtures are ABI slices,
+# so they are not expected to be launchable without a terminal instruction.
 ################################################################################
 
 set -e
@@ -47,28 +46,39 @@ WORK_DIR="$OUTPUT_DIR/entry_wrapper_workitem_packed_runtime_proof"
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
 
-RUNTIME_FIXTURE_IR="$WORK_DIR/amdgpu_entry_abi_gfx942_runtime_fixture.ir.json"
-PROOF_HSACO="$WORK_DIR/entry_wrapper_workitem_regen_gfx942_packed_runtime.hsaco"
-PROOF_REPORT="$WORK_DIR/entry_wrapper_workitem_regen_gfx942_packed_runtime.report.json"
-PROOF_STDOUT="$WORK_DIR/entry_wrapper_workitem_regen_gfx942_packed_runtime.stdout"
-PROOF_STDERR="$WORK_DIR/entry_wrapper_workitem_regen_gfx942_packed_runtime.stderr"
+ENTRY_WRAPPER_RUNTIME_PROOF_ARCH="${ENTRY_WRAPPER_RUNTIME_PROOF_ARCH:-gfx942}"
+ENTRY_WRAPPER_RUNTIME_PROOF_FUNCTION="${ENTRY_WRAPPER_RUNTIME_PROOF_FUNCTION:-entry_abi_kernel}"
+ENTRY_WRAPPER_RUNTIME_PROOF_EXPECTATION="${ENTRY_WRAPPER_RUNTIME_PROOF_EXPECTATION:-untouched}"
+ENTRY_WRAPPER_RUNTIME_PROOF_FIXTURE_BASENAME="${ENTRY_WRAPPER_RUNTIME_PROOF_FIXTURE_BASENAME:-amdgpu_entry_abi_${ENTRY_WRAPPER_RUNTIME_PROOF_ARCH}}"
+ENTRY_WRAPPER_RUNTIME_PROOF_LABEL="${ENTRY_WRAPPER_RUNTIME_PROOF_LABEL:-${ENTRY_WRAPPER_RUNTIME_PROOF_ARCH}}"
+ENTRY_WRAPPER_RUNTIME_PROOF_KIND="${ENTRY_WRAPPER_RUNTIME_PROOF_KIND:-synthetic}"
+ENTRY_WRAPPER_RUNTIME_PROOF_FIXTURE_IR="${SCRIPT_DIR}/probe_specs/fixtures/${ENTRY_WRAPPER_RUNTIME_PROOF_FIXTURE_BASENAME}.ir.json"
+ENTRY_WRAPPER_RUNTIME_PROOF_FIXTURE_MANIFEST="${SCRIPT_DIR}/probe_specs/fixtures/${ENTRY_WRAPPER_RUNTIME_PROOF_FIXTURE_BASENAME}.manifest.json"
+
+RUNTIME_FIXTURE_IR="$WORK_DIR/${ENTRY_WRAPPER_RUNTIME_PROOF_FIXTURE_BASENAME}_runtime_fixture.ir.json"
+PROOF_HSACO="$WORK_DIR/entry_wrapper_workitem_regen_${ENTRY_WRAPPER_RUNTIME_PROOF_ARCH}_${ENTRY_WRAPPER_RUNTIME_PROOF_KIND}_runtime.hsaco"
+PROOF_REPORT="$WORK_DIR/entry_wrapper_workitem_regen_${ENTRY_WRAPPER_RUNTIME_PROOF_ARCH}_${ENTRY_WRAPPER_RUNTIME_PROOF_KIND}_runtime.report.json"
+PROOF_STDOUT="$WORK_DIR/entry_wrapper_workitem_regen_${ENTRY_WRAPPER_RUNTIME_PROOF_ARCH}_${ENTRY_WRAPPER_RUNTIME_PROOF_KIND}_runtime.stdout"
+PROOF_STDERR="$WORK_DIR/entry_wrapper_workitem_regen_${ENTRY_WRAPPER_RUNTIME_PROOF_ARCH}_${ENTRY_WRAPPER_RUNTIME_PROOF_KIND}_runtime.stderr"
 LAUNCH_OUT="$WORK_DIR/launch.out"
 
 echo ""
 echo "================================================================================"
-echo "Entry-Wrapper Packed Workitem Runtime Proof Tests"
+echo "Entry-Wrapper Synthetic Runtime Proof Tests"
 echo "================================================================================"
 echo "  Launch test: $HSA_LAUNCH_TEST"
+echo "  Fixture IR:  $ENTRY_WRAPPER_RUNTIME_PROOF_FIXTURE_IR"
+echo "  Target arch: $ENTRY_WRAPPER_RUNTIME_PROOF_ARCH"
 echo "================================================================================"
 
-python3 - "$REPO_ROOT" "$SCRIPT_DIR" "$RUNTIME_FIXTURE_IR" <<'PY'
+python3 - "$REPO_ROOT" "$ENTRY_WRAPPER_RUNTIME_PROOF_FIXTURE_IR" "$RUNTIME_FIXTURE_IR" "$ENTRY_WRAPPER_RUNTIME_PROOF_FUNCTION" <<'PY'
 import sys
 from pathlib import Path
 
 repo_root = Path(sys.argv[1]).resolve()
-script_dir = Path(sys.argv[2]).resolve()
+source_path = Path(sys.argv[2]).resolve()
 output_path = Path(sys.argv[3]).resolve()
-source_path = script_dir / "probe_specs" / "fixtures" / "amdgpu_entry_abi_gfx942.ir.json"
+function_name = sys.argv[4]
 
 sys.path.insert(0, str(repo_root / "tools" / "codeobj"))
 
@@ -78,33 +88,33 @@ from common import write_runtime_safe_fixture_ir  # type: ignore
 write_runtime_safe_fixture_ir(
     source_path,
     output_path,
-    function_name="entry_abi_kernel",
+    function_name=function_name,
 )
 PY
 
 python3 "$REGENERATE_CODE_OBJECT" \
     --input-ir "$RUNTIME_FIXTURE_IR" \
-    --manifest "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.manifest.json" \
+    --manifest "$ENTRY_WRAPPER_RUNTIME_PROOF_FIXTURE_MANIFEST" \
     --output "$PROOF_HSACO" \
     --report-output "$PROOF_REPORT" \
     --add-entry-wrapper-workitem-vgpr-capture-restore-proof \
-    --kernel entry_abi_kernel \
+    --kernel "$ENTRY_WRAPPER_RUNTIME_PROOF_FUNCTION" \
     --keep-temp-dir \
     --llvm-mc "$LLVM_MC" \
     --ld-lld "$LD_LLD" > "$PROOF_STDOUT" 2> "$PROOF_STDERR"
 
 TESTS_RUN=$((TESTS_RUN + 1))
-TEST_NAME="entry_wrapper_workitem_gfx942_packed_runtime_launch"
+TEST_NAME="entry_wrapper_workitem_${ENTRY_WRAPPER_RUNTIME_PROOF_ARCH}_${ENTRY_WRAPPER_RUNTIME_PROOF_KIND}_runtime_launch"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
-echo "  Validate the packed gfx942 wrapper path executes to completion when the synthetic body is made terminal"
+echo "  Validate the ${ENTRY_WRAPPER_RUNTIME_PROOF_LABEL} wrapper path executes to completion when the synthetic body is made terminal"
 
 if ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
    "$HSA_LAUNCH_TEST" \
-   "$PROOF_HSACO" entry_abi_kernel untouched > "$LAUNCH_OUT" 2>&1; then
-    echo -e "  ${GREEN}✓ PASS${NC} - Packed gfx942 wrapper proof launches successfully on hardware"
+   "$PROOF_HSACO" "$ENTRY_WRAPPER_RUNTIME_PROOF_FUNCTION" "$ENTRY_WRAPPER_RUNTIME_PROOF_EXPECTATION" > "$LAUNCH_OUT" 2>&1; then
+    echo -e "  ${GREEN}✓ PASS${NC} - ${ENTRY_WRAPPER_RUNTIME_PROOF_LABEL} wrapper proof launches successfully on hardware"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo -e "  ${RED}✗ FAIL${NC} - Packed gfx942 wrapper proof failed on hardware"
+    echo -e "  ${RED}✗ FAIL${NC} - ${ENTRY_WRAPPER_RUNTIME_PROOF_LABEL} wrapper proof failed on hardware"
     echo "  Output saved to: $LAUNCH_OUT"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
