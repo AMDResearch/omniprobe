@@ -958,10 +958,32 @@ void hsaInterceptor::addKernel(uint64_t kernelObject, std::string& name, hsa_exe
    // Register runtime-discovered kernels in the cache so that
    // findInstrumentedAlternative() can find them without --library-filter.
    // Skip registration for kernels from excluded files to respect the library filter.
+   // Also apply the kernel name filter (-k / LOGDUR_FILTER) here to mirror the
+   // check in coCache::addFile(); without it, runtime discovery re-introduces
+   // filtered-out kernels (and their instrumented clones) into lookup_map_,
+   // causing them to be instrumented despite the filter.
    if (run_instrumented_ &&
        !(library_filter_.isActive() &&
          kernel_cache_.isKernelFromExcludedFile(kernelObject, library_filter_)))
+   {
+       const std::string& strFilter = config_["LOGDUR_FILTER"];
+       if (strFilter.size())
+       {
+           try
+           {
+               std::regex filter_regex(strFilter, std::regex_constants::ECMAScript);
+               if (!std::regex_search(thisName, filter_regex))
+                   return;
+           }
+           catch (const std::regex_error& error)
+           {
+               std::cout << "ERROR: There is a problem with your kernel filter (\"" << strFilter << "\"):\n";
+               std::cout << "\t" << error.what() << std::endl;
+               abort();
+           }
+       }
        kernel_cache_.registerRuntimeKernel(thisName, symbol, kernelObject, agent, kernarg_size);
+   }
 }
 
 hsa_status_t hsaInterceptor::hsa_executable_symbol_get_info(hsa_executable_symbol_t symbol, hsa_executable_symbol_info_t attribute, void *data)
