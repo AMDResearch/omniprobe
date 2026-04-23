@@ -82,6 +82,18 @@ target_compile_options(block_filter_test PRIVATE
 target_link_options(block_filter_test PRIVATE -fgpu-rdc)
 add_dependencies(block_filter_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
 
+# Dynamic LDS test kernel - uses extern __shared__ with dynamicSharedMemoryBytes
+# at launch to verify that instrumented dispatches preserve the dynamic portion
+# of group_segment_size.
+add_executable(dynamic_lds_test dynamic_lds_test.cpp)
+set_source_files_properties(dynamic_lds_test.cpp PROPERTIES LANGUAGE HIP)
+target_compile_options(dynamic_lds_test PRIVATE
+    ${TEST_KERNEL_COMPILE_FLAGS}
+    -fpass-plugin=${INST_PLUGIN}
+)
+target_link_options(dynamic_lds_test PRIVATE -fgpu-rdc)
+add_dependencies(dynamic_lds_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
+
 # Module-load test: kernel compiled to standalone .hsaco, loaded via hipModuleLoad at runtime.
 # This exercises the code path where instrumented kernels live in a dynamically-loaded code
 # object rather than being embedded in the executable's .hip_fatbin section.
