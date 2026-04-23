@@ -6,8 +6,8 @@
 #   1. rebuild module_load_kernel_plain.hsaco with
 #      --add-entry-wrapper-workgroup-x-restore-proof
 #   2. confirm the regeneration report declares workgroup_id_x restoration
-#   3. confirm the rebuilt assembly clobbers and restores s14 from the hidden
-#      handoff struct before restoring s8:s9 and branching to the original body
+#   3. confirm the rebuilt assembly clobbers and restores the current
+#      workgroup-x SGPR and kernarg pair before branching to the original body
 #   4. launch through the HSA runtime with a single-workgroup dispatch so
 #      workgroup_id_x is legitimately dispatch-constant (0)
 ################################################################################
@@ -102,12 +102,13 @@ assert fields[0]["name"] == "workgroup_id_x"
 assert fields[0]["offset"] == 8
 assert fields[0]["kind"] == "u32"
 assert fields[0]["load_opcode"] == "s_load_dword"
-assert fields[0]["target_sgpr"] == 14
+assert fields[0]["target_sgpr"] == 8
 assert fields[0]["clobber_target_before_load"] is True
 assert fields[1]["name"] == "original_kernarg_pointer"
 assert fields[1]["offset"] == 0
 assert fields[1]["kind"] == "u64"
-assert fields[1]["target_pair"] == [8, 9]
+assert fields[1]["target_pair"] == [0, 1]
+assert hidden.get("load_source_pair") == [4, 5]
 PY
 then
     echo -e "  ${GREEN}✓ PASS${NC} - Workgroup-x restore proof report captured the expected restoration contract"
@@ -121,7 +122,7 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="entry_wrapper_workgroup_x_restore_asm"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
-echo "  Validate the rebuilt assembly clobbers and restores s14 and s8:s9 before the branch handoff"
+echo "  Validate the rebuilt assembly clobbers and restores workgroup-x and the current kernarg pair before the branch handoff"
 
 if [ -f "$PROOF_ASM" ] && \
    python3 - "$PROOF_REPORT" "$PROOF_ASM" <<'PY'
@@ -132,14 +133,19 @@ from pathlib import Path
 report = json.load(open(sys.argv[1], encoding="utf-8"))
 asm = Path(sys.argv[2]).read_text(encoding="utf-8")
 lo, hi = report["entry_wrapper_result"]["scratch_pair"]
-offset = report["entry_wrapper_result"]["wrapper_hidden_handoff"]["offset"]
+hidden = report["entry_wrapper_result"]["wrapper_hidden_handoff"]
+offset = hidden["offset"]
+load_lo, load_hi = hidden["load_source_pair"]
+wg_field, kernarg_field = hidden["consumed_fields"]
+wg_target = int(wg_field["target_sgpr"])
+target_lo, target_hi = kernarg_field["target_pair"]
 needles = [
-    f"s_load_dwordx2 s[{lo}:{hi}], s[8:9], 0x{offset:x}",
-    "s_mov_b32 s14, 0",
-    f"s_load_dword s14, s[{lo}:{hi}], 0x8",
-    "s_mov_b32 s8, 0",
-    "s_mov_b32 s9, 0",
-    f"s_load_dwordx2 s[8:9], s[{lo}:{hi}], 0x0",
+    f"s_load_dwordx2 s[{lo}:{hi}], s[{load_lo}:{load_hi}], 0x{offset:x}",
+    f"s_mov_b32 s{wg_target}, 0",
+    f"s_load_dword s{wg_target}, s[{lo}:{hi}], 0x{wg_field['offset']:x}",
+    f"s_mov_b32 s{target_lo}, 0",
+    f"s_mov_b32 s{target_hi}, 0",
+    f"s_load_dwordx2 s[{target_lo}:{target_hi}], s[{lo}:{hi}], 0x{kernarg_field['offset']:x}",
 ]
 for needle in needles:
     assert needle in asm, needle

@@ -6,8 +6,8 @@
 #   1. rebuild module_load_kernel_plain.hsaco with
 #      --add-entry-wrapper-kernarg-restore-proof
 #   2. confirm the regeneration report declares that original_kernarg_pointer is
-#      consumed to restore s[8:9]
-#   3. confirm the rebuilt assembly zeros s8:s9 and reloads them from the
+#      consumed to restore the current kernarg base pair
+#   3. confirm the rebuilt assembly zeros that pair and reloads it from the
 #      hidden handoff struct before branching to the original body
 #   4. launch through the HSA runtime so the handoff struct contains the exact
 #      packet->kernarg_address seen by the kernel
@@ -102,8 +102,10 @@ assert field["name"] == "original_kernarg_pointer"
 assert field["offset"] == 0
 assert field["kind"] == "u64"
 assert field["load_opcode"] == "s_load_dwordx2"
-assert field["target_pair"] == [8, 9]
+assert field["target_pair"] == [0, 1]
 assert field["clobber_target_before_load"] is True
+assert hidden.get("load_source_pair") == [4, 5]
+assert hidden.get("pointer_load_opcode") == "s_load_dwordx2"
 PY
 then
     echo -e "  ${GREEN}✓ PASS${NC} - Kernarg-restore proof report captured the expected restoration contract"
@@ -117,7 +119,7 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="entry_wrapper_kernarg_restore_asm"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
-echo "  Validate the rebuilt assembly clobbers and restores s8:s9 before the branch handoff"
+echo "  Validate the rebuilt assembly clobbers and restores the current kernarg pair before the branch handoff"
 
 if [ -f "$PROOF_ASM" ] && \
    python3 - "$PROOF_REPORT" "$PROOF_ASM" <<'PY'
@@ -128,12 +130,16 @@ from pathlib import Path
 report = json.load(open(sys.argv[1], encoding="utf-8"))
 asm = Path(sys.argv[2]).read_text(encoding="utf-8")
 lo, hi = report["entry_wrapper_result"]["scratch_pair"]
-offset = report["entry_wrapper_result"]["wrapper_hidden_handoff"]["offset"]
+hidden = report["entry_wrapper_result"]["wrapper_hidden_handoff"]
+offset = hidden["offset"]
+load_lo, load_hi = hidden["load_source_pair"]
+field = hidden["consumed_fields"][0]
+target_lo, target_hi = field["target_pair"]
 needles = [
-    f"s_load_dwordx2 s[{lo}:{hi}], s[8:9], 0x{offset:x}",
-    "s_mov_b32 s8, 0",
-    "s_mov_b32 s9, 0",
-    f"s_load_dwordx2 s[8:9], s[{lo}:{hi}], 0x0",
+    f"s_load_dwordx2 s[{lo}:{hi}], s[{load_lo}:{load_hi}], 0x{offset:x}",
+    f"s_mov_b32 s{target_lo}, 0",
+    f"s_mov_b32 s{target_hi}, 0",
+    f"s_load_dwordx2 s[{target_lo}:{target_hi}], s[{lo}:{hi}], 0x{field['offset']:x}",
     "s_waitcnt lgkmcnt(0)",
     f"s_getpc_b64 s[{lo}:{hi}]",
     f"s_setpc_b64 s[{lo}:{hi}]",

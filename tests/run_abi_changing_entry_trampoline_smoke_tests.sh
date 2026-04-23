@@ -21,9 +21,18 @@ check_omniprobe
 OMNIPROBE_TIMEOUT="${OMNIPROBE_TIMEOUT:-20s}"
 
 HIPCC="${HIPCC:-/opt/rocm/bin/hipcc}"
-AMDGPU_ARCH_TOOL="${AMDGPU_ARCH_TOOL:-/opt/rocm/llvm/bin/amdgpu-arch}"
-if [ ! -x "$AMDGPU_ARCH_TOOL" ]; then
-    AMDGPU_ARCH_TOOL="/opt/rocm/bin/amdgpu-arch"
+AMDGPU_ARCH_TOOL="${AMDGPU_ARCH_TOOL:-}"
+if [ -z "$AMDGPU_ARCH_TOOL" ]; then
+    for candidate in \
+        /opt/rocm/llvm/bin/amdgpu-arch \
+        /opt/rocm/bin/amdgpu-arch \
+        /opt/rocm-7.2.0/lib/llvm/bin/amdgpu-arch
+    do
+        if [ -x "$candidate" ]; then
+            AMDGPU_ARCH_TOOL="$candidate"
+            break
+        fi
+    done
 fi
 
 MODULE_DH_COMMS_TEST="${BUILD_DIR}/tools/test_hip_module_dh_comms"
