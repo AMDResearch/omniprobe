@@ -41,7 +41,16 @@ def parse_args() -> argparse.Namespace:
             "primitives behind one orchestration entrypoint."
         )
     )
-    parser.add_argument("input", help="Input AMDGPU code object")
+    parser.add_argument("input", nargs="?", help="Input AMDGPU code object")
+    parser.add_argument(
+        "--input-ir",
+        default=None,
+        help=(
+            "Optional prebuilt instruction-level IR JSON. When provided, the "
+            "regeneration flow skips inspect/disasm and rebuilds directly from "
+            "this IR plus --manifest."
+        ),
+    )
     parser.add_argument("--output", required=True, help="Output code-object path")
     parser.add_argument(
         "--manifest",
@@ -399,6 +408,11 @@ def patch_descriptor_bytes_hex(bytes_hex: str, kernarg_size: int) -> str:
     return payload.hex()
 
 
+def encode_bits(value: int, start: int, width: int = 1) -> int:
+    mask = (1 << width) - 1
+    return (int(value) & mask) << start
+
+
 def round_up(value: int, alignment: int) -> int:
     if alignment <= 0:
         return value
@@ -411,6 +425,86 @@ def granulated_sgpr_count(total_sgprs: int) -> int:
 
 def granulated_vgpr_count(total_vgprs: int) -> int:
     return max(0, (round_up(max(1, total_vgprs), 8) // 8) - 1)
+
+
+def synthesize_descriptor_raw_values(descriptor: dict) -> None:
+    rsrc3 = descriptor.setdefault("compute_pgm_rsrc3", {})
+    if not isinstance(rsrc3.get("raw_value"), int):
+        rsrc3["raw_value"] = (
+            encode_bits(rsrc3.get("shared_vgpr_count", 0), 0, 4)
+            | encode_bits(rsrc3.get("inst_pref_size", 0), 4, 6)
+            | encode_bits(rsrc3.get("trap_on_start", 0), 10)
+            | encode_bits(rsrc3.get("trap_on_end", 0), 11)
+            | encode_bits(rsrc3.get("image_op", 0), 31)
+        )
+
+    rsrc1 = descriptor.setdefault("compute_pgm_rsrc1", {})
+    if not isinstance(rsrc1.get("raw_value"), int):
+        rsrc1["raw_value"] = (
+            encode_bits(rsrc1.get("granulated_workitem_vgpr_count", 0), 0, 6)
+            | encode_bits(rsrc1.get("granulated_wavefront_sgpr_count", 0), 6, 4)
+            | encode_bits(rsrc1.get("priority", 0), 10, 2)
+            | encode_bits(rsrc1.get("float_round_mode_32", 0), 12, 2)
+            | encode_bits(rsrc1.get("float_round_mode_16_64", 0), 14, 2)
+            | encode_bits(rsrc1.get("float_denorm_mode_32", 0), 16, 2)
+            | encode_bits(rsrc1.get("float_denorm_mode_16_64", 0), 18, 2)
+            | encode_bits(rsrc1.get("enable_dx10_clamp", 0), 21)
+            | encode_bits(rsrc1.get("enable_ieee_mode", 0), 23)
+            | encode_bits(rsrc1.get("fp16_overflow", 0), 26)
+            | encode_bits(rsrc1.get("workgroup_processor_mode", 0), 29)
+            | encode_bits(rsrc1.get("memory_ordered", 0), 30)
+            | encode_bits(rsrc1.get("forward_progress", 0), 31)
+        )
+
+    rsrc2 = descriptor.setdefault("compute_pgm_rsrc2", {})
+    if not isinstance(rsrc2.get("raw_value"), int):
+        rsrc2["raw_value"] = (
+            encode_bits(rsrc2.get("enable_private_segment", 0), 0)
+            | encode_bits(rsrc2.get("user_sgpr_count", 0), 1, 5)
+            | encode_bits(rsrc2.get("enable_trap_handler_or_dynamic_vgpr", 0), 6)
+            | encode_bits(rsrc2.get("enable_sgpr_workgroup_id_x", 0), 7)
+            | encode_bits(rsrc2.get("enable_sgpr_workgroup_id_y", 0), 8)
+            | encode_bits(rsrc2.get("enable_sgpr_workgroup_id_z", 0), 9)
+            | encode_bits(rsrc2.get("enable_sgpr_workgroup_info", 0), 10)
+            | encode_bits(rsrc2.get("enable_vgpr_workitem_id", 0), 11, 2)
+            | encode_bits(rsrc2.get("exception_fp_ieee_invalid_op", 0), 24)
+            | encode_bits(rsrc2.get("exception_fp_denorm_src", 0), 25)
+            | encode_bits(rsrc2.get("exception_fp_ieee_div_zero", 0), 26)
+            | encode_bits(rsrc2.get("exception_fp_ieee_overflow", 0), 27)
+            | encode_bits(rsrc2.get("exception_fp_ieee_underflow", 0), 28)
+            | encode_bits(rsrc2.get("exception_fp_ieee_inexact", 0), 29)
+            | encode_bits(rsrc2.get("exception_int_div_zero", 0), 30)
+        )
+
+    properties = descriptor.setdefault("kernel_code_properties", {})
+    if not isinstance(properties.get("raw_value"), int):
+        properties["raw_value"] = (
+            encode_bits(properties.get("enable_sgpr_private_segment_buffer", 0), 0)
+            | encode_bits(properties.get("enable_sgpr_dispatch_ptr", 0), 1)
+            | encode_bits(properties.get("enable_sgpr_queue_ptr", 0), 2)
+            | encode_bits(properties.get("enable_sgpr_kernarg_segment_ptr", 0), 3)
+            | encode_bits(properties.get("enable_sgpr_dispatch_id", 0), 4)
+            | encode_bits(properties.get("enable_sgpr_flat_scratch_init", 0), 5)
+            | encode_bits(properties.get("enable_sgpr_private_segment_size", 0), 6)
+            | encode_bits(properties.get("enable_wavefront_size32", 0), 10)
+            | encode_bits(properties.get("uses_dynamic_stack", 0), 11)
+            | encode_bits(properties.get("kernarg_preload_spec_length", 0), 16, 7)
+            | encode_bits(properties.get("kernarg_preload_spec_offset", 0), 23, 9)
+        )
+
+
+def ensure_manifest_descriptor_bytes(manifest: dict) -> None:
+    for descriptor in manifest.get("kernels", {}).get("descriptors", []):
+        if not isinstance(descriptor, dict):
+            continue
+        synthesize_descriptor_raw_values(descriptor)
+        if not str(descriptor.get("bytes_hex", "") or ""):
+            descriptor["bytes_hex"] = materialize_descriptor_bytes(
+                descriptor,
+                entry_offset=0,
+            ).hex()
+        if not int(descriptor.get("size", 0) or 0):
+            descriptor["size"] = 64
 
 
 def update_descriptor_sgpr_footprint(descriptor: dict, total_sgprs: int) -> None:
@@ -799,6 +893,8 @@ ENTRY_WRAPPER_PROOF_IMPLEMENTED_CLASSES = {
     "wave32-direct-vgpr-xyz-setreg-flat-scratch-v1",
     "wave64-direct-vgpr-xyz-flat-scratch-alias-v1",
     "wave64-direct-vgpr-xyz-src-private-base-v1",
+    "wave64-packed-v0-10_10_10-flat-scratch-alias-v1",
+    "wave64-packed-v0-10_10_10-src-private-base-v1",
     "wave64-single-vgpr-x-workgroup-x-kernarg-only-v1",
 }
 ENTRY_WRAPPER_HIDDEN_HANDOFF_POINTER_SIZE = 8
@@ -837,6 +933,85 @@ def build_text_function_symbol(
     if isinstance(text_section, dict):
         symbol["section_offset"] = int(value) - int(text_section.get("address", 0) or 0)
     return symbol
+
+
+def synthetic_text_function_symbol(
+    *,
+    name: str,
+    value: int,
+    size: int,
+    text_section: dict | None,
+    binding: str = "Global",
+    visibility: list[str] | None = None,
+) -> dict:
+    symbol = {
+        "name": name,
+        "value": int(value),
+        "size": int(size),
+        "binding": binding,
+        "type": "Function",
+        "visibility": list(visibility or []),
+        "section": ".text",
+    }
+    if isinstance(text_section, dict):
+        symbol["section_offset"] = int(value) - int(text_section.get("address", 0) or 0)
+    return symbol
+
+
+def synthetic_data_object_symbol(
+    *,
+    name: str,
+    size: int,
+    section: str,
+    binding: str = "Global",
+    visibility: list[str] | None = None,
+    value: int | None = None,
+    section_offset: int | None = None,
+) -> dict:
+    symbol = {
+        "name": name,
+        "size": int(size),
+        "binding": binding,
+        "type": "Object",
+        "visibility": list(visibility or []),
+        "section": section,
+    }
+    if value is not None:
+        symbol["value"] = int(value)
+    if section_offset is not None:
+        symbol["section_offset"] = int(section_offset)
+    return symbol
+
+
+def normalize_function_address_ranges(ir: dict) -> None:
+    for function in ir.get("functions", []):
+        if not isinstance(function, dict):
+            continue
+        instructions = function.get("instructions", [])
+        if not isinstance(instructions, list) or not instructions:
+            continue
+        if function.get("start_address") is None:
+            first_address = instructions[0].get("address")
+            if first_address is not None:
+                function["start_address"] = int(first_address)
+        if function.get("end_address") is None:
+            last = instructions[-1]
+            last_address = last.get("address")
+            if last_address is None:
+                continue
+            size_bytes = 4
+            encoding_words = last.get("encoding_words", [])
+            if isinstance(encoding_words, list) and encoding_words:
+                size_bytes = 4 * len(encoding_words)
+            elif len(instructions) >= 2:
+                previous_address = instructions[-2].get("address")
+                if previous_address is not None:
+                    delta = int(last_address) - int(previous_address)
+                    if delta > 0:
+                        size_bytes = delta
+            function["end_address"] = int(last_address) + size_bytes
+        if function.get("size_bytes") is None and function.get("start_address") is not None and function.get("end_address") is not None:
+            function["size_bytes"] = int(function["end_address"]) - int(function["start_address"])
 
 
 def wrapper_start_address(ir: dict, manifest: dict) -> int:
@@ -2865,12 +3040,45 @@ def add_entry_wrapper_proof_intent(
         (section for section in manifest.get("sections", []) if section.get("name") == ".text"),
         None,
     )
+    functions_section = manifest.setdefault("functions", {})
+    function_symbols = manifest.setdefault("kernels", {}).setdefault("function_symbols", [])
+    descriptor_symbols = manifest.setdefault("kernels", {}).setdefault("descriptor_symbols", [])
+    all_symbols = functions_section.setdefault("all_symbols", [])
+    helper_symbols = functions_section.setdefault("helper_symbols", [])
+    manifest_symbols = manifest.setdefault("symbols", [])
     original_kernel_symbol = next(
-        (entry for entry in manifest.get("kernels", {}).get("function_symbols", []) if entry.get("name") == kernel_name),
+        (entry for entry in function_symbols if entry.get("name") == kernel_name),
         None,
     )
     if original_kernel_symbol is None:
-        raise SystemExit(f"kernel function symbol for {kernel_name!r} not found")
+        original_kernel_symbol = synthetic_text_function_symbol(
+            name=kernel_name,
+            value=int(original_function.get("start_address", 0) or 0),
+            size=int(
+                (
+                    original_function.get(
+                        "end_address", original_function.get("start_address", 0)
+                    )
+                    or 0
+                )
+                - int(original_function.get("start_address", 0) or 0)
+            ),
+            text_section=text_section,
+            visibility=["STV_PROTECTED"],
+        )
+        function_symbols.append(deepcopy(original_kernel_symbol))
+        all_symbols.append(deepcopy(original_kernel_symbol))
+        manifest_symbols.append(deepcopy(original_kernel_symbol))
+    descriptor_name = str(source_descriptor.get("name") or f"{kernel_name}.kd")
+    if not any(entry.get("name") == descriptor_name for entry in descriptor_symbols):
+        descriptor_symbols.append(
+            synthetic_data_object_symbol(
+                name=descriptor_name,
+                size=int(source_descriptor.get("size", 64) or 64),
+                section=".rodata",
+                visibility=["STV_PROTECTED"],
+            )
+        )
 
     rename_function_ir(ir, kernel_name, body_name)
     wrapper_address = wrapper_start_address(ir, manifest)
@@ -2894,22 +3102,22 @@ def add_entry_wrapper_proof_intent(
     )
     ir.setdefault("functions", []).append(wrapper_function)
 
-    renamed_all_symbols = rename_symbol(manifest["functions"]["all_symbols"], kernel_name, body_name)
-    renamed_symbols = rename_symbol(manifest["symbols"], kernel_name, body_name)
+    renamed_all_symbols = rename_symbol(all_symbols, kernel_name, body_name)
+    renamed_symbols = rename_symbol(manifest_symbols, kernel_name, body_name)
     for entry in [*renamed_all_symbols, *renamed_symbols]:
         entry["binding"] = "Local"
         entry["visibility"] = []
 
-    remove_symbol(manifest["kernels"]["function_symbols"], kernel_name)
-    remove_symbol(manifest["functions"]["helper_symbols"], body_name)
+    remove_symbol(function_symbols, kernel_name)
+    remove_symbol(helper_symbols, body_name)
 
     body_helper_symbol = next(
-        (entry for entry in manifest["functions"]["all_symbols"] if entry.get("name") == body_name),
+        (entry for entry in all_symbols if entry.get("name") == body_name),
         None,
     )
     if body_helper_symbol is None:
         raise SystemExit(f"renamed body helper symbol {body_name!r} was not materialized")
-    manifest["functions"]["helper_symbols"].append(deepcopy(body_helper_symbol))
+    helper_symbols.append(deepcopy(body_helper_symbol))
 
     wrapper_symbol = build_text_function_symbol(
         original_kernel_symbol,
@@ -2918,9 +3126,9 @@ def add_entry_wrapper_proof_intent(
         size=int(wrapper_function.get("end_address", wrapper_address) - wrapper_address),
         text_section=text_section,
     )
-    manifest["functions"]["all_symbols"].append(deepcopy(wrapper_symbol))
-    manifest["kernels"]["function_symbols"].append(deepcopy(wrapper_symbol))
-    manifest["symbols"].append(deepcopy(wrapper_symbol))
+    all_symbols.append(deepcopy(wrapper_symbol))
+    function_symbols.append(deepcopy(wrapper_symbol))
+    manifest_symbols.append(deepcopy(wrapper_symbol))
 
     manifest.setdefault("descriptor_patch_intents", []).append(
         {
@@ -3584,6 +3792,8 @@ def patch_output_clone_descriptors(
             continue
 
         source_descriptor = find_descriptor(manifest, clone_descriptor_name)
+        if not str(source_descriptor.get("bytes_hex", "") or ""):
+            continue
         output_descriptor = find_descriptor(output_manifest, clone_descriptor_name)
         output_descriptor_symbol = find_symbol(output_descriptor_symbols, clone_descriptor_name)
         output_function_symbol = find_symbol(output_function_symbols, clone_kernel)
@@ -3612,7 +3822,12 @@ def patch_output_clone_descriptors(
 
 def main() -> int:
     args = parse_args()
-    input_path = Path(args.input).resolve()
+    input_path = Path(args.input).resolve() if args.input else None
+    input_ir_path = Path(args.input_ir).resolve() if args.input_ir else None
+    if input_path is None and input_ir_path is None:
+        raise SystemExit("either positional input or --input-ir is required")
+    if input_ir_path is not None and not args.manifest:
+        raise SystemExit("--manifest is required when --input-ir is provided")
     output_path = Path(args.output).resolve()
     report_path = Path(args.report_output).resolve() if args.report_output else None
     tool_dir = Path(__file__).resolve().parent
@@ -3634,7 +3849,15 @@ def main() -> int:
                 shutil.copyfile(manifest_path, working_manifest_path)
             else:
                 working_manifest_path = manifest_path
+            manifest_payload = load_json(working_manifest_path)
+            ensure_manifest_descriptor_bytes(manifest_payload)
+            working_manifest_path.write_text(
+                json.dumps(manifest_payload, indent=2) + "\n",
+                encoding="utf-8",
+            )
         else:
+            if input_path is None:
+                raise SystemExit("positional input is required when --manifest is omitted")
             working_manifest_path = temp_dir_path / "input.manifest.json"
             build_manifest(
                 input_path=input_path,
@@ -3686,13 +3909,24 @@ def main() -> int:
         obj_path = temp_dir_path / "output.o"
         rebuild_report_path = temp_dir_path / "rebuild.report.json"
         asm_manifest_path = working_manifest_path
-        build_ir(
-            input_path=input_path,
-            manifest_path=working_manifest_path,
-            ir_path=ir_path,
-            args=args,
-            tool_dir=tool_dir,
-        )
+        if input_ir_path is not None:
+            if input_ir_path != ir_path:
+                shutil.copyfile(input_ir_path, ir_path)
+            else:
+                ir_path = input_ir_path
+            ir_payload = load_json(ir_path)
+            normalize_function_address_ranges(ir_payload)
+            ir_path.write_text(json.dumps(ir_payload, indent=2) + "\n", encoding="utf-8")
+        else:
+            if input_path is None:
+                raise SystemExit("positional input is required when --input-ir is omitted")
+            build_ir(
+                input_path=input_path,
+                manifest_path=working_manifest_path,
+                ir_path=ir_path,
+                args=args,
+                tool_dir=tool_dir,
+            )
         if args.add_entry_wrapper_proof:
             manifest_payload = load_json(working_manifest_path)
             ir_payload = load_json(ir_path)
@@ -4222,7 +4456,8 @@ def main() -> int:
                             partial_report = {
                                 "operation": "whole-object-regeneration-scaffold",
                                 "scope": "single-kernel-noop",
-                                "input_code_object": str(input_path),
+                                "input_code_object": str(input_path) if input_path else None,
+                                "input_ir_source": str(input_ir_path) if input_ir_path else None,
                                 "output_code_object": str(output_path),
                                 "mode": args.mode,
                                 "kernel_name": kernel_name,
@@ -4346,6 +4581,19 @@ def main() -> int:
                 json.dumps(ir_payload, indent=2) + "\n",
                 encoding="utf-8",
             )
+        manifest_payload_final = load_json(working_manifest_path)
+        ensure_manifest_descriptor_bytes(manifest_payload_final)
+        working_manifest_path.write_text(
+            json.dumps(manifest_payload_final, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        if asm_manifest_path != working_manifest_path and asm_manifest_path.exists():
+            asm_manifest_payload_final = load_json(asm_manifest_path)
+            ensure_manifest_descriptor_bytes(asm_manifest_payload_final)
+            asm_manifest_path.write_text(
+                json.dumps(asm_manifest_payload_final, indent=2) + "\n",
+                encoding="utf-8",
+            )
         rebuild_function_name = kernel_name if primary_kernel_count == 1 else None
         rebuild(
             ir_path=ir_path,
@@ -4384,7 +4632,8 @@ def main() -> int:
         report = {
             "operation": "whole-object-regeneration-scaffold",
             "scope": "single-kernel-noop",
-            "input_code_object": str(input_path),
+            "input_code_object": str(input_path) if input_path else None,
+            "input_ir_source": str(input_ir_path) if input_ir_path else None,
             "output_code_object": str(output_path),
             "mode": args.mode,
             "kernel_name": kernel_name,

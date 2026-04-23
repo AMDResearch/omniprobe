@@ -129,6 +129,20 @@ PY
 }
 
 run_implemented_class_test \
+    "gfx90a_packed" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.manifest.json" \
+    "entry_abi_kernel" \
+    "wave64-packed-v0-10_10_10-flat-scratch-alias-v1"
+
+run_implemented_class_test \
+    "gfx942_packed" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.manifest.json" \
+    "entry_abi_kernel" \
+    "wave64-packed-v0-10_10_10-src-private-base-v1"
+
+run_implemented_class_test \
     "gfx90a_mi210_direct" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a_mi210_direct.ir.json" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a_mi210_direct.manifest.json" \

@@ -93,6 +93,7 @@ ENTRY_BACKEND_THUNK_JSON="$OUTPUT_DIR/binary_probe_injector_entry_backend.thunks
 BASIC_BLOCK_BACKEND_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_basic_block_backend.plan.json"
 BASIC_BLOCK_BACKEND_THUNK_JSON="$OUTPUT_DIR/binary_probe_injector_basic_block_backend.thunks.json"
 BASIC_BLOCK_BACKEND_BUILTINS_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_basic_block_backend_builtins.plan.json"
+BASIC_BLOCK_BACKEND_UNSUPPORTED_BUILTINS_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_basic_block_backend_unsupported_builtins.plan.json"
 
 python3 - "$ENTRY_BACKEND_PLAN_JSON" "$ENTRY_BACKEND_THUNK_JSON" <<'PY'
 import json
@@ -165,7 +166,7 @@ json.dump(thunks, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
 open(sys.argv[2], "a", encoding="utf-8").write("\n")
 PY
 
-python3 - "$BASIC_BLOCK_BACKEND_PLAN_JSON" "$BASIC_BLOCK_BACKEND_THUNK_JSON" "$BASIC_BLOCK_BACKEND_BUILTINS_PLAN_JSON" <<'PY'
+python3 - "$BASIC_BLOCK_BACKEND_PLAN_JSON" "$BASIC_BLOCK_BACKEND_THUNK_JSON" "$BASIC_BLOCK_BACKEND_BUILTINS_PLAN_JSON" "$BASIC_BLOCK_BACKEND_UNSUPPORTED_BUILTINS_PLAN_JSON" <<'PY'
 import json
 import sys
 
@@ -205,6 +206,9 @@ plan = {
 
 plan_with_builtins = json.loads(json.dumps(plan))
 plan_with_builtins["kernels"][0]["planned_sites"][0]["helper_context"]["builtins"] = ["block_idx", "thread_idx", "dispatch_id"]
+
+plan_with_unsupported_builtins = json.loads(json.dumps(plan))
+plan_with_unsupported_builtins["kernels"][0]["planned_sites"][0]["helper_context"]["builtins"] = ["queue_ptr"]
 
 thunks = {
     "thunks": [
@@ -253,6 +257,8 @@ json.dump(thunks, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
 open(sys.argv[2], "a", encoding="utf-8").write("\n")
 json.dump(plan_with_builtins, open(sys.argv[3], "w", encoding="utf-8"), indent=2)
 open(sys.argv[3], "a", encoding="utf-8").write("\n")
+json.dump(plan_with_unsupported_builtins, open(sys.argv[4], "w", encoding="utf-8"), indent=2)
+open(sys.argv[4], "a", encoding="utf-8").write("\n")
 PY
 
 make_high_vgpr_entry_manifest() {
@@ -604,22 +610,27 @@ assert meta["call_arguments"][2]["vgprs"] == [4, 5]
 assert meta["call_arguments"][3]["vgprs"] == [6]
 staged = meta["staged_call_arguments"]
 assert [entry["kind"] for entry in staged] == ["hidden_ctx", "capture"]
-assert meta["saved_kernarg_pair"] == [26, 27]
-assert staged[0]["staging_sgprs"] == [28, 29]
+assert meta["saved_kernarg_pair"] == [64, 65]
+assert staged[0]["staging_sgprs"] == [66, 67]
 assert staged[0]["kernel_arg_offset"] == 272
-assert staged[1]["staging_sgprs"] == [30, 31]
+assert staged[1]["staging_sgprs"] == [68, 69]
 assert staged[1]["kernel_arg_offset"] == 8
-assert meta["timestamp_pair"] == [32, 33]
-assert meta["target_pair"] == [34, 35]
-assert meta["scratch_restore_pair"] == [36, 37]
-assert meta["return_restore_pair"] == [38, 39]
-assert meta["exec_restore_pair"] == [40, 41]
-assert meta["total_sgprs"] == 42
+assert meta["timestamp_pair"] == [70, 71]
+assert meta["target_pair"] == [72, 73]
+assert meta["scratch_restore_pair"] == [74, 75]
+assert meta["return_restore_pair"] == [76, 77]
+assert meta["exec_restore_pair"] == [78, 79]
+assert meta["vcc_restore_pair"] == [80, 81]
+assert meta["m0_restore_sgpr"] == 82
+assert meta["total_sgprs"] == 84
 spill = meta["preserved_low_vgprs"]
-assert spill["source_vgprs"] == [0, 1, 2, 3, 4, 5, 6]
+assert spill["source_vgprs"] == list(range(32))
 assert spill["spill_offset"] == 528
-assert spill["spill_bytes"] == 28
-assert spill["private_segment_growth"] == 32
+assert spill["spill_bytes"] == 128
+assert spill["source_sgprs"] == list(range(2, 26)) + [64, 65]
+assert spill["sgpr_spill_offset"] == 656
+assert spill["sgpr_spill_bytes"] == 104
+assert spill["private_segment_growth"] == 240
 assert spill["private_segment_pattern_class"] == "flat_scratch_alias_init"
 assert spill["private_segment_offset_source_sgpr"] == 11
 sites = meta["injected_sites"]
@@ -627,7 +638,7 @@ assert [site["block_id"] for site in sites] == [0]
 assert [site["start_address"] for site in sites] == [6400]
 instructions = fn["instructions"]
 assert instructions[0]["mnemonic"] == "s_mov_b64"
-assert instructions[0]["operand_text"] == "s[26:27], s[4:5]"
+assert instructions[0]["operand_text"] == "s[64:65], s[4:5]"
 for site in sites:
     start = site["start_address"]
     original_index = site["original_instruction_index"]
@@ -644,11 +655,11 @@ for site in sites:
         for insn in synthetic_before
     )
     assert any(
-        insn["mnemonic"] == "s_mov_b64" and insn["operand_text"] == "s[38:39], s[30:31]"
+        insn["mnemonic"] == "s_mov_b64" and insn["operand_text"] == "s[76:77], s[30:31]"
         for insn in synthetic_before
     )
     assert any(
-        insn["mnemonic"] == "s_mov_b64" and insn["operand_text"] == "exec, s[40:41]"
+        insn["mnemonic"] == "s_mov_b64" and insn["operand_text"] == "exec, s[78:79]"
         for insn in synthetic_before
     )
     assert any(
@@ -673,13 +684,13 @@ PY
     fi
 }
 
-run_basic_block_builtin_rejection_test() {
+run_basic_block_builtin_acceptance_test() {
     local arch="$1"
     local ir_fixture="$2"
     local manifest_fixture="$3"
 
     TESTS_RUN=$((TESTS_RUN + 1))
-    local test_name="binary_probe_inject_basic_block_${arch}_reject_builtins"
+    local test_name="binary_probe_inject_basic_block_${arch}_accept_builtins"
     echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $test_name"
     local adjusted_manifest="$OUTPUT_DIR/${test_name}.manifest.json"
     local out_ir="$OUTPUT_DIR/${test_name}.ir.json"
@@ -691,14 +702,57 @@ run_basic_block_builtin_rejection_test() {
         --manifest "$adjusted_manifest" \
         --function entry_abi_kernel \
         --output "$out_ir" > "$OUTPUT_DIR/${test_name}.out" 2>&1; then
-        echo -e "  ${RED}✗ FAIL${NC} - ${arch} basic-block injector unexpectedly accepted helper builtins"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-    else
-        if grep -q 'does not yet support helper builtins' "$OUTPUT_DIR/${test_name}.out"; then
-            echo -e "  ${GREEN}✓ PASS${NC} - ${arch} basic-block injector fails closed when helper builtins are requested"
+        if python3 - "$out_ir" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+fn = payload["functions"][0]
+meta = fn["instrumentation"]["basic_block_stubs"]
+assert meta["call_arguments"][0]["kind"] == "hidden_ctx"
+assert meta["call_arguments"][1]["kind"] == "capture"
+assert meta["call_arguments"][2]["kind"] == "timestamp"
+assert meta["call_arguments"][3]["kind"] == "event"
+PY
+        then
+            echo -e "  ${GREEN}✓ PASS${NC} - ${arch} basic-block injector now accepts helper builtins that map onto Omniprobe runtime state"
             TESTS_PASSED=$((TESTS_PASSED + 1))
         else
-            echo -e "  ${RED}✗ FAIL${NC} - ${arch} basic-block rejection reason was incorrect"
+            echo -e "  ${RED}✗ FAIL${NC} - ${arch} accepted helper builtins but produced malformed instrumentation metadata"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - ${arch} basic-block injector rejected supported helper builtins unexpectedly"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+run_basic_block_unsupported_builtin_rejection_test() {
+    local arch="$1"
+    local ir_fixture="$2"
+    local manifest_fixture="$3"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    local test_name="binary_probe_inject_basic_block_${arch}_reject_unsupported_builtins"
+    echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $test_name"
+    local adjusted_manifest="$OUTPUT_DIR/${test_name}.manifest.json"
+    local out_ir="$OUTPUT_DIR/${test_name}.ir.json"
+    make_high_vgpr_entry_manifest "$manifest_fixture" "$adjusted_manifest"
+
+    if python3 "$INJECTOR" "$ir_fixture" \
+        --plan "$BASIC_BLOCK_BACKEND_UNSUPPORTED_BUILTINS_PLAN_JSON" \
+        --thunk-manifest "$BASIC_BLOCK_BACKEND_THUNK_JSON" \
+        --manifest "$adjusted_manifest" \
+        --function entry_abi_kernel \
+        --output "$out_ir" > "$OUTPUT_DIR/${test_name}.out" 2>&1; then
+        echo -e "  ${RED}✗ FAIL${NC} - ${arch} basic-block injector unexpectedly accepted unsupported helper builtins"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    else
+        if grep -q 'unsupported builtins: queue_ptr' "$OUTPUT_DIR/${test_name}.out"; then
+            echo -e "  ${GREEN}✓ PASS${NC} - ${arch} basic-block injector still fails closed for helper builtins outside the Omniprobe runtime contract"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            echo -e "  ${RED}✗ FAIL${NC} - ${arch} basic-block unsupported-builtin rejection reason was incorrect"
             TESTS_FAILED=$((TESTS_FAILED + 1))
         fi
     fi
@@ -750,7 +804,11 @@ run_basic_block_inject_test \
     "gfx90a" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.ir.json" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.manifest.json"
-run_basic_block_builtin_rejection_test \
+run_basic_block_builtin_acceptance_test \
+    "gfx90a" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.manifest.json"
+run_basic_block_unsupported_builtin_rejection_test \
     "gfx90a" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.ir.json" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx90a.manifest.json"

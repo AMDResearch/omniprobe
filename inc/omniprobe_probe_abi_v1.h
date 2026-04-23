@@ -132,6 +132,24 @@ struct dispatch_uniform_snapshot_v1 {
     uint32_t hidden_group_size_z = 0;
 };
 
+struct site_snapshot_v1 {
+    uint32_t workgroup_x = 0;
+    uint32_t workgroup_y = 0;
+    uint32_t workgroup_z = 0;
+    uint32_t thread_x = 0;
+    uint32_t thread_y = 0;
+    uint32_t thread_z = 0;
+    uint32_t block_dim_x = 0;
+    uint32_t block_dim_y = 0;
+    uint32_t block_dim_z = 0;
+    uint32_t lane_id = 0;
+    uint32_t wave_id = 0;
+    uint32_t wavefront_size = 0;
+    uint32_t hw_id = 0;
+    uint32_t reserved0 = 0;
+    uint64_t exec_mask = 0;
+};
+
 struct runtime_storage_v2 {
     dh_comms::dh_comms_descriptor *dh = nullptr;
     const void *config_blob = nullptr;
@@ -152,6 +170,7 @@ struct runtime_ctx {
     const void *raw_hidden_ctx = nullptr;
     const entry_snapshot_v1 *entry_snapshot = nullptr;
     const dispatch_uniform_snapshot_v1 *dispatch_uniform = nullptr;
+    const site_snapshot_v1 *site_snapshot = nullptr;
     const dh_comms::builtin_snapshot_t *dh_builtins = nullptr;
     const void *dispatch_private = nullptr;
     uint32_t abi_version = runtime_ctx_abi_version;

@@ -50,6 +50,11 @@ ALLOWED_BUILTINS = {
     "block_idx",
     "thread_idx",
     "dispatch_id",
+    "lane_id",
+    "wave_id",
+    "wavefront_size",
+    "exec",
+    "hw_id",
 }
 ALLOWED_INSTRUCTION_FIELDS = {
     "address",

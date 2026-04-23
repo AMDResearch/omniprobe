@@ -1310,15 +1310,30 @@ def planned_helper_builtins(site: dict) -> list[str]:
     return [str(value) for value in builtins if isinstance(value, str) and value]
 
 
-def require_no_helper_builtins(sites: list[dict], *, mode: str) -> None:
+SUPPORTED_BINARY_HELPER_BUILTINS = {
+    "grid_dim",
+    "block_dim",
+    "block_idx",
+    "thread_idx",
+    "dispatch_id",
+    "lane_id",
+    "wave_id",
+    "wavefront_size",
+    "exec",
+    "hw_id",
+}
+
+
+def require_supported_helper_builtins(sites: list[dict], *, mode: str) -> None:
     requested: set[str] = set()
     for site in sites:
         requested.update(planned_helper_builtins(site))
-    if requested:
-        names = ", ".join(sorted(requested))
+    unsupported = sorted(name for name in requested if name not in SUPPORTED_BINARY_HELPER_BUILTINS)
+    if unsupported:
+        names = ", ".join(unsupported)
         raise SystemExit(
-            f"binary {mode} rewrite does not yet support helper builtins; "
-            f"requested builtins: {names}"
+            f"binary {mode} rewrite does not support helper builtins outside the Omniprobe runtime contract; "
+            f"unsupported builtins: {names}"
         )
 
 
@@ -2280,7 +2295,7 @@ def inject_memory_stubs(
     sites = find_planned_sites(kernel_plan, when="memory_op", contract="memory_op_v1")
     if not sites:
         raise SystemExit(f"kernel plan for {function_name!r} did not contain any planned memory-op sites")
-    require_no_helper_builtins(sites, mode="memory-op")
+    require_supported_helper_builtins(sites, mode="memory-op")
 
     hidden_ctx = kernel_plan.get("hidden_omniprobe_ctx", {})
     hidden_offset = int(hidden_ctx.get("offset", 0) or 0)
@@ -2692,7 +2707,7 @@ def inject_basic_block_stubs(
     sites = find_planned_sites(kernel_plan, when="basic_block", contract="basic_block_v1")
     if not sites:
         raise SystemExit(f"kernel plan for {function_name!r} did not contain any planned basic-block sites")
-    require_no_helper_builtins(sites, mode="basic-block")
+    require_supported_helper_builtins(sites, mode="basic-block")
 
     hidden_ctx = kernel_plan.get("hidden_omniprobe_ctx", {})
     hidden_offset = int(hidden_ctx.get("offset", 0) or 0)

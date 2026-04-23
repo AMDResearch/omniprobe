@@ -138,6 +138,7 @@ PY
            grep -q 'runtime.raw_hidden_ctx = hidden_ctx;' "$THUNK_SOURCE" && \
            grep -q 'runtime.entry_snapshot = &runtime_storage->entry_snapshot;' "$THUNK_SOURCE" && \
            grep -q 'runtime.dispatch_uniform = &runtime_storage->dispatch_uniform;' "$THUNK_SOURCE" && \
+           grep -q 'runtime.site_snapshot = &__omniprobe_site_snapshot;' "$THUNK_SOURCE" && \
            grep -q 'entry_snapshot->workgroup_x = static_cast<uint32_t>(blockIdx.x);' "$THUNK_SOURCE" && \
            grep -q 'entry_snapshot->timestamp = timestamp;' "$THUNK_SOURCE" && \
            grep -q 'captures.data = static_cast<uint64_t>(capture_data);' "$THUNK_SOURCE" && \
@@ -146,6 +147,7 @@ PY
            grep -Fq 'const auto *__omniprobe_event_snapshot = runtime.entry_snapshot;' "$THUNK_SOURCE" && \
            grep -q '__omniprobe_event_wavefront_size = __omniprobe_event_snapshot->wavefront_size;' "$THUNK_SOURCE" && \
            grep -q '__omniprobe_dh_builtins.grid_dim_x = __omniprobe_has_grid_dim' "$THUNK_SOURCE" && \
+           grep -q '__omniprobe_dh_builtins.block_idx_x = __omniprobe_has_site_snapshot' "$THUNK_SOURCE" && \
            ! grep -q 'capture_builtin_snapshot' "$THUNK_SOURCE" && \
            grep -q '__omniprobe_probe_kernel_timing_kernel_entry_surrogate(&runtime, &captures, timestamp, __omniprobe_event_workgroup_x, __omniprobe_event_workgroup_y, __omniprobe_event_workgroup_z, __omniprobe_event_thread_x, __omniprobe_event_thread_y, __omniprobe_event_thread_z, __omniprobe_event_block_dim_x, __omniprobe_event_block_dim_y, __omniprobe_event_block_dim_z, __omniprobe_event_lane_id, __omniprobe_event_wave_id, __omniprobe_event_wavefront_size, __omniprobe_event_hw_id, __omniprobe_event_exec_mask);' "$THUNK_SOURCE"; then
             echo -e "  ${GREEN}✓ PASS${NC} - Lifecycle thunk source reconstructs captures from marshalled arguments and forwards to the shared surrogate"

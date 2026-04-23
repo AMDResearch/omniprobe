@@ -494,7 +494,7 @@ def render_kernel_descriptor(
     descriptor_symbol: dict | None,
     preserve_descriptor_bytes: bool,
 ) -> list[str]:
-    if preserve_descriptor_bytes:
+    if preserve_descriptor_bytes and descriptor.get("bytes_hex"):
         descriptor_name = descriptor.get("name", f"{function['name']}.kd")
         lines = [
             ".rodata",
