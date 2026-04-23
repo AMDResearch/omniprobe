@@ -213,6 +213,22 @@ run_regen() {
         --clang-offload-bundler "$CLANG_OFFLOAD_BUNDLER"
 }
 
+write_broken_thunk_manifest() {
+    local input_manifest="$1"
+    local output_manifest="$2"
+    python3 - "$input_manifest" "$output_manifest" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+for thunk in payload.get("thunks", []):
+    if isinstance(thunk, dict):
+        thunk.pop("helper_abi", None)
+json.dump(payload, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
+open(sys.argv[2], "a", encoding="utf-8").write("\n")
+PY
+}
+
 echo ""
 echo "================================================================================"
 echo "Binary Probe Support ABI Guard Tests"
@@ -329,6 +345,36 @@ then
 else
     echo -e "  ${RED}✗ FAIL${NC} - Heavy helper failed for an unexpected reason"
     cat "$HEAVY_DIR/regen.log"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="binary_probe_support_abi_guard_rejects_missing_helper_abi"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+BROKEN_DIR="$WORK_DIR/missing_helper_abi"
+prepare_case "$BROKEN_DIR"
+write_broken_thunk_manifest "$BROKEN_DIR/probe.thunks.json" "$BROKEN_DIR/probe.thunks.broken.json"
+if python3 "$REGENERATE_CODE_OBJECT" \
+    "$BROKEN_DIR/kernel.hsaco" \
+    --output "$BROKEN_DIR/carrier.hsaco" \
+    --manifest "$BROKEN_DIR/kernel.manifest.json" \
+    --kernel mixed_memory_kernel \
+    --report-output "$BROKEN_DIR/carrier.report.json" \
+    --add-hidden-abi-clone \
+    --probe-plan "$BROKEN_DIR/probe.plan.json" \
+    --thunk-manifest "$BROKEN_DIR/probe.thunks.broken.json" \
+    --hipcc "$HIPCC" \
+    --llvm-mc "$LLVM_MC" \
+    --ld-lld "$LD_LLD" \
+    --clang-offload-bundler "$CLANG_OFFLOAD_BUNDLER" >"$BROKEN_DIR/regen.log" 2>&1; then
+    echo -e "  ${RED}✗ FAIL${NC} - Regeneration unexpectedly accepted a thunk manifest without helper_abi"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+elif grep -q "missing helper_abi" "$BROKEN_DIR/regen.log"; then
+    echo -e "  ${GREEN}✓ PASS${NC} - Regeneration rejected thunk manifests without helper_abi"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Missing-helper_abi regeneration rejection reason was incorrect"
+    cat "$BROKEN_DIR/regen.log"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 

@@ -57,9 +57,10 @@ if python3 "$SUPPORT_COMPILER" \
     if python3 - "$DRYRUN_JSON" "$THUNK_SOURCE" <<'PY'
 import json
 import sys
+from pathlib import Path
 
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
-thunk_source = sys.argv[2]
+thunk_source = str(Path(sys.argv[2]).resolve())
 assert payload["manifest_kind"] == "thunk"
 assert payload["arch"] == "gfx1030"
 assert payload["output_format"] == "obj"
@@ -101,9 +102,10 @@ if python3 "$SUPPORT_COMPILER" \
     if python3 - "$TRAMPOLINE_DRYRUN_JSON" "$TRAMPOLINE_SOURCE" <<'PY'
 import json
 import sys
+from pathlib import Path
 
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
-trampoline_source = sys.argv[2]
+trampoline_source = str(Path(sys.argv[2]).resolve())
 assert payload["manifest_kind"] == "entry-trampoline"
 assert payload["arch"] == "gfx1030"
 assert payload["output_format"] == "hsaco"
@@ -127,6 +129,42 @@ PY
     fi
 else
     echo -e "  ${RED}✗ FAIL${NC} - Dry-run entry-trampoline compile failed"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="binary_probe_support_compile_requires_helper_abi"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+BROKEN_THUNK_MANIFEST="$OUTPUT_DIR/${TEST_NAME}.thunks.json"
+
+if python3 - "$THUNK_MANIFEST" "$BROKEN_THUNK_MANIFEST" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+for thunk in payload.get("thunks", []):
+    if isinstance(thunk, dict):
+        thunk.pop("helper_abi", None)
+json.dump(payload, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
+open(sys.argv[2], "a", encoding="utf-8").write("\n")
+PY
+then
+    if python3 "$SUPPORT_COMPILER" \
+        --thunk-manifest "$BROKEN_THUNK_MANIFEST" \
+        --output "$OUTPUT_DIR/${TEST_NAME}.o" \
+        --arch gfx1030 \
+        --dry-run > "$OUTPUT_DIR/${TEST_NAME}.out" 2>&1; then
+        echo -e "  ${RED}✗ FAIL${NC} - Support compiler accepted a thunk manifest without helper_abi"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    elif grep -q "missing helper_abi" "$OUTPUT_DIR/${TEST_NAME}.out"; then
+        echo -e "  ${GREEN}✓ PASS${NC} - Support compiler rejected thunk manifests without helper_abi"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Support compiler failed for an unexpected reason"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Could not generate broken thunk manifest fixture"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 

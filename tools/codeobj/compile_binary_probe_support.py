@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from common import detect_llvm_tool
+from helper_abi_contract import validate_helper_abi_entry
 
 
 MANIFEST_SOURCE_FIELDS = {
@@ -121,6 +122,18 @@ def support_source_from_manifest(*, manifest_kind: str, manifest_path: Path, man
     return source_path
 
 
+def validate_manifest_contracts(*, manifest_kind: str, manifest_path: Path, manifest: dict) -> None:
+    if manifest_kind != "thunk":
+        return
+    thunks = manifest.get("thunks", [])
+    if not isinstance(thunks, list) or not thunks:
+        raise SystemExit(f"thunk manifest {manifest_path} does not contain a valid non-empty thunks list")
+    for thunk in thunks:
+        if not isinstance(thunk, dict):
+            raise SystemExit(f"thunk manifest {manifest_path} contains an invalid thunk entry")
+        validate_helper_abi_entry(thunk, entry_kind="generated thunk")
+
+
 def build_commands(
     *,
     support_source: Path,
@@ -199,6 +212,11 @@ def main() -> int:
     manifest_kind, manifest_path = manifest_kind_and_path(args)
     output_path = Path(args.output).resolve()
     manifest = load_json(manifest_path)
+    validate_manifest_contracts(
+        manifest_kind=manifest_kind,
+        manifest_path=manifest_path,
+        manifest=manifest,
+    )
     support_source = support_source_from_manifest(
         manifest_kind=manifest_kind,
         manifest_path=manifest_path,

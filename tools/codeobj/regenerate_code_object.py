@@ -27,6 +27,7 @@ from emit_hidden_abi_metadata import (
     mutate_kernel_record_in_place,
     raw_kernel_blocks,
 )
+from helper_abi_contract import validate_helper_abi_entry
 from msgpack_codec import packb
 from plan_hidden_abi import build_kernel_plan
 import rewrite_metadata_note as note_rewriter
@@ -284,6 +285,7 @@ def reject_unsupported_binary_probe_sites(probe_plan: dict, *, kernel_name: str)
     for site in kernel_plan.get("planned_sites", []):
         if not isinstance(site, dict):
             continue
+        validate_helper_abi_entry(site, entry_kind="planned binary-probe site")
         if str(site.get("contract", "")) != "kernel_lifecycle_v1":
             continue
         when = str(site.get("when", ""))
@@ -3405,6 +3407,10 @@ def inspect_probe_support_wrapper_footprint(
     thunks = thunk_manifest.get("thunks", [])
     if not isinstance(thunks, list) or not thunks:
         return {}
+    for thunk in thunks:
+        if not isinstance(thunk, dict):
+            raise SystemExit(f"thunk manifest {thunk_manifest_path} contains an invalid thunk entry")
+        validate_helper_abi_entry(thunk, entry_kind="generated thunk")
 
     wrapper_source = temp_dir / "binary_probe_support_wrapper.hip"
     wrapper_hsaco = temp_dir / "binary_probe_support_wrapper.hsaco"
