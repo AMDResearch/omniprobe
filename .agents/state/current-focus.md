@@ -2,6 +2,7 @@
 
 ## Current Focus Areas
 
+- Write Omniprobe whitepaper (ft_whitepaper-omniprobe — active, ready to execute).
 - Adopt lazy kernelDB loading in the interceptor (rf_lazy-kerneldb-loading — ready to start).
 - Complete exact-architecture bitcode selection (rf_exact-arch-bitcode — ready to start).
 - Purge logDuration naming from the codebase (rf_rename-logduration-to-omniprobe — needs open questions resolved).
@@ -12,11 +13,12 @@
 
 ## Immediate Next Recommended Actions
 
-1. Execute rf_lazy-kerneldb-loading — upstream dependency resolved, 3-step change in interceptor.cc.
-2. Execute rf_exact-arch-bitcode — upstream dependency resolved, rewrite getBitcodePath().
-3. Resolve open questions for rf_rename-logduration-to-omniprobe (library name, env var prefix, backward compat).
-4. Unblock rf_clang-format-consistency — coordinate with team for format commit.
-5. Make design decisions for rf_test-organization.
+1. Execute ft_whitepaper-omniprobe — packet active, plan of record has 10 steps, start with PM unit research.
+2. Execute rf_lazy-kerneldb-loading — upstream dependency resolved, 3-step change in interceptor.cc.
+3. Execute rf_exact-arch-bitcode — upstream dependency resolved, rewrite getBitcodePath().
+4. Resolve open questions for rf_rename-logduration-to-omniprobe (library name, env var prefix, backward compat).
+5. Unblock rf_clang-format-consistency — coordinate with team for format commit.
+6. Make design decisions for rf_test-organization.
 
 ## Project-Level Risks
 

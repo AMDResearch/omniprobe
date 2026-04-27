@@ -19,6 +19,7 @@ Packet directories follow the pattern: `.agents/workflows/<state>/<workflow-id>/
 | rf_rename-logduration-to-omniprobe | refactor | active | unassigned | src/, inc/, plugins/, omniprobe/, CMakeLists.txt, containers/, .github/ | Broad scope — overlaps with most other refactors | Open questions need user input | 2026-04-27 |
 | rf_clang-format-consistency | refactor | active (blocked) | unassigned | .clang-format, CMakeLists.txt, scripts/git-hooks/ | None | Team coordination needed | 2026-04-27 |
 | rf_test-organization | refactor | active | unassigned | tests/ | None | Design decisions needed | 2026-04-27 |
+| ft_whitepaper-omniprobe | feature | active | unassigned | ~/repos/whitepaper_omniprobe/ | None (outside omniprobe repo) | None | 2026-04-27 |
 
 ## Completed (migrated from KT)
 
