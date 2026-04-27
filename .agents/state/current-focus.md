@@ -21,11 +21,11 @@
 ## Project-Level Risks
 
 - Library filter chain test 2 hangs; rocBLAS integration test broken.
-- v0.3 migration committed — PM units should be verified against source code in next working session.
 
 ## Recent Decisions
 
-- Migrated from KT system to v0.3 PM (2026-04-27).
+- PM restructured (2026-04-27): merged plugins+comms-mgr → handler-pipeline; created build-system unit.
+- PM units re-verified against source code (2026-04-27); all 10 units current.
 - rocprofiler-sdk is now the tool registration mechanism (replaced HSA_TOOLS_LIB).
 - instrument-amdgpu-kernels absorbed into src/instrumentation/ (no longer a submodule).
 
