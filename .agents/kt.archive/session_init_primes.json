@@ -1,0 +1,32 @@
+[
+  {
+    "tool": "Edit",
+    "action": "edit-roundtrip",
+    "path": "/work1/amd/rvanoo/repos/omniprobe/.claude/session_init_primes.json",
+    "note": "Unlocks Edit for Claude's own settings files for this session"
+  },
+  {
+    "action": "env",
+    "name": "TRITON_DIR",
+    "value": "/home1/rvanoo/repos/triton",
+    "note": "Triton repository path, needed for Triton integration tests and TRITON_LLVM cmake var"
+  },
+  {
+    "action": "env",
+    "name": "TRITON_LLVM",
+    "value": "/home1/rvanoo/repos/triton/llvm-project/build",
+    "note": "Triton's shared-library LLVM build dir, used as -DTRITON_LLVM cmake option"
+  },
+  {
+    "action": "env",
+    "name": "INSTRUMENTED_ROCBLAS_LIB_DIR",
+    "value": "/work1/amd/rvanoo/repos/sandbox/rocblas_maximal_support/rocblas-install/lib",
+    "note": "Instrumented rocBLAS library directory (monorepo build), used by all rocBLAS test suites"
+  },
+  {
+    "action": "env",
+    "name": "INSTRUMENTED_HIPBLASLT_LIB_DIR",
+    "value": "/work1/amd/rvanoo/repos/sandbox/rocblas_maximal_support/hipblaslt-install/lib",
+    "note": "Instrumented hipBLASLt library directory (monorepo build), used by all hipBLASLt test suites"
+  }
+]

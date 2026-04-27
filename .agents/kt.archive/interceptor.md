@@ -1,0 +1,100 @@
+# Interceptor (liblogDuration64)
+
+## Responsibility
+HSA tools library that intercepts kernel dispatches at runtime. When a dispatch occurs, it checks for an instrumented kernel variant and optionally swaps in the instrumented version with modified kernel arguments.
+
+## Core Concepts
+- **rocprofiler-sdk Registration**: Loaded via `LD_PRELOAD`; rocprofiler-sdk discovers the tool
+  by scanning for the `rocprofiler_configure()` symbol. Registers for `ROCPROFILER_HSA_TABLE`
+  interception. Legacy `HSA_TOOLS_LIB` path aborts with an error message.
+- **API Table Hooking**: Modifies HSA function pointer table to intercept calls
+- **Kernel Object Map**: Maps kernel handles to descriptors (name, symbol, agent, kernarg_size)
+- **Signal Pool**: Reusable HSA signals for tracking kernel completion
+- **Dispatch Controller**: Decides which dispatches to instrument based on config
+
+## Key Invariants
+- Singleton pattern (`hsaInterceptor::getInstance()`)
+- Original HSA API preserved and callable via saved table
+- Signal runner thread waits on kernel completion signals
+- Shutdown sequence: set `shutting_down_` flag, join threads, cleanup
+
+## Data Flow
+1. `rocprofiler_configure()` called by rocprofiler-sdk → registers HSA table callback →
+   callback receives `HsaApiTable*` → creates singleton, hooks API
+2. `hsa_queue_create()` intercepted → registers queue + agent
+3. `hsa_executable_symbol_get_info()` intercepted → captures kernel objects into `kernel_objects_` AND registers them in `kernel_cache_` (coCache) via `registerRuntimeKernel()` for instrumented alternative lookup
+4. Startup: code objects registered in `kernel_cache_` (coCache) but kernelDB scanning is **deferred**
+5. `OnSubmitPackets()` intercepted → `doPackets()` decides instrumented vs original
+6. `fixupPacket()`: on-demand scanning — if kernel not in kernelDB, `scanCodeObject()` is called for that kernel's code object
+7. If instrumented: `fixupPacket()` + `fixupKernArgs()` add dh_comms descriptor; logs source library paths
+8. Signal runner thread processes completed kernels, invokes handler reports
+
+## Interfaces
+- `rocprofiler_configure()` — rocprofiler-sdk tool entry point (extern "C") — `src/interceptor.cc`
+- `rocp_hsa_table_callback()` — receives HsaApiTable*, calls getInstance() — `src/interceptor.cc`
+- `OnLoad()` — legacy error guard, aborts with message to unset HSA_TOOLS_LIB — `src/interceptor.cc`
+- `OnUnload()` — no-op (cleanup via rocp_tool_fini + atexit) — `src/interceptor.cc`
+- `hsaInterceptor::getInstance()` — singleton accessor — `inc/interceptor.h:120`
+- `hsaInterceptor::doPackets()` — packet interception logic — `inc/interceptor.h:113`
+- `hsaInterceptor::fixupPacket()` — modify dispatch packet — `inc/interceptor.h:112`
+- `hsaInterceptor::fixupKernArgs()` — add dh_comms ptr to args — `inc/interceptor.h:111`
+
+## Dependencies
+- dh_comms (device-host communication)
+- kerneldb (ISA extraction for handler correlation)
+- comms_mgr (dh_comms object pooling)
+- Message handlers (via plugin system)
+
+## Also Load
+- `comms_mgr.md` for buffer pool management
+- `dh_comms` sub-project KT for message passing details
+
+## Key Classes
+
+### hsaInterceptor
+Central singleton managing all interception state.
+
+**Key members**:
+- `apiTable_` — original HSA API table
+- `kernel_objects_` — map of kernel handle → descriptor
+- `pending_signals_` — signals awaiting completion
+- `comms_mgr_` — manages dh_comms object pool
+- `kdbs_` — per-agent kernelDB instances
+- `dispatcher_` — dispatch selection logic
+- `library_filter_` — filters which libraries are scanned (via `LOGDUR_LIBRARY_FILTER`)
+
+**Key methods**:
+- `hookApi()` — install function intercepts
+- `addKernel()` — register discovered kernel
+- `doPackets()` — intercept and possibly modify dispatch
+- `shutdown()` — clean shutdown sequence
+
+### LibraryFilter
+Filters which libraries are scanned for kernels, configured via `--library-filter` CLI / `LOGDUR_LIBRARY_FILTER` env var.
+
+**Location**: `inc/library_filter.h`, `src/library_filter.cc`
+
+**Key methods**:
+- `loadConfig(path)` — parse JSON config with include/include_with_deps/exclude arrays
+- `isExcluded(path)` — check if library should be skipped (glob patterns → regex)
+- `getIncludedFiles()` — expand include patterns to file list
+- `getIncludedFilesWithDeps()` — expand include_with_deps + resolve ELF dependencies
+
+**Dependencies**: libelf (for `getElfDependencies()` which parses DT_NEEDED entries)
+
+## Known Limitations
+- Assumes single interceptor (singleton)
+- Thread model: one signal runner, one comms runner
+- **Runtime code objects auto-discovered for same-file case**: When both original and `__amd_crk_*` instrumented kernels are in the same `.hsaco` loaded via `hipModuleLoad()`, the interceptor auto-discovers them via the HSA symbol hook + `coCache::registerRuntimeKernel()`. Arg descriptors are lazily extracted via AMD loader API v1.01. `--library-filter` is still needed for the external-file case (instrumented code object in a separate file the application doesn't load).
+- **Library filter requires raw ELF**: `isValidElf()` checks for `0x7f ELF` magic bytes. Clang Offload Bundles (magic: `__CLANG_OFFLOAD_BUNDLE__`) produced by `amdclang++ --offload-device-only` are rejected. Must unbundle with `clang-offload-bundler --unbundle` first.
+
+## Rejected Approaches
+- **Per-dispatch dh_comms allocation**: Too slow; pooling required for performance
+- **kernelDB auto-discovery with filter**: The `kernelDB(agent, "")` constructor auto-discovers all shared libraries, bypassing any filter. Must use `kernelDB(agent)` single-arg constructor and manually call `addFile()` for each filtered file.
+- **Scan-everything-at-startup**: Scanning all code objects (disassembly + DWARF) at startup caused >10 min delays with large libraries like rocBLAS (~12,000 kernels). Replaced with on-demand per-code-object scanning at dispatch time via `kernelDB::scanCodeObject()`.
+
+## Open Questions
+- None currently documented
+
+## Last Verified
+Date: 2026-03-24
