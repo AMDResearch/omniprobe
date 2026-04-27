@@ -70,7 +70,7 @@ The `--library-filter FILE` flag accepts a JSON file that controls which HIP lib
 ## Dependencies
 
 - **Interceptor** — loaded via `LD_PRELOAD`. Also load: `interceptor.md`
-- **Plugins** — handler loading at runtime. Also load: `plugins.md`
+- **Handler Pipeline** — handler loading at runtime. Also load: `handler-pipeline.md`
 
 ## Negative Knowledge
 

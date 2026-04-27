@@ -54,10 +54,9 @@ instrumented version with modified kernel arguments.
 
 ## Dependencies
 
-- `comms-mgr.md` — buffer pool for dh_comms objects
+- `handler-pipeline.md` — handler plugin loading and dh_comms pool management
 - Sub-project: dh_comms — device-host communication
 - Sub-project: kerneldb — ISA extraction and code object scanning
-- `plugins/` — handler loading via factory interface
 
 ## Negative Knowledge
 

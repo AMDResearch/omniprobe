@@ -62,4 +62,4 @@ None.
 
 ## Last Verified
 
-- 2026-03-02
+2026-04-27 (re-verified; core content accurate, minor omissions noted but non-blocking)

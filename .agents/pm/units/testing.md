@@ -54,17 +54,11 @@ GoogleTest are planned but disabled.
 - **Do NOT attempt to use GoogleTest** until handler refactoring for dependency injection is complete.
 - Test kernels **MUST** be compiled with `-g` (debug info). Without it, DWARF source location info is missing, causing `MemoryAnalysis` handler to silently drop all messages.
 - Test kernels should read back results (`hipMemcpy` to host) to prevent dead-store elimination.
-- Library filter chain test 2 hangs; tests 4-5 previously failed. rocBLAS integration needs investigation.
-
 ## Open Questions
 
 - What refactoring is needed to enable true unit tests with GoogleTest?
 - Should we create a test fixture library for handler testing?
 
-## Related Workflows
-
-- `rf_lazy-kerneldb-loading` (may affect test infrastructure)
-
 ## Last Verified
 
-2026-04-09
+2026-04-27 (removed transient bug/workflow references per pm-reflect)

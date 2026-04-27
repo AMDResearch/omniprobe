@@ -42,14 +42,8 @@ N/A — LLVM pass plugins, no user-defined classes.
 
 ### Build System
 
-Plugins are compiled using `add_custom_command()` with the LLVM variant's own `clang++` (from `llvm-config --bindir`), NOT `hipcc`. This is required because LLVM pass plugins must match the LLVM they will be loaded into.
-
-- **ROCm:** `add_instrumentation_plugins(SUFFIX rocm LLVM_DIR ${ROCM_PATH}/llvm)`
-- **Triton:** `add_instrumentation_plugins(SUFFIX triton LLVM_DIR ${TRITON_LLVM} LINK_LLVM_LIBS)`
-
-### Bitcode Location
-
-Bitcode is located via `getBitcodePath()`: looks in `../bitcode/` relative to the plugin directory.
+See `build-system` PM unit for multi-LLVM-variant compilation details, bitcode location,
+and `add_instrumentation_plugins()` usage.
 
 ### InstrumentationScope
 
@@ -90,4 +84,4 @@ None.
 
 ## Last Verified
 
-- 2026-03-24
+2026-04-27 (trimmed by pm-restructure; build system section moved to build-system)

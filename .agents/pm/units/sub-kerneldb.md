@@ -55,7 +55,6 @@ None (leaf submodule).
 ## Negative Knowledge
 
 - Sub-project KT at `external/kerneldb/.agents/kt/` may not be initialized yet.
-- Pending refactor `rf_lazy-kerneldb-loading`: plan to switch from `scanCodeObject()` to `addFile(lazy=true)` at startup + per-kernel `ensureKernelLoaded()`.
 
 ## Open Questions
 
@@ -63,4 +62,4 @@ None.
 
 ## Last Verified
 
-2026-04-14
+2026-04-27 (removed transient workflow reference per pm-reflect)

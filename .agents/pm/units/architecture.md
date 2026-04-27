@@ -64,11 +64,10 @@ bank conflicts.
 | Subsystem | PM Unit | Location | Purpose |
 |-----------|---------|----------|---------|
 | Interceptor | `interceptor.md` | `src/interceptor.cc`, `inc/interceptor.h` | HSA dispatch interception and kernel swapping |
-| Comms Manager | `comms-mgr.md` | `src/comms_mgr.cc`, `inc/comms_mgr.h` | Pool management for dh_comms objects |
+| Handler Pipeline | `handler-pipeline.md` | `src/comms_mgr.cc`, `inc/comms_mgr.h`, `plugins/` | Handler loading, dh_comms pool management |
 | Memory Analysis | `memory-analysis.md` | `src/memory_analysis_handler.cc` | Uncoalesced access and bank conflict detection |
-| Plugins | — | `plugins/` | Message handler factory interface |
-| Instrumentation | — | `src/instrumentation/` | LLVM IR passes for kernel cloning and instrumentation |
-| CLI Orchestrator | — | `omniprobe/omniprobe` | Python entry point, environment setup |
+| Instrumentation | `instrumentation.md` | `src/instrumentation/` | LLVM IR passes for kernel cloning and instrumentation |
+| CLI Orchestrator | `omniprobe-cli.md` | `omniprobe/omniprobe` | Python entry point, environment setup |
 
 ## Sub-projects
 
@@ -77,50 +76,10 @@ bank conflicts.
 | dh_comms | `external/dh_comms/` (submodule) | Device-to-host communication buffers and message types |
 | kerneldb | `external/kerneldb/` (submodule) | ISA extraction, DWARF correlation, code object scanning |
 
-## Environment Variables
+## Build and Environment
 
-| Variable | Purpose |
-|----------|---------|
-| `LD_PRELOAD` | Set to `liblogDuration64.so` to load the rocprofiler-sdk tool |
-| `LOGDUR_HANDLERS` | Comma-separated list of handler shared libraries to load |
-| `LOGDUR_LOG_FORMAT` | Output format: `console` (default), `csv`, or `json` |
-| `LOGDUR_LIBRARY_FILTER` | Colon-separated list of libraries to include for scanning |
-| `LOGDUR_LIBRARY_FILTER_EXCLUDE` | Colon-separated list of libraries to exclude from scanning |
-
-## Path Guidelines
-
-### Build tree layout
-
-```
-build/
-├── lib/
-│   └── liblogDuration64.so          # Main tool library
-├── plugins/
-│   └── lib*.so                      # Handler plugin shared libraries
-└── src/instrumentation/
-    └── lib*.so                      # LLVM IR instrumentation plugins
-```
-
-### Install tree layout
-
-```
-<prefix>/
-├── lib/
-│   └── liblogDuration64.so
-├── lib/omniprobe/plugins/
-│   └── lib*.so
-├── lib/omniprobe/instrumentation/
-│   └── lib*.so
-└── bin/
-    └── omniprobe                    # Python orchestrator
-```
-
-## Build
-
-- CMake-based build system.
-- Requires ROCm (HSA runtime, rocprofiler-sdk), LLVM/Clang for instrumentation passes.
-- Submodules (`dh_comms`, `kerneldb`) must be initialized before building.
-- Standard workflow: `cmake -B build -S . && cmake --build build`
+See `build-system` PM unit for CMake configuration, environment variables, build/install
+tree layout, and multi-LLVM-variant build details.
 
 ## Invariants
 
@@ -132,7 +91,7 @@ build/
 ## Dependencies
 
 - `interceptor.md` — HSA dispatch interception
-- `comms-mgr.md` — dh_comms pool management
+- `handler-pipeline.md` — handler loading and dh_comms pool management
 - `memory-analysis.md` — memory access analysis handler
 - Sub-projects: dh_comms (device-host IO), kerneldb (ISA + DWARF correlation)
 
@@ -147,4 +106,4 @@ None.
 
 ## Last Verified
 
-2026-04-14
+2026-04-27 (trimmed by pm-restructure; build/env/path sections moved to build-system)

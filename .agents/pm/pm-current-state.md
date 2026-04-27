@@ -21,9 +21,6 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
 
 ## Current Risks
 
-- **KT → PM migration committed**: The v0.3 migration is now committed (2026-04-27). PM
-  units need verification; some content may need updating. Old KT dossiers archived in
-  `.agents/kt.archive/`.
 - **Library filter chain tests flaky**: Test 2 hangs; tests 4-5 previously failed.
 - **rocBLAS integration test broken**: Instrumented sscal not found in current build.
 
@@ -35,9 +32,12 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
 - `.claude/skills/` wrappers are thin delegates to `.agents/skills/` (canonical location).
   Project-local augmentation (env vars, permission priming) stays in the `.claude/` wrapper.
 - `cleanroom-test` is a project-local skill (not from the agentic meta project template).
+- PM restructured (2026-04-27): `plugins` + `comms-mgr` merged into `handler-pipeline`;
+  new `build-system` unit created from `architecture` + `instrumentation` extracts.
 
 ## Recommended Read Order
 
 1. `architecture` — system overview and subsystem map
-2. PM unit for the subsystem you're working on
-3. Active workflow dossier for your current task
+2. `build-system` — if working on CMake, build config, or environment setup
+3. PM unit for the subsystem you're working on
+4. Active workflow dossier for your current task

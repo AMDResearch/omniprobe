@@ -17,15 +17,14 @@ needed. For LDS: detects bank conflicts.
 
 | Type | Location | Purpose |
 |------|----------|---------|
-| `memory_analysis_handler_t` | `inc/memory_analysis_handler.h:82` | Main handler class, inherits from `message_handler_base` |
+| `memory_analysis_handler_t` | `inc/memory_analysis_handler.h:81` | Main handler class, inherits from `message_handler_base` |
 | `conflict_set` | (defined in handler) | Group of lanes that may cause bank conflicts |
 
 ## Key Functions and Entry Points
 
 | Function | Location | Purpose |
 |----------|----------|---------|
-| `memory_analysis_handler_t::handle(message)` | `inc/memory_analysis_handler.h:87` | Process single message |
-| `memory_analysis_handler_t::handle(message, kernel_name, kdb)` | `inc/memory_analysis_handler.h:88` | Process with ISA correlation |
+| `memory_analysis_handler_t::handle(message)` | `inc/memory_analysis_handler.h:88` | Process single message (ISA context set via inherited `set_context()`) |
 | `memory_analysis_handler_t::report()` | `inc/memory_analysis_handler.h:89` | Output analysis results |
 
 ## Data Flow
@@ -62,4 +61,4 @@ None.
 
 ## Last Verified
 
-2026-03-03
+2026-04-27 (re-verified; fixed class/method line numbers, corrected handle() signature)
