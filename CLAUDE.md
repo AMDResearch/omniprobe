@@ -1,35 +1,48 @@
 # Omniprobe - Claude Code Instructions
 
 ## Project Overview
-Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runtime information.
-See `.agents/kt/architecture.md` for detailed structure (once initialized).
 
-## Knowledge Tree
-This project uses a knowledge tree in `.agents/kt/` for structured project understanding.
+Omniprobe is a toolkit for instrumenting HIP/Triton GPU kernels to extract runtime
+information such as memory access patterns, cache line usage, and LDS bank conflicts.
 
-**New to the KT?** Start with `.agents/kt_overview.md`
-**Quick reference**: `.agents/kt_usage.md`
-**Full specifications**: `.agents/kt_workflows.md`
+This repository uses the Agentic Meta Project v0.3 operating model. All agent
+infrastructure lives under `.agents/`.
 
-**Session workflow**:
-- **Start**: `kt-load` — rehydrate context from KT
-- **During**: Just code. Use `kt-reflect` if KT feels too coarse or too detailed.
-- **End**: `kt-update` — persist learnings to KT
-- **Refactoring**: Use `kt-refactor start|suspend|resume|finish|list` for multi-session refactors
+## Session Workflow
 
-If the knowledge tree doesn't exist yet, run `kt-init` first.
-Use `kt-validate` to check for stale dossiers after skipping updates.
+- **Start**: Run `/session-init` to bootstrap context.
+- **During**: Work on tasks. Use `/pm-load` to load relevant PM units.
+- **End**: Run `/session-close` to persist state and capture the session.
+
+## Project Memory
+
+Structured project knowledge lives in `.agents/pm/units/`. See `.agents/pm/pm-index.md`
+for the unit registry. Load only what you need for the current task.
 
 ## Sub-projects
-Three git submodules in `external/`, each may have their own `.agents/kt/`:
+
+Two git submodules in `external/`:
 - `external/dh_comms` — device-host communication library
 - `external/kerneldb` — kernel database and ISA extraction
-- `external/instrument-amdgpu-kernels` — LLVM instrumentation plugins
 
-When working on a sub-project, load both the top-level and sub-project knowledge trees.
+Note: `instrument-amdgpu-kernels` was absorbed into `src/instrumentation/` and is no
+longer a submodule.
+
+## Environment Variables
+
+Project-local environment variables are defined in `.claude/session_init_primes.json`:
+- `TRITON_DIR` — Triton repository path
+- `TRITON_LLVM` — Triton's LLVM build directory
+- `INSTRUMENTED_ROCBLAS_LIB_DIR` — instrumented rocBLAS library path
+- `INSTRUMENTED_HIPBLASLT_LIB_DIR` — instrumented hipBLASLt library path
 
 ## Build
-See `build/` directory and `CMakeLists.txt`. Standard CMake workflow.
 
-## Notes
-- Documentation (README.md, etc.) is currently outdated. Prioritize source code when understanding the project.
+Standard CMake workflow. See `CMakeLists.txt` and `docs/building-from-source.md`.
+
+## Workspace Boundaries
+
+The omniprobe workspace is:
+  `/work1/amd/rvanoo/repos/omniprobe` (and its mirror at `/home1/rvanoo/repos/omniprobe`)
+
+Additional allowed workspaces: `~/repos/triton`, `~/repos/sandbox`.
