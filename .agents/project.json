@@ -1,0 +1,33 @@
+{
+  "schema_version": "1",
+  "amplify_version": "0.3",
+  "project_name": "omniprobe",
+  "primary_type": "code",
+  "enabled_facets": [
+    "code",
+    "design"
+  ],
+  "tracking": "tracked",
+  "canonical_entrypoint": ".agents/adapters/shared-entrypoint.md",
+  "root_adapter_files": [
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "pm_system": {
+    "directory": ".agents/pm",
+    "prefix": "pm-"
+  },
+  "workflow_system": {
+    "directory": ".agents/workflows",
+    "packet_layout_version": "1"
+  },
+  "installed_skill_sets": [
+    "core",
+    "code",
+    "design"
+  ],
+  "supports": {
+    "claude": true,
+    "codex": true
+  }
+}
