@@ -4,4 +4,6 @@ Durable project decisions with rationale. Updated by `pm-update` after each work
 
 | Date | Decision | Rationale | Source |
 |------|----------|-----------|--------|
-| <!-- Example: 2026-04-14 | Use Swift for engine implementation | iOS-native, strong type system for physics math, SwiftUI integration for demo GUI | ft_software-architecture --> |
+| 2026-04-27 | `.claude/skills/` wrappers are thin delegates to `.agents/skills/` | Prevents fork divergence from upstream template; project-local augmentation (env vars, priming) stays in wrapper pre-step | session (v0.3 migration) |
+| 2026-04-27 | `cleanroom-test` canonical location is `.agents/skills/cleanroom-test/` | Project-local skill, not from template; moved from `.claude/skills/` for consistency | session (v0.3 migration) |
+| 2026-04-27 | Filed feedback: local augmentation mechanism for generic skills (GH issue #1) | No clean hook for project-local steps in template skills; proposed LOCAL.md overlay | session (v0.3 migration) |

@@ -21,7 +21,7 @@
 ## Project-Level Risks
 
 - Library filter chain test 2 hangs; rocBLAS integration test broken.
-- KT → PM migration just completed — PM units should be verified in first real session.
+- v0.3 migration committed — PM units should be verified against source code in next working session.
 
 ## Recent Decisions
 

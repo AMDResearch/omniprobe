@@ -21,8 +21,9 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
 
 ## Current Risks
 
-- **KT → PM migration in progress**: This project was just migrated from the KT system to
-  v0.3 PM. PM units need verification; some content may need updating.
+- **KT → PM migration committed**: The v0.3 migration is now committed (2026-04-27). PM
+  units need verification; some content may need updating. Old KT dossiers archived in
+  `.agents/kt.archive/`.
 - **Library filter chain tests flaky**: Test 2 hangs; tests 4-5 previously failed.
 - **rocBLAS integration test broken**: Instrumented sscal not found in current build.
 
@@ -31,6 +32,9 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
 - rocprofiler-sdk is now the tool registration mechanism (replaced HSA_TOOLS_LIB).
 - instrument-amdgpu-kernels is absorbed into src/instrumentation/ (no longer a submodule).
 - Standalone ROCm/rocBLAS and ROCm/hipBLASLt repos are deprecated; use rocm-libraries monorepo.
+- `.claude/skills/` wrappers are thin delegates to `.agents/skills/` (canonical location).
+  Project-local augmentation (env vars, permission priming) stays in the `.claude/` wrapper.
+- `cleanroom-test` is a project-local skill (not from the agentic meta project template).
 
 ## Recommended Read Order
 
