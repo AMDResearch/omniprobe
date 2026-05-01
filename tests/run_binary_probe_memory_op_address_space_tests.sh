@@ -7,7 +7,7 @@
 #      source-integrated Omniprobe build
 #   2. regenerate a hidden-ABI carrier hsaco with linked probe support code
 #   3. execute mid-kernel helpers for LDS loads/stores and global-like stores
-#   4. emit host-visible dh_comms traffic for all supported memory classes
+#   4. let the host observe deterministic per-class counters after dispatch
 ################################################################################
 
 set -e
@@ -82,6 +82,12 @@ cat > "$KERNEL_SOURCE" <<'HIP'
 extern "C" __global__ void mixed_memory_kernel(uint32_t* data) {
     __shared__ uint32_t scratch[64];
     volatile uint32_t private_scratch[64];
+    // Touch the full xyz workitem/workgroup state so the source descriptor
+    // exposes the entry ABI required by the currently supported mid-kernel
+    // resume classes on gfx1030/gfx942.
+    if ((threadIdx.y | threadIdx.z | blockIdx.y | blockIdx.z) != 0u) {
+        return;
+    }
     const uint32_t tid = threadIdx.x;
     const uint32_t value = tid + 1;
     private_scratch[tid] = value;
@@ -124,9 +130,12 @@ int main(int argc, char* argv[]) {
     CHECK_HIP(hipModuleGetFunction(&kernel, module, "mixed_memory_kernel"));
 
     constexpr size_t size = 64;
+    constexpr size_t counter_base = size;
+    constexpr size_t storage_size = size + 3;
+    constexpr uint32_t expected_counter = static_cast<uint32_t>(size);
     uint32_t* d_data = nullptr;
-    CHECK_HIP(hipMalloc(&d_data, size * sizeof(uint32_t)));
-    CHECK_HIP(hipMemset(d_data, 0, size * sizeof(uint32_t)));
+    CHECK_HIP(hipMalloc(&d_data, storage_size * sizeof(uint32_t)));
+    CHECK_HIP(hipMemset(d_data, 0, storage_size * sizeof(uint32_t)));
 
     void* args[] = {&d_data};
     CHECK_HIP(hipModuleLaunchKernel(
@@ -139,11 +148,11 @@ int main(int argc, char* argv[]) {
         nullptr));
     CHECK_HIP(hipDeviceSynchronize());
 
-    std::vector<uint32_t> h_data(size, 0);
+    std::vector<uint32_t> h_data(storage_size, 0);
     CHECK_HIP(hipMemcpy(
         h_data.data(),
         d_data,
-        size * sizeof(uint32_t),
+        storage_size * sizeof(uint32_t),
         hipMemcpyDeviceToHost));
 
     bool ok = true;
@@ -157,6 +166,22 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    if (ok && h_data[counter_base + 0] != expected_counter) {
+        std::cerr << "local_store counter mismatch: expected " << expected_counter
+                  << ", got " << h_data[counter_base + 0] << std::endl;
+        ok = false;
+    }
+    if (ok && h_data[counter_base + 1] != expected_counter) {
+        std::cerr << "local_load counter mismatch: expected " << expected_counter
+                  << ", got " << h_data[counter_base + 1] << std::endl;
+        ok = false;
+    }
+    if (ok && h_data[counter_base + 2] != expected_counter) {
+        std::cerr << "global_store counter mismatch: expected " << expected_counter
+                  << ", got " << h_data[counter_base + 2] << std::endl;
+        ok = false;
+    }
+
     CHECK_HIP(hipFree(d_data));
     CHECK_HIP(hipModuleUnload(module));
 
@@ -164,7 +189,9 @@ int main(int argc, char* argv[]) {
         std::cerr << "memory_space_host: FAIL" << std::endl;
         return 1;
     }
-    std::cerr << "memory_space_host: PASS" << std::endl;
+    std::cerr << "memory_space_host: PASS local_store=" << h_data[counter_base + 0]
+              << " local_load=" << h_data[counter_base + 1]
+              << " global_store=" << h_data[counter_base + 2] << std::endl;
     return 0;
 }
 CPP
@@ -177,7 +204,7 @@ helpers:
   namespace: omniprobe_user
 
 defaults:
-  emission: vector
+  emission: scalar
   lane_headers: false
   state: none
 
@@ -193,8 +220,8 @@ probes:
       helper: memory_space_binary_probe_helper
       contract: memory_op_v1
     payload:
-      mode: vector
-      message: address
+      mode: scalar
+      message: custom
     capture:
       instruction: [address, bytes, addr_space, access_kind]
       kernel_args:
@@ -212,35 +239,31 @@ extern "C" __device__ void memory_space_binary_probe_helper(
     return;
   }
 
+  auto *data = reinterpret_cast<unsigned int *>(static_cast<uintptr_t>(args.captures->data));
+  if (data == nullptr) {
+    return;
+  }
+
   const auto access = args.event->access;
   const auto address_space = args.event->address_space;
-  const uintptr_t address = static_cast<uintptr_t>(args.event->address);
+  constexpr size_t counter_base = 64;
 
   if (address_space == address_space_kind::shared &&
       access == memory_access_kind::write) {
-    dh_comms::v_submit_address(
-        args.runtime->dh, reinterpret_cast<void *>(address), 0, 4666, 0,
-        static_cast<uint8_t>(access), static_cast<uint8_t>(address_space),
-        static_cast<uint16_t>(args.event->bytes), args.runtime->dh_builtins);
+    atomicAdd(data + counter_base + 0, 1u);
     return;
   }
 
   if (address_space == address_space_kind::shared &&
       access == memory_access_kind::read) {
-    dh_comms::v_submit_address(
-        args.runtime->dh, reinterpret_cast<void *>(address), 0, 4667, 0,
-        static_cast<uint8_t>(access), static_cast<uint8_t>(address_space),
-        static_cast<uint16_t>(args.event->bytes), args.runtime->dh_builtins);
+    atomicAdd(data + counter_base + 1, 1u);
     return;
   }
 
   if ((address_space == address_space_kind::global ||
        address_space == address_space_kind::flat) &&
       access == memory_access_kind::write) {
-    dh_comms::v_submit_address(
-        args.runtime->dh, reinterpret_cast<void *>(address), 0, 4777, 0,
-        static_cast<uint8_t>(access), static_cast<uint8_t>(address_space),
-        static_cast<uint16_t>(args.event->bytes), args.runtime->dh_builtins);
+    atomicAdd(data + counter_base + 2, 1u);
   }
 }
 HELPER
@@ -345,13 +368,14 @@ TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="binary_probe_memory_op_address_space_build"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
 
-if python3 - "$PLAN_JSON" "$CARRIER_REPORT" "$CARRIER_MANIFEST" <<'PY'
+if python3 - "$PLAN_JSON" "$CARRIER_REPORT" "$CARRIER_MANIFEST" "$GPU_ARCH" <<'PY'
 import json
 import sys
 
 plan = json.load(open(sys.argv[1], encoding="utf-8"))
 report = json.load(open(sys.argv[2], encoding="utf-8"))
 manifest = json.load(open(sys.argv[3], encoding="utf-8"))
+gpu_arch = sys.argv[4]
 
 kernel = next(entry for entry in plan["kernels"] if entry.get("source_kernel") == "mixed_memory_kernel")
 sites = kernel["planned_sites"]
@@ -359,6 +383,25 @@ assert len(sites) == 3
 address_spaces = [site["event_materialization"]["address_space"]["value"] for site in sites]
 assert address_spaces.count("local") == 2
 assert any(value in {"global", "flat"} for value in address_spaces)
+
+source_entry_abi = kernel.get("source_entry_abi", {})
+rsrc2 = source_entry_abi.get("compute_pgm_rsrc2", {})
+assert int(rsrc2.get("enable_sgpr_workgroup_id_y", 0) or 0) == 1
+assert int(rsrc2.get("enable_sgpr_workgroup_id_z", 0) or 0) == 1
+assert int(rsrc2.get("enable_vgpr_workitem_id", 0) or 0) == 2
+
+resume = kernel.get("mid_kernel_resume_profile", {})
+assert resume.get("supported") is True
+expected_classes = {
+    "gfx1030": "wave32-direct-vgpr-xyz-setreg-flat-scratch-mid-kernel-private-spill-v1",
+    "gfx942": "wave64-direct-vgpr-xyz-src-private-base-mid-kernel-private-spill-v1",
+}
+expected_class = expected_classes.get(gpu_arch)
+if expected_class is not None:
+    assert resume.get("supported_class") == expected_class
+else:
+    assert resume.get("supported_class")
+
 clone = report.get("clone_result", {})
 assert clone.get("clone_kernel") == "__amd_crk_mixed_memory_kernel"
 extra = report.get("extra_link_objects", [])
@@ -389,7 +432,6 @@ TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="binary_probe_memory_op_address_space_runtime"
 echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
 
-LOGDUR_LOG_FORMAT=json \
 ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
     LD_LIBRARY_PATH="${OMNIPROBE_ROOT}/lib:${LD_LIBRARY_PATH}" \
     timeout "$OMNIPROBE_TIMEOUT" "$OMNIPROBE" -i -a AddressLogger \
@@ -401,17 +443,13 @@ ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
 
 if [ "$run_status" -ne 124 ] && \
    grep -q "Found instrumented alternative for mixed_memory_kernel" "$RUNTIME_LOG" && \
-   grep -Eq '"dwarf_line":[[:space:]]*4666' "$RUNTIME_LOG" && \
-   grep -Eq '"dwarf_line":[[:space:]]*4667' "$RUNTIME_LOG" && \
-   grep -Eq '"dwarf_line":[[:space:]]*4777' "$RUNTIME_LOG" && \
-   grep -Eq '"kernel_name":[[:space:]]*"mixed_memory_kernel.kd"' "$RUNTIME_LOG" && \
-   ! grep -q "0 bytes processed" "$RUNTIME_LOG" && \
-   grep -q "memory_space_host: PASS" "$RUNTIME_LOG" && \
-   ! grep -q "Memory access fault by GPU" "$RUNTIME_LOG"; then
-    echo -e "  ${GREEN}✓ PASS${NC} - Memory-op carrier emitted host-visible dh_comms traffic for LDS loads, LDS stores, and global-like stores"
+   grep -q "memory_space_host: PASS local_store=64 local_load=64 global_store=64" "$RUNTIME_LOG" && \
+   ! grep -q "Memory access fault by GPU" "$RUNTIME_LOG" && \
+   ! grep -q "illegal memory access" "$RUNTIME_LOG"; then
+    echo -e "  ${GREEN}✓ PASS${NC} - Memory-op carrier preserved kernel behavior and reported deterministic counters for LDS loads, LDS stores, and global stores"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    echo -e "  ${RED}✗ FAIL${NC} - Memory-op carrier did not produce the expected mixed address-space dh_comms output"
+    echo -e "  ${RED}✗ FAIL${NC} - Memory-op carrier did not produce the expected mixed address-space counter output"
     cat "$RUNTIME_LOG" 2>/dev/null || true
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi

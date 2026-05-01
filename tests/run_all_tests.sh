@@ -102,6 +102,9 @@ run_suite "Binary probe injector" "${SCRIPT_DIR}/run_binary_probe_injector_tests
 # Suite 11: Binary probe support compile
 run_suite "Binary probe support compile" "${SCRIPT_DIR}/run_binary_probe_support_compile_tests.sh"
 
+# Additional binary probe support ABI guard coverage
+run_suite "Binary probe support ABI guard" "${SCRIPT_DIR}/run_binary_probe_support_abi_guard_tests.sh"
+
 # Suite 10: Binary probe cache preparation
 run_suite "Binary probe cache preparation" "${SCRIPT_DIR}/run_binary_probe_cache_prepare_tests.sh"
 
@@ -131,6 +134,15 @@ run_suite "Binary probe kernel-exit summary" "${SCRIPT_DIR}/run_binary_probe_ker
 
 # Suite 19: Binary-only probe entry runtime smoke
 run_suite "Binary probe entry runtime smoke" "${SCRIPT_DIR}/run_binary_probe_entry_runtime_smoke_tests.sh"
+
+# Additional binary-only entry dh_comms rejection coverage
+run_suite "Binary probe entry dh_comms" "${SCRIPT_DIR}/run_binary_probe_entry_dh_comms_tests.sh"
+
+# Additional binary-only memory-op dh_comms capability
+run_suite "Binary probe memory-op dh_comms" "${SCRIPT_DIR}/run_binary_probe_memory_op_dh_comms_tests.sh"
+
+# Additional binary-only mixed address-space memory-op capability
+run_suite "Binary probe memory-op address space" "${SCRIPT_DIR}/run_binary_probe_memory_op_address_space_tests.sh"
 
 # Suite 20: ABI-changing entry trampoline smoke
 run_suite "ABI-changing entry trampoline smoke" "${SCRIPT_DIR}/run_abi_changing_entry_trampoline_smoke_tests.sh"
