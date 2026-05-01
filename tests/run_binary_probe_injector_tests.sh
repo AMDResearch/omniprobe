@@ -348,13 +348,38 @@ open(sys.argv[2], "a", encoding="utf-8").write("\n")
 PY
 }
 
+make_split_entry_kernarg_fixture() {
+    local input_ir="$1"
+    local output_ir="$2"
+    python3 - "$input_ir" "$output_ir" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+fn = payload["functions"][0]
+first = fn["instructions"][0]
+address = int(first.get("address", 0) or 0)
+fn["instructions"].insert(
+    0,
+    {
+        "address": max(0, address - 4),
+        "mnemonic": "s_mov_b64",
+        "operands": ["s[0:1]", "s[4:5]"],
+    },
+)
+json.dump(payload, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
+open(sys.argv[2], "a", encoding="utf-8").write("\n")
+PY
+}
+
 run_inject_test() {
     local arch="$1"
     local ir_fixture="$2"
     local expected_runtime_pair="$3"
     local expected_target_pair="$4"
     local expected_kernarg_pair="$5"
-    local source_kind="${6:-observed}"
+    local expected_entry_kernarg_pair="${6:-$expected_kernarg_pair}"
+    local source_kind="${7:-observed}"
 
     TESTS_RUN=$((TESTS_RUN + 1))
     local test_name="binary_probe_inject_${arch}"
@@ -370,7 +395,7 @@ run_inject_test() {
         --manifest "$DESCRIPTOR_MANIFEST" \
         --function simple_kernel \
         --output "$out_ir" > "$OUTPUT_DIR/${test_name}.out"; then
-        if python3 - "$out_ir" "$expected_runtime_pair" "$expected_target_pair" "$expected_kernarg_pair" <<'PY'
+        if python3 - "$out_ir" "$expected_runtime_pair" "$expected_target_pair" "$expected_kernarg_pair" "$expected_entry_kernarg_pair" <<'PY'
 import json
 import sys
 
@@ -378,10 +403,12 @@ payload = json.load(open(sys.argv[1], encoding="utf-8"))
 expected_runtime = [int(part) for part in sys.argv[2].split(":")]
 expected_target = [int(part) for part in sys.argv[3].split(":")]
 expected_kernarg = [int(part) for part in sys.argv[4].split(":")]
+expected_entry_kernarg = [int(part) for part in sys.argv[5].split(":")]
 fn = payload["functions"][0]
 meta = fn["instrumentation"]["lifecycle_exit_stub"]
 assert meta["target_pair"] == expected_target
 assert meta["kernarg_pair"] == expected_kernarg
+assert meta["entry_kernarg_pair"] == expected_entry_kernarg
 assert meta["call_source"] in {"observed", "synthetic_from_kernarg_base"}
 timestamp_pair = meta["timestamp_pair"]
 call_args = meta["call_arguments"]
@@ -410,12 +437,15 @@ for insn in instructions:
 assert len(entry_stub) == 3
 assert entry_stub[0]["mnemonic"] == "s_load_dwordx2"
 assert entry_stub[0]["operand_text"].startswith("s[36:37]")
+assert f"s[{expected_entry_kernarg[0]}:{expected_entry_kernarg[1]}]" in entry_stub[0]["operand_text"]
 assert entry_stub[0]["operand_text"].endswith(", 0x10")
 assert entry_stub[1]["mnemonic"] == "s_load_dwordx2"
 assert entry_stub[1]["operand_text"].startswith("s[38:39]")
+assert f"s[{expected_entry_kernarg[0]}:{expected_entry_kernarg[1]}]" in entry_stub[1]["operand_text"]
 assert entry_stub[1]["operand_text"].endswith(", 0x0")
 assert entry_stub[2]["mnemonic"] == "s_load_dwordx2"
 assert entry_stub[2]["operand_text"].startswith("s[40:41]")
+assert f"s[{expected_entry_kernarg[0]}:{expected_entry_kernarg[1]}]" in entry_stub[2]["operand_text"]
 assert entry_stub[2]["operand_text"].endswith(", 0x8")
 end_index = next(i for i, insn in enumerate(instructions) if insn["mnemonic"] == "s_endpgm")
 stub = []
@@ -515,15 +545,18 @@ while cursor < len(instructions) and instructions[cursor].get("synthetic"):
 assert len(entry_stub) == 26
 assert entry_stub[0]["mnemonic"] == "s_load_dwordx2"
 assert entry_stub[0]["operand_text"].startswith("s[36:37]")
+assert f"s[{expected_kernarg[0]}:{expected_kernarg[1]}]" in entry_stub[0]["operand_text"]
 assert entry_stub[0]["operand_text"].endswith(", 0x10")
 assert entry_stub[1]["mnemonic"] == "s_waitcnt"
 assert entry_stub[2]["operand_text"] == "v0, s36"
 assert entry_stub[3]["operand_text"] == "v1, s37"
 assert entry_stub[4]["operand_text"].startswith("s[38:39]")
+assert f"s[{expected_kernarg[0]}:{expected_kernarg[1]}]" in entry_stub[4]["operand_text"]
 assert entry_stub[4]["operand_text"].endswith(", 0x0")
 assert entry_stub[6]["operand_text"] == "v2, s38"
 assert entry_stub[7]["operand_text"] == "v3, s39"
 assert entry_stub[8]["operand_text"].startswith("s[40:41]")
+assert f"s[{expected_kernarg[0]}:{expected_kernarg[1]}]" in entry_stub[8]["operand_text"]
 assert entry_stub[8]["operand_text"].endswith(", 0x8")
 assert entry_stub[10]["operand_text"] == "v4, s40"
 assert entry_stub[11]["operand_text"] == "v5, s41"
@@ -1040,16 +1073,21 @@ make_fallback_fixture \
 make_fallback_fixture \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_callconv_gfx942.ir.json" \
     "$OUTPUT_DIR/binary_probe_injector_gfx942_fallback.ir.json"
+make_split_entry_kernarg_fixture \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_callconv_gfx942.ir.json" \
+    "$OUTPUT_DIR/binary_probe_injector_gfx942_split_entry.ir.json"
 
 run_inject_test "gfx1030" "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_callconv_gfx1030.ir.json" "8:9" "14:15" "4:5"
 run_inject_test "gfx90a" "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_callconv_gfx90a.ir.json" "8:9" "14:15" "4:5"
 run_inject_test "gfx942" "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_callconv_gfx942.ir.json" "4:5" "10:11" "0:1"
-run_inject_test "gfx1030" "$OUTPUT_DIR/binary_probe_injector_gfx1030_fallback.ir.json" "8:9" "14:15" "4:5" "fallback"
-run_inject_test "gfx90a" "$OUTPUT_DIR/binary_probe_injector_gfx90a_fallback.ir.json" "8:9" "14:15" "4:5" "fallback"
-run_inject_test "gfx942" "$OUTPUT_DIR/binary_probe_injector_gfx942_fallback.ir.json" "4:5" "10:11" "0:1" "fallback"
+run_inject_test "gfx942_split_entry" "$OUTPUT_DIR/binary_probe_injector_gfx942_split_entry.ir.json" "4:5" "10:11" "0:1" "4:5"
+run_inject_test "gfx1030" "$OUTPUT_DIR/binary_probe_injector_gfx1030_fallback.ir.json" "8:9" "14:15" "4:5" "4:5" "fallback"
+run_inject_test "gfx90a" "$OUTPUT_DIR/binary_probe_injector_gfx90a_fallback.ir.json" "8:9" "14:15" "4:5" "4:5" "fallback"
+run_inject_test "gfx942" "$OUTPUT_DIR/binary_probe_injector_gfx942_fallback.ir.json" "4:5" "10:11" "0:1" "0:1" "fallback"
 run_entry_inject_test "gfx1030" "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_callconv_gfx1030.ir.json" "4:5"
 run_entry_inject_test "gfx90a" "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_callconv_gfx90a.ir.json" "4:5"
 run_entry_inject_test "gfx942" "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_callconv_gfx942.ir.json" "0:1"
+run_entry_inject_test "gfx942_split_entry" "$OUTPUT_DIR/binary_probe_injector_gfx942_split_entry.ir.json" "4:5"
 run_entry_inject_test "gfx1030" "$OUTPUT_DIR/binary_probe_injector_gfx1030_fallback.ir.json" "4:5" "fallback"
 run_entry_inject_test "gfx90a" "$OUTPUT_DIR/binary_probe_injector_gfx90a_fallback.ir.json" "4:5" "fallback"
 run_entry_inject_test "gfx942" "$OUTPUT_DIR/binary_probe_injector_gfx942_fallback.ir.json" "0:1" "fallback"

@@ -315,6 +315,26 @@ def allocated_sgpr_count(
     return current_sgprs
 
 
+def resolve_entry_kernarg_pair(kernarg_base: dict | None) -> list[int]:
+    if not isinstance(kernarg_base, dict):
+        return []
+    entry_pair = kernarg_base.get("entry_base_pair")
+    if (
+        isinstance(entry_pair, list)
+        and len(entry_pair) == 2
+        and all(isinstance(value, int) for value in entry_pair)
+    ):
+        return [int(entry_pair[0]), int(entry_pair[1])]
+    base_pair = kernarg_base.get("base_pair")
+    if (
+        isinstance(base_pair, list)
+        and len(base_pair) == 2
+        and all(isinstance(value, int) for value in base_pair)
+    ):
+        return [int(base_pair[0]), int(base_pair[1])]
+    return []
+
+
 def infer_first_hidden_arg_offset(kernel_metadata: dict | None) -> int | None:
     if not isinstance(kernel_metadata, dict):
         return None
@@ -2327,8 +2347,13 @@ def inject_memory_stubs(
     if kernarg_base is None or not analysis.get("descriptor_has_kernarg_segment_ptr", False):
         raise SystemExit(
             f"function {function_name!r} is missing kernarg-base facts required for memory-op stub injection"
+    )
+    kernarg_pair = resolve_entry_kernarg_pair(kernarg_base)
+    if len(kernarg_pair) != 2:
+        raise SystemExit(
+            f"function {function_name!r} is missing an entry-time kernarg SGPR pair required "
+            "for memory-op stub injection"
         )
-    kernarg_pair = list(kernarg_base["base_pair"])
     sites = find_planned_sites(kernel_plan, when="memory_op", contract="memory_op_v1")
     if not sites:
         raise SystemExit(f"kernel plan for {function_name!r} did not contain any planned memory-op sites")
@@ -2752,8 +2777,13 @@ def inject_basic_block_stubs(
     if kernarg_base is None or not analysis.get("descriptor_has_kernarg_segment_ptr", False):
         raise SystemExit(
             f"function {function_name!r} is missing kernarg-base facts required for basic-block stub injection"
+    )
+    kernarg_pair = resolve_entry_kernarg_pair(kernarg_base)
+    if len(kernarg_pair) != 2:
+        raise SystemExit(
+            f"function {function_name!r} is missing an entry-time kernarg SGPR pair required "
+            "for basic-block stub injection"
         )
-    kernarg_pair = list(kernarg_base["base_pair"])
     sites = find_planned_sites(kernel_plan, when="basic_block", contract="basic_block_v1")
     if not sites:
         raise SystemExit(f"kernel plan for {function_name!r} did not contain any planned basic-block sites")
@@ -2930,6 +2960,12 @@ def inject_lifecycle_stubs(
     if kernarg_base is None or not analysis.get("descriptor_has_kernarg_segment_ptr", False):
         raise SystemExit(f"function {function_name!r} is missing kernarg-base facts required for lifecycle stub injection")
     kernarg_pair = list(kernarg_base["base_pair"])
+    entry_kernarg_pair = resolve_entry_kernarg_pair(kernarg_base)
+    if len(entry_kernarg_pair) != 2:
+        raise SystemExit(
+            f"function {function_name!r} is missing an entry-time kernarg SGPR pair required "
+            "for lifecycle stub injection"
+        )
 
     hidden_ctx = kernel_plan.get("hidden_omniprobe_ctx", {})
     hidden_offset = int(hidden_ctx.get("offset", 0) or 0)
@@ -2998,7 +3034,7 @@ def inject_lifecycle_stubs(
         entry_anchor_index, entry_anchor_address = choose_entry_insertion_anchor(function, kernarg_base)
         entry_stub_instructions = lifecycle_entry_stub_instructions(
             anchor_address=entry_anchor_address,
-            kernarg_pair=kernarg_pair,
+            kernarg_pair=entry_kernarg_pair,
             thunk_name=thunk_name,
             call_arguments=call_arguments,
             staged_arguments=entry_scalar_plan["staged_arguments"],
@@ -3017,7 +3053,7 @@ def inject_lifecycle_stubs(
             "call_source": "reserved_entry_stub_sgprs",
             "hidden_omniprobe_ctx_offset": hidden_offset,
             "thunk": thunk_name,
-            "kernarg_pair": kernarg_pair,
+            "kernarg_pair": entry_kernarg_pair,
             "injected_before_instruction_index": entry_anchor_index,
             "injected_before_instruction_address": entry_anchor_address,
             "call_arguments": call_arguments,
@@ -3075,7 +3111,7 @@ def inject_lifecycle_stubs(
             mutated_instructions.extend(
                 lifecycle_entry_save_instructions(
                     anchor_address=entry_anchor,
-                    kernarg_pair=kernarg_pair,
+                    kernarg_pair=entry_kernarg_pair,
                     saved_arguments=saved_arguments,
                 )
             )
@@ -3086,6 +3122,7 @@ def inject_lifecycle_stubs(
             "hidden_omniprobe_ctx_offset": hidden_offset,
             "thunk": thunk_name,
             "kernarg_pair": kernarg_pair,
+            "entry_kernarg_pair": entry_kernarg_pair,
             "timestamp_pair": timestamp_pair,
             "target_pair": target_pair,
             "call_arguments": call_arguments,
