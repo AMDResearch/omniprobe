@@ -615,9 +615,19 @@ assert resume["supported"] is True
 assert resume["supported_class"] == "wave32-direct-vgpr-xyz-setreg-flat-scratch-mid-kernel-private-spill-v1"
 assert "basic_block" in resume["supported_modes"]
 assert len(kernel["planned_sites"]) == 1
-site_resume = kernel["planned_sites"][0]["mid_kernel_resume_profile"]
+site = kernel["planned_sites"][0]
+site_resume = site["mid_kernel_resume_profile"]
 assert site_resume["supported_class"] == resume["supported_class"]
 assert site_resume["helper_policy"]["compiler_generated_liveins_allowed"] is False
+state = site["site_state_requirements"]
+assert state["schema"] == "omniprobe.site_state_requirements.v1"
+assert state["supported"] is True
+assert state["entry_dependencies"]["private_segment"]["pattern"] == "setreg_flat_scratch_init"
+plan = site["site_resume_plan"]
+assert plan["schema"] == "omniprobe.site_resume_plan.v1"
+assert plan["supported"] is True
+assert plan["storage"]["address_ops"] == "buffer"
+assert plan["lowering_constraints"]["current_lowering_policy"]["vgpr_selection"] == "semantic_preserve_set_union"
 PY
     then
         echo -e "  ${GREEN}✓ PASS${NC} - Planner attaches descriptor-backed gfx1030 mid-kernel resume classes to supported basic-block sites"
@@ -694,6 +704,9 @@ assert "missing-private-segment-wave-offset-livein" in resume["blockers"]
 first = kernel["unsupported_sites"][0]
 assert first["when"] == "basic_block"
 assert "missing-private-segment-wave-offset-livein" in first["reason"]
+assert first["site_state_requirements"]["schema"] == "omniprobe.site_state_requirements.v1"
+assert first["site_resume_plan"]["supported"] is False
+assert "missing-private-segment-wave-offset-livein" in first["site_resume_plan"]["blockers"]
 PY
     then
         echo -e "  ${GREEN}✓ PASS${NC} - Planner fail-closed rejected unsupported gfx942 mid-kernel resume sites before injection"

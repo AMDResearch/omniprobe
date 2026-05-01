@@ -372,6 +372,16 @@ def reserve_src_private_base_address_vgprs(source_vgprs: list[int]) -> tuple[lis
     return address_vgprs, next_free_vgpr + 2
 
 
+def reserve_src_private_base_address_vgprs_with_floor(
+    source_vgprs: list[int],
+    *,
+    vgpr_floor: int,
+) -> tuple[list[int], int]:
+    reserved = list(source_vgprs)
+    reserved.extend(range(max(0, vgpr_floor)))
+    return reserve_src_private_base_address_vgprs(reserved)
+
+
 def infer_first_hidden_arg_offset(kernel_metadata: dict | None) -> int | None:
     if not isinstance(kernel_metadata, dict):
         return None
@@ -1377,6 +1387,173 @@ def require_supported_mid_kernel_resume_profile(
     )
 
 
+SUPPORTED_MID_KERNEL_SITE_BACKENDS = {
+    "private_segment_tail.src_private_base.flat.v1",
+    "private_segment_tail.current_scratch_descriptor.buffer.v1",
+}
+
+
+def planned_site_state_requirements(site: dict[str, Any]) -> dict[str, Any] | None:
+    payload = site.get("site_state_requirements")
+    return payload if isinstance(payload, dict) else None
+
+
+def planned_site_resume_plan(site: dict[str, Any]) -> dict[str, Any] | None:
+    payload = site.get("site_resume_plan")
+    return payload if isinstance(payload, dict) else None
+
+
+def require_supported_mid_kernel_site_resume_plans(
+    *,
+    function_name: str,
+    rewrite_mode: str,
+    sites: list[dict],
+    profile: dict[str, Any],
+) -> None:
+    entry_shape = profile.get("entry_shape", {})
+    if not isinstance(entry_shape, dict):
+        entry_shape = {}
+    private_pattern = entry_shape.get("private_pattern")
+    expected_address_ops = "flat" if private_pattern == "src_private_base" else "buffer"
+    for site in sites:
+        plan = planned_site_resume_plan(site)
+        if not isinstance(plan, dict):
+            continue
+        if not bool(plan.get("supported")):
+            blockers = plan.get("blockers", [])
+            if not isinstance(blockers, list) or not blockers:
+                blockers = ["unsupported-mid-kernel-site-resume-plan"]
+            blocker_text = ", ".join(str(blocker) for blocker in blockers)
+            raise SystemExit(
+                f"function {function_name!r} does not satisfy {rewrite_mode} planned site resume requirements: "
+                f"{blocker_text}"
+            )
+        backend = plan.get("backend")
+        if backend is not None and backend not in SUPPORTED_MID_KERNEL_SITE_BACKENDS:
+            raise SystemExit(
+                f"function {function_name!r} planned site requested unsupported {rewrite_mode} backend "
+                f"{backend!r}"
+            )
+        storage = plan.get("storage", {})
+        if not isinstance(storage, dict):
+            raise SystemExit(
+                f"function {function_name!r} planned site is missing a valid {rewrite_mode} storage description"
+            )
+        if storage.get("kind") != "private_segment_tail":
+            raise SystemExit(
+                f"function {function_name!r} planned site requested unsupported storage kind "
+                f"{storage.get('kind')!r} for {rewrite_mode}"
+            )
+        address_ops = storage.get("address_ops")
+        if address_ops not in {"flat", "buffer"}:
+            raise SystemExit(
+                f"function {function_name!r} planned site requested unsupported address ops {address_ops!r} "
+                f"for {rewrite_mode}"
+            )
+        if address_ops != expected_address_ops:
+            raise SystemExit(
+                f"function {function_name!r} planned site address ops {address_ops!r} do not match the "
+                f"current {rewrite_mode} mid-kernel resume profile ({expected_address_ops!r})"
+            )
+
+
+def planned_mid_kernel_site_analysis(sites: list[dict]) -> list[dict]:
+    analysis: list[dict] = []
+    for site in sites:
+        state_requirements = planned_site_state_requirements(site)
+        resume_plan = planned_site_resume_plan(site)
+        if state_requirements is None and resume_plan is None:
+            continue
+        analysis.append(
+            {
+                "binary_site_id": site.get("binary_site_id"),
+                "site_state_requirements": deepcopy(state_requirements) if state_requirements is not None else None,
+                "site_resume_plan": deepcopy(resume_plan) if resume_plan is not None else None,
+            }
+        )
+    return analysis
+
+
+SUPPORTED_SEMANTIC_SPILL_SPECIALS = {
+    "s30:s31",
+    "exec",
+    "vcc",
+    "m0",
+    "flat_scratch",
+}
+
+
+def semantic_mid_kernel_spill_candidates(
+    *,
+    sites: list[dict],
+    persistent_sgprs: list[int] | None = None,
+) -> dict[str, Any] | None:
+    if not sites:
+        return None
+
+    source_vgprs: set[int] = set()
+    source_sgprs: set[int] = set()
+    semantic_specials: set[str] = set()
+    semantic_site_ids: list[int] = []
+    for site in sites:
+        state_requirements = planned_site_state_requirements(site)
+        resume_plan = planned_site_resume_plan(site)
+        if not isinstance(state_requirements, dict) or not isinstance(resume_plan, dict):
+            return None
+        if not bool(state_requirements.get("supported")) or not bool(resume_plan.get("supported")):
+            return None
+        hazards = state_requirements.get("hazards", [])
+        if isinstance(hazards, list) and hazards:
+            return None
+
+        preserve_set = resume_plan.get("semantic_preserve_set")
+        if not isinstance(preserve_set, dict):
+            preserve_set = state_requirements.get("live_state")
+        if not isinstance(preserve_set, dict):
+            return None
+
+        for reg in preserve_set.get("vgprs", []):
+            if isinstance(reg, int) and reg >= 0:
+                source_vgprs.add(int(reg))
+        for reg in preserve_set.get("sgprs", []):
+            if not isinstance(reg, int):
+                continue
+            reg_value = int(reg)
+            if reg_value < 0 or reg_value in {0, 1, 30, 31}:
+                continue
+            source_sgprs.add(reg_value)
+        for special in preserve_set.get("special", []):
+            if isinstance(special, str) and special:
+                semantic_specials.add(special)
+
+        site_id = site.get("binary_site_id")
+        if isinstance(site_id, int):
+            semantic_site_ids.append(site_id)
+
+    unsupported_specials = sorted(
+        special for special in semantic_specials if special not in SUPPORTED_SEMANTIC_SPILL_SPECIALS
+    )
+    if unsupported_specials:
+        return None
+
+    if isinstance(persistent_sgprs, list):
+        for reg in persistent_sgprs:
+            if not isinstance(reg, int):
+                continue
+            reg_value = int(reg)
+            if reg_value < 0 or reg_value in {0, 1, 30, 31}:
+                continue
+            source_sgprs.add(reg_value)
+
+    return {
+        "source_vgprs": sorted(source_vgprs),
+        "source_sgprs": sorted(source_sgprs),
+        "semantic_specials": sorted(semantic_specials),
+        "semantic_site_ids": sorted(set(semantic_site_ids)),
+        "selection_mode": "semantic_site_union",
+    }
+
+
 SUPPORTED_BINARY_HELPER_BUILTINS = {
     "grid_dim",
     "block_dim",
@@ -1474,6 +1651,7 @@ def reserve_mid_kernel_vgpr_spill(
     entry_analysis: dict[str, Any] | None,
     call_dword_count: int,
     persistent_sgprs: list[int] | None = None,
+    semantic_spill_candidates: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     rsrc2 = (descriptor or {}).get("compute_pgm_rsrc2", {})
     if not int(rsrc2.get("enable_private_segment", 0) or 0):
@@ -1481,29 +1659,61 @@ def reserve_mid_kernel_vgpr_spill(
             "mid-kernel binary probe rewrite currently requires kernels that already enable "
             "private-segment wave offsets; hidden-context-backed spill storage is not implemented"
         )
-    original_vgpr_count = descriptor_allocated_vgpr_count(descriptor)
-    if original_vgpr_count is None:
-        source_vgprs = list(range(max(0, call_dword_count)))
-    else:
-        source_vgprs = list(range(max(0, original_vgpr_count)))
-    original_sgpr_count = allocated_sgpr_count(
-        kernel_metadata=kernel_metadata,
-        descriptor=descriptor,
-    )
-    source_sgprs = [
-        reg
-        for reg in range(2, original_sgpr_count)
-        if reg not in {30, 31}
-    ]
-    if isinstance(persistent_sgprs, list):
-        for reg in persistent_sgprs:
-            if not isinstance(reg, int):
-                continue
-            if reg < 0 or reg in {30, 31}:
-                continue
-            if reg not in source_sgprs:
-                source_sgprs.append(reg)
-        source_sgprs.sort()
+    selection_mode = "conservative_descriptor_allocation"
+    semantic_specials: list[str] = []
+    semantic_site_ids: list[int] = []
+    if isinstance(semantic_spill_candidates, dict):
+        raw_vgprs = semantic_spill_candidates.get("source_vgprs", [])
+        raw_sgprs = semantic_spill_candidates.get("source_sgprs", [])
+        if isinstance(raw_vgprs, list) and isinstance(raw_sgprs, list):
+            source_vgprs = sorted(
+                int(reg) for reg in raw_vgprs if isinstance(reg, int) and int(reg) >= 0
+            )
+            source_sgprs = sorted(
+                int(reg)
+                for reg in raw_sgprs
+                if isinstance(reg, int) and int(reg) >= 0 and int(reg) not in {0, 1, 30, 31}
+            )
+            selection_mode = str(
+                semantic_spill_candidates.get("selection_mode") or "semantic_site_union"
+            )
+            semantic_specials = [
+                str(value)
+                for value in semantic_spill_candidates.get("semantic_specials", [])
+                if isinstance(value, str) and value
+            ]
+            semantic_site_ids = [
+                int(value)
+                for value in semantic_spill_candidates.get("semantic_site_ids", [])
+                if isinstance(value, int)
+            ]
+        else:
+            semantic_spill_candidates = None
+
+    if not isinstance(semantic_spill_candidates, dict):
+        original_vgpr_count = descriptor_allocated_vgpr_count(descriptor)
+        if original_vgpr_count is None:
+            source_vgprs = list(range(max(0, call_dword_count)))
+        else:
+            source_vgprs = list(range(max(0, original_vgpr_count)))
+        original_sgpr_count = allocated_sgpr_count(
+            kernel_metadata=kernel_metadata,
+            descriptor=descriptor,
+        )
+        source_sgprs = [
+            reg
+            for reg in range(2, original_sgpr_count)
+            if reg not in {30, 31}
+        ]
+        if isinstance(persistent_sgprs, list):
+            for reg in persistent_sgprs:
+                if not isinstance(reg, int):
+                    continue
+                if reg < 0 or reg in {30, 31}:
+                    continue
+                if reg not in source_sgprs:
+                    source_sgprs.append(reg)
+            source_sgprs.sort()
     private_segment_size = int((descriptor or {}).get("private_segment_fixed_size", 0) or 0)
     if private_segment_size < 0:
         raise SystemExit("kernel private-segment size cannot be negative")
@@ -1535,13 +1745,18 @@ def reserve_mid_kernel_vgpr_spill(
             f"pattern {private_pattern_class!r}"
         )
     if private_pattern_class == "src_private_base":
-        address_vgprs, required_total_vgprs = reserve_src_private_base_address_vgprs(source_vgprs)
+        address_vgprs, required_total_vgprs = reserve_src_private_base_address_vgprs_with_floor(
+            source_vgprs,
+            vgpr_floor=max(1, call_dword_count),
+        )
+    else:
+        required_total_vgprs = max(max(source_vgprs, default=-1) + 1, call_dword_count)
 
     spill_bytes = max(0, len(source_vgprs) * 4)
     sgpr_spill_offset = private_segment_size + spill_bytes
     sgpr_spill_bytes = max(0, len(source_sgprs) * 4)
     private_segment_growth = round_up(spill_bytes + sgpr_spill_bytes, 16)
-    return {
+    result = {
         "source_vgprs": source_vgprs,
         "spill_offset": private_segment_size,
         "spill_bytes": spill_bytes,
@@ -1553,7 +1768,13 @@ def reserve_mid_kernel_vgpr_spill(
         "private_segment_offset_source_sgpr": private_segment_offset_source_sgpr,
         "address_vgprs": address_vgprs,
         "required_total_vgprs": required_total_vgprs,
+        "selection_mode": selection_mode,
     }
+    if semantic_specials:
+        result["semantic_specials"] = semantic_specials
+    if semantic_site_ids:
+        result["semantic_site_ids"] = semantic_site_ids
+    return result
 
 
 def emit_mid_kernel_private_segment_address_setup(
@@ -2650,7 +2871,14 @@ def inject_memory_stubs(
     sites = find_planned_sites(kernel_plan, when="memory_op", contract="memory_op_v1")
     if not sites:
         raise SystemExit(f"kernel plan for {function_name!r} did not contain any planned memory-op sites")
+    require_supported_mid_kernel_site_resume_plans(
+        function_name=function_name,
+        rewrite_mode="memory_op",
+        sites=sites,
+        profile=mid_kernel_resume_profile,
+    )
     require_supported_helper_builtins(sites, mode="memory-op")
+    site_analysis = planned_mid_kernel_site_analysis(sites)
 
     hidden_ctx = kernel_plan.get("hidden_omniprobe_ctx", {})
     hidden_offset = int(hidden_ctx.get("offset", 0) or 0)
@@ -2688,12 +2916,17 @@ def inject_memory_stubs(
         builtin_liveins = None
     persistent_sgprs = list(scalar_plan["saved_kernarg_pair"])
     persistent_sgprs.extend(int(value) for value in builtin_snapshot_plan["saved_sources"].values())
+    semantic_spill = semantic_mid_kernel_spill_candidates(
+        sites=sites,
+        persistent_sgprs=persistent_sgprs,
+    )
     spill_plan = reserve_mid_kernel_vgpr_spill(
         kernel_metadata=kernel_metadata,
         descriptor=descriptor,
         entry_analysis=entry_analysis,
         call_dword_count=call_layout["total_dwords"],
         persistent_sgprs=persistent_sgprs,
+        semantic_spill_candidates=semantic_spill,
     )
 
     original_instructions = function.get("instructions", [])
@@ -2798,6 +3031,8 @@ def inject_memory_stubs(
             "total_vgprs": int(spill_plan.get("required_total_vgprs", 0) or 0),
         }
     }
+    if site_analysis:
+        function["instrumentation"]["memory_op_stubs"]["site_analysis"] = site_analysis
     return output
 
 
@@ -3097,7 +3332,14 @@ def inject_basic_block_stubs(
     sites = find_planned_sites(kernel_plan, when="basic_block", contract="basic_block_v1")
     if not sites:
         raise SystemExit(f"kernel plan for {function_name!r} did not contain any planned basic-block sites")
+    require_supported_mid_kernel_site_resume_plans(
+        function_name=function_name,
+        rewrite_mode="basic_block",
+        sites=sites,
+        profile=mid_kernel_resume_profile,
+    )
     require_supported_helper_builtins(sites, mode="basic-block")
+    site_analysis = planned_mid_kernel_site_analysis(sites)
 
     hidden_ctx = kernel_plan.get("hidden_omniprobe_ctx", {})
     hidden_offset = int(hidden_ctx.get("offset", 0) or 0)
@@ -3135,12 +3377,17 @@ def inject_basic_block_stubs(
         builtin_liveins = None
     persistent_sgprs = list(scalar_plan["saved_kernarg_pair"])
     persistent_sgprs.extend(int(value) for value in builtin_snapshot_plan["saved_sources"].values())
+    semantic_spill = semantic_mid_kernel_spill_candidates(
+        sites=sites,
+        persistent_sgprs=persistent_sgprs,
+    )
     spill_plan = reserve_mid_kernel_vgpr_spill(
         kernel_metadata=kernel_metadata,
         descriptor=descriptor,
         entry_analysis=entry_analysis,
         call_dword_count=call_layout["total_dwords"],
         persistent_sgprs=persistent_sgprs,
+        semantic_spill_candidates=semantic_spill,
     )
 
     original_instructions = function.get("instructions", [])
@@ -3247,6 +3494,8 @@ def inject_basic_block_stubs(
             "total_vgprs": int(spill_plan.get("required_total_vgprs", 0) or 0),
         }
     }
+    if site_analysis:
+        function["instrumentation"]["basic_block_stubs"]["site_analysis"] = site_analysis
     return output
 
 

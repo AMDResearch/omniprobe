@@ -11,6 +11,7 @@ from amdgpu_entry_abi import analyze_kernel_entry_abi
 from disasm_to_ir import build_basic_blocks
 from helper_abi_contract import validate_helper_abi_entry
 from mid_kernel_resume_profile import build_mid_kernel_resume_profile
+from mid_kernel_site_plan import build_mid_kernel_site_plan
 from plan_hidden_abi import build_kernel_plan
 
 MEMORY_ACCESS_PREFIXES = (
@@ -800,9 +801,17 @@ def plan_kernel(
             if when not in MID_KERNEL_WHENS:
                 annotated_planned_sites.append(site)
                 continue
+            site_state_requirements, site_resume_plan = build_mid_kernel_site_plan(
+                function=function,
+                site=site,
+                entry_analysis=entry_analysis,
+                profile=mid_kernel_resume_profile,
+            )
             if supported:
                 annotated_site = deepcopy(site)
                 annotated_site["mid_kernel_resume_profile"] = deepcopy(mid_kernel_resume_profile)
+                annotated_site["site_state_requirements"] = site_state_requirements
+                annotated_site["site_resume_plan"] = site_resume_plan
                 annotated_planned_sites.append(annotated_site)
                 continue
             reason = "mid-kernel binary-safe resume is unsupported"
@@ -810,6 +819,8 @@ def plan_kernel(
                 reason += f": {', '.join(blockers)}"
             rejected_site = unsupported_planned_site(site, kernel, reason)
             rejected_site["mid_kernel_resume_profile"] = deepcopy(mid_kernel_resume_profile)
+            rejected_site["site_state_requirements"] = site_state_requirements
+            rejected_site["site_resume_plan"] = site_resume_plan
             rejected_site["blockers"] = blockers
             unsupported_sites.append(rejected_site)
         planned_sites = annotated_planned_sites

@@ -867,14 +867,57 @@ run_basic_block_src_private_base_test() {
     local plan_json="$OUTPUT_DIR/${test_name}.plan.json"
     local thunk_json="$OUTPUT_DIR/${test_name}.thunks.json"
 
-    python3 - "$ir_fixture" "$plan_json" "$thunk_json" "$function_name" <<'PY'
+    PYTHONPATH="${REPO_ROOT}/tools/codeobj" python3 - "$ir_fixture" "$manifest_fixture" "$plan_json" "$thunk_json" "$function_name" <<'PY'
 import json
 import sys
 
+import amdgpu_entry_abi
+import mid_kernel_resume_profile
+from mid_kernel_site_plan import build_mid_kernel_site_plan
+
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
-function_name = sys.argv[4]
+manifest = json.load(open(sys.argv[2], encoding="utf-8"))
+function_name = sys.argv[5]
 function = next(entry for entry in payload["functions"] if entry.get("name") == function_name)
 start_address = int(function["instructions"][0]["address"])
+descriptor = next(
+    entry for entry in manifest["kernels"]["descriptors"]
+    if entry.get("kernel_name") == function_name or entry.get("name") == f"{function_name}.kd"
+)
+kernel_metadata = next(
+    entry for entry in manifest["kernels"]["metadata"]["kernels"]
+    if entry.get("name") == function_name or entry.get("symbol") == f"{function_name}.kd"
+)
+entry_analysis = amdgpu_entry_abi.analyze_kernel_entry_abi(
+    function=function,
+    descriptor=descriptor,
+    kernel_metadata=kernel_metadata,
+)
+resume_profile = mid_kernel_resume_profile.build_mid_kernel_resume_profile(
+    function_name=function_name,
+    arch=payload.get("arch"),
+    analysis=entry_analysis,
+    descriptor=descriptor,
+    kernel_metadata=kernel_metadata,
+)
+site = {
+    "binary_site_id": 0,
+    "status": "planned",
+    "contract": "basic_block_v1",
+    "when": "basic_block",
+    "injection_point": {
+        "kind": "basic_block",
+        "block_id": 0,
+        "block_label": "bb0",
+        "start_address": start_address,
+    },
+}
+site_state_requirements, site_resume_plan = build_mid_kernel_site_plan(
+    function=function,
+    site=site,
+    entry_analysis=entry_analysis,
+    profile=resume_profile,
+)
 
 helper_abi = {
     "schema": "omniprobe.helper_abi.v1",
@@ -907,22 +950,15 @@ plan = {
             "hidden_omniprobe_ctx": {"offset": 224},
             "planned_sites": [
                 {
-                    "binary_site_id": 0,
-                    "status": "planned",
-                    "contract": "basic_block_v1",
-                    "when": "basic_block",
+                    **site,
                     "helper_context": {"builtins": []},
                     "helper_abi": helper_abi,
                     "event_materialization": {
                         "timestamp": {"kind": "dynamic_timestamp"},
                         "block_id": {"kind": "static_block_id", "value": 0},
                     },
-                    "injection_point": {
-                        "kind": "basic_block",
-                        "block_id": 0,
-                        "block_label": "bb0",
-                        "start_address": start_address,
-                    },
+                    "site_state_requirements": site_state_requirements,
+                    "site_resume_plan": site_resume_plan,
                 }
             ],
         }
@@ -971,10 +1007,10 @@ thunks = {
     ]
 }
 
-json.dump(plan, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
-open(sys.argv[2], "a", encoding="utf-8").write("\n")
-json.dump(thunks, open(sys.argv[3], "w", encoding="utf-8"), indent=2)
+json.dump(plan, open(sys.argv[3], "w", encoding="utf-8"), indent=2)
 open(sys.argv[3], "a", encoding="utf-8").write("\n")
+json.dump(thunks, open(sys.argv[4], "w", encoding="utf-8"), indent=2)
+open(sys.argv[4], "a", encoding="utf-8").write("\n")
 PY
 
     if python3 "$INJECTOR" "$ir_fixture" \
@@ -993,19 +1029,27 @@ fn = next(entry for entry in payload["functions"] if entry.get("name") == functi
 meta = fn["instrumentation"]["basic_block_stubs"]
 spill = meta["preserved_low_vgprs"]
 resume = meta["mid_kernel_resume_profile"]
+site_analysis = meta["site_analysis"]
 
 assert spill["private_segment_pattern_class"] == "src_private_base"
 assert spill["private_segment_offset_source_sgpr"] == 11
+assert spill["selection_mode"] == "semantic_site_union"
+assert spill["source_vgprs"] == [0]
+assert spill["source_sgprs"] == [4, 5, 8, 9, 10, 64, 65, 82, 83, 84]
 expected_addr_lo = len(spill["source_vgprs"])
-if expected_addr_lo % 2:
-    expected_addr_lo += 1
+expected_addr_lo = 6
 assert spill["address_vgprs"] == [expected_addr_lo, expected_addr_lo + 1]
 assert spill["required_total_vgprs"] == expected_addr_lo + 2
 assert meta["total_vgprs"] == expected_addr_lo + 2
 assert meta["total_vgprs"] > len(spill["source_vgprs"])
 assert resume["supported_class"] == "wave64-direct-vgpr-xyz-src-private-base-mid-kernel-private-spill-v1"
+assert len(site_analysis) == 1
+assert site_analysis[0]["site_resume_plan"]["backend"] == "private_segment_tail.src_private_base.flat.v1"
+assert site_analysis[0]["site_resume_plan"]["storage"]["address_ops"] == "flat"
+assert site_analysis[0]["site_state_requirements"]["entry_dependencies"]["private_segment"]["pattern"] == "src_private_base"
 
 site = meta["injected_sites"][0]
+assert site_analysis[0]["site_state_requirements"]["analysis"]["anchor_address"] == site["start_address"]
 instructions = fn["instructions"]
 cursor = site["original_instruction_index"]
 synthetic_before = []
