@@ -1613,14 +1613,17 @@ def emit_mid_kernel_private_segment_address_setup(
                 ["s[0:1]", "src_private_base"],
             )
         )
-        if isinstance(private_offset_source_sgpr, int):
+        effective_offset_sgpr = private_offset_source_sgpr
+        if not save_original and isinstance(private_offset_restore_sgpr, int):
+            effective_offset_sgpr = private_offset_restore_sgpr
+        if isinstance(effective_offset_sgpr, int):
             instructions.extend(
                 [
                     make_instruction(
                         anchor_address,
                         "s_add_u32",
-                        f"s0, s0, s{private_offset_source_sgpr}",
-                        ["s0", "s0", f"s{private_offset_source_sgpr}"],
+                        f"s0, s0, s{effective_offset_sgpr}",
+                        ["s0", "s0", f"s{effective_offset_sgpr}"],
                     ),
                     make_instruction(
                         anchor_address,
