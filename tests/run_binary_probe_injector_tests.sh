@@ -1236,6 +1236,7 @@ assert any(text == f"v_mov_b32_e32 v{expected_addr_lo}, s0" for text in texts)
 assert any(text == f"v_mov_b32_e32 v{expected_addr_lo + 1}, s1" for text in texts)
 assert any(text == f"flat_store_dword {addr_pair}, v0" for text in texts)
 assert any(text == f"flat_load_dword v0, {addr_pair}" for text in texts)
+assert any(text.startswith("s_mov_b32 s11, s") and text != "s_mov_b32 s11, s11" for text in texts)
 assert not any("buffer_store_dword" in text and "s[0:3]" in text for text in texts)
 assert not any("buffer_load_dword" in text and "s[0:3]" in text for text in texts)
 PY

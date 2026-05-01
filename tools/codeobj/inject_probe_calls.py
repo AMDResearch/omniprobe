@@ -1951,6 +1951,29 @@ def emit_mid_kernel_private_segment_scalar_advance(
     ]
 
 
+def emit_mid_kernel_private_offset_source_restore(
+    *,
+    anchor_address: int,
+    spill_plan: dict[str, Any] | None,
+    private_offset_restore_sgpr: int | None,
+) -> list[dict]:
+    if not isinstance(spill_plan, dict):
+        return []
+    if not isinstance(private_offset_restore_sgpr, int):
+        return []
+    source_sgpr = spill_plan.get("private_segment_offset_source_sgpr")
+    if not isinstance(source_sgpr, int) or source_sgpr < 0 or source_sgpr == private_offset_restore_sgpr:
+        return []
+    return [
+        make_instruction(
+            anchor_address,
+            "s_mov_b32",
+            f"s{source_sgpr}, s{private_offset_restore_sgpr}",
+            [f"s{source_sgpr}", f"s{private_offset_restore_sgpr}"],
+        )
+    ]
+
+
 def emit_mid_kernel_vgpr_save_restore(
     *,
     anchor_address: int,
@@ -2825,6 +2848,13 @@ def memory_stub_instructions(
         )
     )
     instructions.extend(vgpr_restore)
+    instructions.extend(
+        emit_mid_kernel_private_offset_source_restore(
+            anchor_address=anchor_address,
+            spill_plan=spill_plan,
+            private_offset_restore_sgpr=private_offset_restore_sgpr,
+        )
+    )
     return instructions
 
 
@@ -3267,6 +3297,13 @@ def basic_block_stub_instructions(
         )
     )
     instructions.extend(vgpr_restore)
+    instructions.extend(
+        emit_mid_kernel_private_offset_source_restore(
+            anchor_address=anchor_address,
+            spill_plan=spill_plan,
+            private_offset_restore_sgpr=private_offset_restore_sgpr,
+        )
+    )
     return instructions
 
 
