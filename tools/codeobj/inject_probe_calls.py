@@ -335,6 +335,37 @@ def resolve_entry_kernarg_pair(kernarg_base: dict | None) -> list[int]:
     return []
 
 
+def resolve_private_segment_offset_source_sgpr(entry_analysis: dict[str, Any] | None) -> int | None:
+    if not isinstance(entry_analysis, dict):
+        return None
+    private_materialization = entry_analysis.get("observed_private_segment_materialization")
+    if isinstance(private_materialization, dict):
+        details = private_materialization.get("details", {})
+        if isinstance(details, dict):
+            pair_updates = details.get("pair_updates", [])
+            if isinstance(pair_updates, list):
+                first_pair_update = next(
+                    (
+                        entry
+                        for entry in pair_updates
+                        if isinstance(entry, dict)
+                        and entry.get("pair") == [0, 1]
+                        and isinstance(entry.get("offset_sgpr"), int)
+                    ),
+                    None,
+                )
+                if first_pair_update is not None:
+                    return int(first_pair_update["offset_sgpr"])
+    for entry in entry_analysis.get("entry_system_sgpr_roles", []):
+        if (
+            isinstance(entry, dict)
+            and entry.get("role") == "private_segment_wave_offset"
+            and isinstance(entry.get("sgpr"), int)
+        ):
+            return int(entry["sgpr"])
+    return None
+
+
 def infer_first_hidden_arg_offset(kernel_metadata: dict | None) -> int | None:
     if not isinstance(kernel_metadata, dict):
         return None
@@ -651,23 +682,8 @@ def reserve_entry_workitem_restore(
         else None
     )
     private_segment_offset_source_sgpr = None
-    if isinstance(private_materialization, dict):
-        details = private_materialization.get("details", {})
-        if isinstance(details, dict):
-            pair_updates = details.get("pair_updates", [])
-            if isinstance(pair_updates, list):
-                first_pair_update = next(
-                    (
-                        entry
-                        for entry in pair_updates
-                        if isinstance(entry, dict)
-                        and entry.get("pair") == [0, 1]
-                        and isinstance(entry.get("offset_sgpr"), int)
-                    ),
-                    None,
-                )
-                if first_pair_update is not None:
-                    private_segment_offset_source_sgpr = int(first_pair_update["offset_sgpr"])
+    if isinstance(entry_analysis, dict):
+        private_segment_offset_source_sgpr = resolve_private_segment_offset_source_sgpr(entry_analysis)
     if private_pattern_class not in {
         None,
         "setreg_flat_scratch_init",
@@ -1497,23 +1513,8 @@ def reserve_mid_kernel_vgpr_spill(
         else None
     )
     private_segment_offset_source_sgpr = None
-    if isinstance(private_materialization, dict):
-        details = private_materialization.get("details", {})
-        if isinstance(details, dict):
-            pair_updates = details.get("pair_updates", [])
-            if isinstance(pair_updates, list):
-                first_pair_update = next(
-                    (
-                        entry
-                        for entry in pair_updates
-                        if isinstance(entry, dict)
-                        and entry.get("pair") == [0, 1]
-                        and isinstance(entry.get("offset_sgpr"), int)
-                    ),
-                    None,
-                )
-                if first_pair_update is not None:
-                    private_segment_offset_source_sgpr = int(first_pair_update["offset_sgpr"])
+    if isinstance(entry_analysis, dict):
+        private_segment_offset_source_sgpr = resolve_private_segment_offset_source_sgpr(entry_analysis)
     if private_pattern_class not in {
         None,
         "setreg_flat_scratch_init",

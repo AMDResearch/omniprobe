@@ -95,20 +95,26 @@ def _role_names(analysis: dict) -> list[str]:
 def _private_offset_source_sgpr(analysis: dict) -> int | None:
     private_materialization = analysis.get("observed_private_segment_materialization")
     if not isinstance(private_materialization, dict):
-        return None
-    details = private_materialization.get("details", {})
-    if not isinstance(details, dict):
-        return None
-    pair_updates = details.get("pair_updates", [])
-    if not isinstance(pair_updates, list):
-        return None
-    for entry in pair_updates:
+        private_materialization = None
+    if isinstance(private_materialization, dict):
+        details = private_materialization.get("details", {})
+        if isinstance(details, dict):
+            pair_updates = details.get("pair_updates", [])
+            if isinstance(pair_updates, list):
+                for entry in pair_updates:
+                    if (
+                        isinstance(entry, dict)
+                        and entry.get("pair") == [0, 1]
+                        and isinstance(entry.get("offset_sgpr"), int)
+                    ):
+                        return int(entry["offset_sgpr"])
+    for entry in analysis.get("entry_system_sgpr_roles", []):
         if (
             isinstance(entry, dict)
-            and entry.get("pair") == [0, 1]
-            and isinstance(entry.get("offset_sgpr"), int)
+            and entry.get("role") == "private_segment_wave_offset"
+            and isinstance(entry.get("sgpr"), int)
         ):
-            return int(entry["offset_sgpr"])
+            return int(entry["sgpr"])
     return None
 
 

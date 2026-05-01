@@ -1130,8 +1130,8 @@ run_entry_backend_pattern_test \
     "0:1" \
     "packed_v0_10_10_10_unpack" \
     "src_private_base" \
-    "none" \
-    "s_mov_b64 s[0:1], src_private_base" \
+    "5" \
+    "s_add_u32 s0, s0, s5" \
     "restore_v0"
 run_entry_missing_helper_abi_rejection_test \
     "gfx942" \

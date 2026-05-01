@@ -110,7 +110,7 @@ gfx942_packed = cases["gfx942_packed_fixture"]
 assert gfx942_packed["supported"] is True
 assert gfx942_packed["supported_class"] == "wave64-packed-v0-10_10_10-unpack-src-private-base-mid-kernel-private-spill-v1"
 assert gfx942_packed["entry_shape"]["private_pattern"] == "src_private_base"
-assert gfx942_packed["entry_shape"]["private_offset_source_sgpr"] is None
+assert gfx942_packed["entry_shape"]["private_offset_source_sgpr"] == 5
 
 gfx942_single = cases["gfx942_real_single_vgpr"]
 assert gfx942_single["supported"] is False
@@ -121,6 +121,7 @@ gfx942_real = cases["gfx942_real_mlk_xyz"]
 assert gfx942_real["supported"] is True
 assert gfx942_real["supported_class"] == "wave64-direct-vgpr-xyz-src-private-base-mid-kernel-private-spill-v1"
 assert gfx942_real["entry_shape"]["private_pattern"] == "src_private_base"
+assert gfx942_real["entry_shape"]["private_offset_source_sgpr"] == 11
 
 summary = {
     entry["supported_class"]: entry
