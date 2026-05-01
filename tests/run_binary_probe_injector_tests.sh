@@ -945,7 +945,15 @@ for site in sites:
         for insn in synthetic_before
     )
     assert any(
+        insn["mnemonic"] == "s_mov_b64" and insn["operand_text"] == "s[64:65], s[2:3]"
+        for insn in synthetic_before
+    )
+    assert any(
         insn["mnemonic"] == "s_mov_b64" and insn["operand_text"] == "exec, s[78:79]"
+        for insn in synthetic_before
+    )
+    assert any(
+        insn["mnemonic"] == "s_mov_b64" and insn["operand_text"] == "s[2:3], s[64:65]"
         for insn in synthetic_before
     )
     assert any(

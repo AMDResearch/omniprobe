@@ -2260,6 +2260,14 @@ def memory_stub_instructions(
         ]
     )
     instructions.extend(builtin_setup)
+    instructions.append(
+        make_instruction(
+            anchor_address,
+            "s_mov_b64",
+            f"s[{kernarg_pair[0]}:{kernarg_pair[1]}], s[2:3]",
+            [f"s[{kernarg_pair[0]}:{kernarg_pair[1]}]", "s[2:3]"],
+        )
+    )
     if exec_restore_pair is not None:
         instructions.append(
             make_instruction(
@@ -2286,6 +2294,14 @@ def memory_stub_instructions(
                 ["exec", f"s[{exec_restore_pair[0]}:{exec_restore_pair[1]}]"],
             )
         )
+    instructions.append(
+        make_instruction(
+            anchor_address,
+            "s_mov_b64",
+            "s[2:3], s[{}:{}]".format(kernarg_pair[0], kernarg_pair[1]),
+            ["s[2:3]", "s[{}:{}]".format(kernarg_pair[0], kernarg_pair[1])],
+        )
+    )
     instructions.append(
         make_instruction(
             anchor_address,
@@ -2671,6 +2687,14 @@ def basic_block_stub_instructions(
         ]
     )
     instructions.extend(builtin_setup)
+    instructions.append(
+        make_instruction(
+            anchor_address,
+            "s_mov_b64",
+            f"s[{kernarg_pair[0]}:{kernarg_pair[1]}], s[2:3]",
+            [f"s[{kernarg_pair[0]}:{kernarg_pair[1]}]", "s[2:3]"],
+        )
+    )
     if exec_restore_pair is not None:
         instructions.append(
             make_instruction(
@@ -2697,6 +2721,14 @@ def basic_block_stub_instructions(
                 ["exec", f"s[{exec_restore_pair[0]}:{exec_restore_pair[1]}]"],
             )
         )
+    instructions.append(
+        make_instruction(
+            anchor_address,
+            "s_mov_b64",
+            "s[2:3], s[{}:{}]".format(kernarg_pair[0], kernarg_pair[1]),
+            ["s[2:3]", "s[{}:{}]".format(kernarg_pair[0], kernarg_pair[1])],
+        )
+    )
     instructions.append(
         make_instruction(
             anchor_address,
