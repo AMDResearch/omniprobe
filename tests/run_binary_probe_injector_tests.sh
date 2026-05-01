@@ -90,6 +90,8 @@ prepare_shared_artifacts "binary_probe_injector_entry" "$ENTRY_SPEC"
 
 ENTRY_BACKEND_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_entry_backend.plan.json"
 ENTRY_BACKEND_THUNK_JSON="$OUTPUT_DIR/binary_probe_injector_entry_backend.thunks.json"
+EXIT_BACKEND_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_exit_backend.plan.json"
+EXIT_BACKEND_THUNK_JSON="$OUTPUT_DIR/binary_probe_injector_exit_backend.thunks.json"
 ENTRY_BACKEND_MISSING_HELPER_ABI_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_entry_backend_missing_helper_abi.plan.json"
 BASIC_BLOCK_BACKEND_PLAN_JSON="$OUTPUT_DIR/binary_probe_injector_basic_block_backend.plan.json"
 BASIC_BLOCK_BACKEND_THUNK_JSON="$OUTPUT_DIR/binary_probe_injector_basic_block_backend.thunks.json"
@@ -194,6 +196,104 @@ broken_plan = json.loads(json.dumps(plan))
 broken_plan["kernels"][0]["planned_sites"][0].pop("helper_abi", None)
 json.dump(broken_plan, open(sys.argv[3], "w", encoding="utf-8"), indent=2)
 open(sys.argv[3], "a", encoding="utf-8").write("\n")
+json.dump(thunks, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
+open(sys.argv[2], "a", encoding="utf-8").write("\n")
+PY
+
+python3 - "$EXIT_BACKEND_PLAN_JSON" "$EXIT_BACKEND_THUNK_JSON" <<'PY'
+import json
+import sys
+
+helper_abi = {
+    "schema": "omniprobe.helper_abi.v1",
+    "model": "explicit_runtime_v1",
+    "compiler_generated_liveins_allowed": False,
+    "compiler_generated_builtins_allowed": False,
+    "requires_wrapper_captured_state": True,
+    "requires_runtime_dispatch_payload": True,
+    "required_runtime_views": [],
+    "helper_visible_sources": {
+        "kernel_args": [],
+        "instruction_fields": [],
+        "builtins": {
+            "requested": [],
+            "provider": "runtime_ctx.dh_builtins",
+        },
+        "event_payload": {
+            "contract": "kernel_lifecycle_v1",
+            "when": ["kernel_exit"],
+        },
+    },
+    "notes": [],
+}
+
+plan = {
+    "kernels": [
+        {
+            "source_kernel": "mlk_xyz",
+            "clone_kernel": "__amd_crk_mlk_xyz",
+            "hidden_omniprobe_ctx": {
+                "offset": 272,
+            },
+            "planned_sites": [
+                {
+                    "status": "planned",
+                    "contract": "kernel_lifecycle_v1",
+                    "when": "kernel_exit",
+                    "helper_context": {
+                        "builtins": [],
+                    },
+                    "helper_abi": helper_abi,
+                }
+            ],
+        }
+    ]
+}
+
+thunks = {
+    "thunks": [
+        {
+            "source_kernel": "mlk_xyz",
+            "when": "kernel_exit",
+            "thunk": "__omniprobe_binary_kernel_timing_mlk_xyz_kernel_exit_thunk",
+            "call_arguments": [
+                {
+                    "kind": "hidden_ctx",
+                    "name": "hidden_ctx",
+                    "c_type": "const void *",
+                    "size_bytes": 8,
+                    "vgprs": [0, 1],
+                },
+                {
+                    "kind": "capture",
+                    "name": "capture_data",
+                    "c_type": "uint64_t",
+                    "size_bytes": 8,
+                    "kernel_arg_offset": 0,
+                    "vgprs": [2, 3],
+                },
+                {
+                    "kind": "capture",
+                    "name": "capture_size",
+                    "c_type": "uint64_t",
+                    "size_bytes": 8,
+                    "kernel_arg_offset": 8,
+                    "vgprs": [4, 5],
+                },
+                {
+                    "kind": "timestamp",
+                    "name": "timestamp",
+                    "c_type": "uint64_t",
+                    "size_bytes": 8,
+                    "vgprs": [6, 7],
+                },
+            ],
+        }
+    ]
+}
+
+json.dump(plan, open(sys.argv[1], "w", encoding="utf-8"), indent=2)
+open(sys.argv[1], "a", encoding="utf-8").write("\n")
 json.dump(thunks, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
 open(sys.argv[2], "a", encoding="utf-8").write("\n")
 PY
@@ -672,6 +772,77 @@ PY
         fi
     else
         echo -e "  ${RED}✗ FAIL${NC} - ${arch} backend-pattern injector execution failed"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+run_exit_backend_builtin_snapshot_test() {
+    local arch="$1"
+    local ir_fixture="$2"
+    local manifest_fixture="$3"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    local test_name="binary_probe_inject_exit_backend_${arch}"
+    echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $test_name"
+
+    local out_ir="$OUTPUT_DIR/${test_name}.ir.json"
+
+    if python3 "$INJECTOR" "$ir_fixture" \
+        --plan "$EXIT_BACKEND_PLAN_JSON" \
+        --thunk-manifest "$EXIT_BACKEND_THUNK_JSON" \
+        --manifest "$manifest_fixture" \
+        --function mlk_xyz \
+        --output "$out_ir" > "$OUTPUT_DIR/${test_name}.out"; then
+        if python3 - "$out_ir" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+fn = payload["functions"][0]
+meta = fn["instrumentation"]["lifecycle_exit_stub"]
+
+raw = meta["entry_raw_builtin_liveins"]
+snapshots = meta["builtin_snapshot_sgprs"]
+helper = meta["helper_builtin_liveins"]
+assert isinstance(raw, dict) and raw
+assert isinstance(snapshots, dict) and snapshots
+assert isinstance(helper, dict) and helper
+assert meta["builtin_snapshot_sgpr_count"] == len(snapshots)
+assert meta["total_sgprs"] == meta["builtin_snapshot_sgpr_base"] + meta["builtin_snapshot_sgpr_count"]
+
+entry_stub = []
+for insn in fn["instructions"]:
+    if not insn.get("synthetic"):
+        break
+    entry_stub.append(insn)
+entry_texts = {f"{insn['mnemonic']} {insn.get('operand_text', '')}".strip() for insn in entry_stub}
+
+stub = []
+end_index = next(i for i, insn in enumerate(fn["instructions"]) if insn["mnemonic"] == "s_endpgm")
+cursor = end_index - 1
+while cursor >= 0 and fn["instructions"][cursor].get("synthetic"):
+    stub.append(fn["instructions"][cursor])
+    cursor -= 1
+stub_texts = {f"{insn['mnemonic']} {insn.get('operand_text', '')}".strip() for insn in reversed(stub)}
+
+for key, saved_source in snapshots.items():
+    raw_source = raw[key]
+    dest_key = key.replace("_source_", "_dest_")
+    dest_sgpr = helper[dest_key]
+    assert helper[key] == saved_source
+    assert raw_source != saved_source
+    assert f"s_mov_b32 s{saved_source}, s{raw_source}" in entry_texts
+    assert f"s_mov_b32 s{dest_sgpr}, s{saved_source}" in stub_texts
+PY
+        then
+            echo -e "  ${GREEN}✓ PASS${NC} - ${arch} lifecycle-exit injector snapshots helper builtins at entry before reusing them at kernel_exit"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            echo -e "  ${RED}✗ FAIL${NC} - ${arch} lifecycle-exit builtin snapshot injection did not match expectations"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - ${arch} lifecycle-exit builtin snapshot injector execution failed"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
@@ -1368,6 +1539,10 @@ run_entry_backend_pattern_test \
     "5" \
     "s_add_u32 s0, s0, s5" \
     "restore_v0"
+run_exit_backend_builtin_snapshot_test \
+    "gfx942" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_mlk_xyz.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_mlk_xyz.manifest.json"
 run_entry_missing_helper_abi_rejection_test \
     "gfx942" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.ir.json" \

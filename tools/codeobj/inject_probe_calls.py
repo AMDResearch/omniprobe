@@ -3642,6 +3642,8 @@ def inject_lifecycle_stubs(
 
     injected_sites: list[int] = []
     exit_stub_meta: dict | None = None
+    builtin_liveins_raw: dict[str, int] | None = None
+    builtin_snapshot_plan: dict[str, Any] | None = None
     if exit_site is not None:
         if not analysis.get("supported_for_lifecycle_exit_stub", False):
             raise SystemExit(f"function {function_name!r} is not supported for lifecycle-exit stub injection")
@@ -3665,6 +3667,18 @@ def inject_lifecycle_stubs(
         )
         saved_arguments = saved_scalar_plan["saved_arguments"]
         builtin_liveins = infer_builtin_livein_plan(kernel_metadata=kernel_metadata, descriptor=descriptor)
+        builtin_liveins_raw = dict(builtin_liveins) if isinstance(builtin_liveins, dict) else None
+        builtin_snapshot_plan = reserve_entry_builtin_snapshot(
+            next_sgpr=saved_scalar_plan["total_sgprs"],
+            builtin_liveins=builtin_liveins_raw,
+        )
+        if isinstance(builtin_liveins, dict):
+            # Kernel-exit thunks still rely on compiler-generated builtin live-ins.
+            # Snapshot the original sources at entry because the source kernel and
+            # the exit call scaffold may clobber those SGPRs before s_endpgm.
+            builtin_liveins = dict(builtin_liveins)
+            for key, saved_source in builtin_snapshot_plan["saved_sources"].items():
+                builtin_liveins[key] = saved_source
 
         if original_instructions:
             entry_anchor = int(original_instructions[0].get("address", function.get("start_address", 0)) or 0)
@@ -3673,6 +3687,13 @@ def inject_lifecycle_stubs(
                     anchor_address=entry_anchor,
                     kernarg_pair=entry_kernarg_pair,
                     saved_arguments=saved_arguments,
+                )
+            )
+            mutated_instructions.extend(
+                emit_entry_builtin_snapshot(
+                    anchor_address=entry_anchor,
+                    builtin_liveins=builtin_liveins_raw,
+                    snapshot_plan=builtin_snapshot_plan,
                 )
             )
         exit_stub_meta = {
@@ -3690,8 +3711,12 @@ def inject_lifecycle_stubs(
             "saved_sgpr_base": saved_scalar_plan["saved_sgpr_base"],
             "saved_sgpr_count": saved_scalar_plan["saved_sgpr_count"],
             "helper_builtin_liveins": builtin_liveins,
+            "entry_raw_builtin_liveins": builtin_liveins_raw,
+            "builtin_snapshot_sgprs": builtin_snapshot_plan["saved_sources"],
+            "builtin_snapshot_sgpr_base": builtin_snapshot_plan["snapshot_sgpr_base"],
+            "builtin_snapshot_sgpr_count": builtin_snapshot_plan["snapshot_sgpr_count"],
             "private_segment_growth": 16,
-            "total_sgprs": saved_scalar_plan["total_sgprs"],
+            "total_sgprs": builtin_snapshot_plan["total_sgprs"],
         }
 
     if original_instructions:
