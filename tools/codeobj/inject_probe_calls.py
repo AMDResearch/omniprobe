@@ -366,6 +366,12 @@ def resolve_private_segment_offset_source_sgpr(entry_analysis: dict[str, Any] | 
     return None
 
 
+def reserve_src_private_base_address_vgprs(source_vgprs: list[int]) -> tuple[list[int], int]:
+    next_free_vgpr = round_up(max(source_vgprs, default=-1) + 1, 2)
+    address_vgprs = [next_free_vgpr, next_free_vgpr + 1]
+    return address_vgprs, next_free_vgpr + 2
+
+
 def infer_first_hidden_arg_offset(kernel_metadata: dict | None) -> int | None:
     if not isinstance(kernel_metadata, dict):
         return None
@@ -1515,6 +1521,8 @@ def reserve_mid_kernel_vgpr_spill(
     private_segment_offset_source_sgpr = None
     if isinstance(entry_analysis, dict):
         private_segment_offset_source_sgpr = resolve_private_segment_offset_source_sgpr(entry_analysis)
+    address_vgprs: list[int] = []
+    required_total_vgprs = 0
     if private_pattern_class not in {
         None,
         "setreg_flat_scratch_init",
@@ -1526,6 +1534,8 @@ def reserve_mid_kernel_vgpr_spill(
             "mid-kernel helper injection does not yet support private-segment materialization "
             f"pattern {private_pattern_class!r}"
         )
+    if private_pattern_class == "src_private_base":
+        address_vgprs, required_total_vgprs = reserve_src_private_base_address_vgprs(source_vgprs)
 
     spill_bytes = max(0, len(source_vgprs) * 4)
     sgpr_spill_offset = private_segment_size + spill_bytes
@@ -1541,6 +1551,8 @@ def reserve_mid_kernel_vgpr_spill(
         "private_segment_growth": private_segment_growth,
         "private_segment_pattern_class": private_pattern_class,
         "private_segment_offset_source_sgpr": private_segment_offset_source_sgpr,
+        "address_vgprs": address_vgprs,
+        "required_total_vgprs": required_total_vgprs,
     }
 
 
@@ -1671,6 +1683,53 @@ def emit_mid_kernel_private_segment_address_setup(
     return instructions
 
 
+def emit_src_private_base_flat_address_moves(
+    *,
+    anchor_address: int,
+    address_vgprs: list[int],
+) -> list[dict]:
+    if len(address_vgprs) != 2:
+        return []
+    addr_lo, addr_hi = int(address_vgprs[0]), int(address_vgprs[1])
+    return [
+        make_instruction(
+            anchor_address,
+            "v_mov_b32_e32",
+            f"v{addr_lo}, s0",
+            [f"v{addr_lo}", "s0"],
+        ),
+        make_instruction(
+            anchor_address,
+            "v_mov_b32_e32",
+            f"v{addr_hi}, s1",
+            [f"v{addr_hi}", "s1"],
+        ),
+    ]
+
+
+def emit_mid_kernel_private_segment_scalar_advance(
+    *,
+    anchor_address: int,
+    offset: int,
+) -> list[dict]:
+    if offset == 0:
+        return []
+    return [
+        make_instruction(
+            anchor_address,
+            "s_add_u32",
+            f"s0, s0, 0x{offset:x}",
+            ["s0", "s0", f"0x{offset:x}"],
+        ),
+        make_instruction(
+            anchor_address,
+            "s_addc_u32",
+            "s1, s1, 0",
+            ["s1", "s1", "0"],
+        ),
+    ]
+
+
 def emit_mid_kernel_vgpr_save_restore(
     *,
     anchor_address: int,
@@ -1695,48 +1754,96 @@ def emit_mid_kernel_vgpr_save_restore(
         private_offset_restore_sgpr=private_offset_restore_sgpr,
         save_original=True,
     )
+    address_vgprs = [int(value) for value in spill_plan.get("address_vgprs", [])]
 
     before = list(address_setup)
-    before.append(
-        make_instruction(
-            anchor_address,
-            "s_mov_b32",
-            f"s{scratch_soffset_sgpr}, 0",
-            [f"s{scratch_soffset_sgpr}", "0"],
+    if spill_plan.get("private_segment_pattern_class") == "src_private_base" and len(address_vgprs) == 2:
+        before.extend(
+            emit_mid_kernel_private_segment_scalar_advance(
+                anchor_address=anchor_address,
+                offset=spill_offset,
+            )
         )
-    )
-    for index, source_vgpr in enumerate(source_vgprs):
-        store_offset = spill_offset + (index * 4)
+        addr_lo, addr_hi = int(address_vgprs[0]), int(address_vgprs[1])
+        for index, source_vgpr in enumerate(source_vgprs):
+            before.extend(
+                emit_src_private_base_flat_address_moves(
+                    anchor_address=anchor_address,
+                    address_vgprs=address_vgprs,
+                )
+            )
+            before.append(
+                make_instruction(
+                    anchor_address,
+                    "flat_store_dword",
+                    f"v[{addr_lo}:{addr_hi}], v{source_vgpr}",
+                    [f"v[{addr_lo}:{addr_hi}]", f"v{source_vgpr}"],
+                )
+            )
+            if index + 1 < len(source_vgprs):
+                before.extend(
+                    emit_mid_kernel_private_segment_scalar_advance(
+                        anchor_address=anchor_address,
+                        offset=4,
+                    )
+                )
+        before.extend(
+            [
+                make_instruction(
+                    anchor_address,
+                    "s_mov_b32",
+                    "s0, s{}".format(scratch_restore_pair[0]),
+                    ["s0", f"s{scratch_restore_pair[0]}"],
+                ),
+                make_instruction(
+                    anchor_address,
+                    "s_mov_b32",
+                    "s1, s{}".format(scratch_restore_pair[1]),
+                    ["s1", f"s{scratch_restore_pair[1]}"],
+                ),
+            ]
+        )
+    else:
         before.append(
             make_instruction(
                 anchor_address,
-                "buffer_store_dword",
-                f"v{source_vgpr}, off, s[0:3], s{scratch_soffset_sgpr} offset:{store_offset}",
-                [
-                    f"v{source_vgpr}",
-                    "off",
-                    "s[0:3]",
-                    f"s{scratch_soffset_sgpr}",
-                    f"offset:{store_offset}",
-                ],
+                "s_mov_b32",
+                f"s{scratch_soffset_sgpr}, 0",
+                [f"s{scratch_soffset_sgpr}", "0"],
             )
         )
-    before.extend(
-        [
-            make_instruction(
-                anchor_address,
-                "s_mov_b32",
-                "s0, s{}".format(scratch_restore_pair[0]),
-                ["s0", f"s{scratch_restore_pair[0]}"],
-            ),
-            make_instruction(
-                anchor_address,
-                "s_mov_b32",
-                "s1, s{}".format(scratch_restore_pair[1]),
-                ["s1", f"s{scratch_restore_pair[1]}"],
-            ),
-        ]
-    )
+        for index, source_vgpr in enumerate(source_vgprs):
+            store_offset = spill_offset + (index * 4)
+            before.append(
+                make_instruction(
+                    anchor_address,
+                    "buffer_store_dword",
+                    f"v{source_vgpr}, off, s[0:3], s{scratch_soffset_sgpr} offset:{store_offset}",
+                    [
+                        f"v{source_vgpr}",
+                        "off",
+                        "s[0:3]",
+                        f"s{scratch_soffset_sgpr}",
+                        f"offset:{store_offset}",
+                    ],
+                )
+            )
+        before.extend(
+            [
+                make_instruction(
+                    anchor_address,
+                    "s_mov_b32",
+                    "s0, s{}".format(scratch_restore_pair[0]),
+                    ["s0", f"s{scratch_restore_pair[0]}"],
+                ),
+                make_instruction(
+                    anchor_address,
+                    "s_mov_b32",
+                    "s1, s{}".format(scratch_restore_pair[1]),
+                    ["s1", f"s{scratch_restore_pair[1]}"],
+                ),
+            ]
+        )
 
     after = emit_mid_kernel_private_segment_address_setup(
         anchor_address=anchor_address,
@@ -1745,52 +1852,105 @@ def emit_mid_kernel_vgpr_save_restore(
         private_offset_restore_sgpr=private_offset_restore_sgpr,
         save_original=False,
     )
-    after.append(
-        make_instruction(
-            anchor_address,
-            "s_mov_b32",
-            f"s{scratch_soffset_sgpr}, 0",
-            [f"s{scratch_soffset_sgpr}", "0"],
+    if spill_plan.get("private_segment_pattern_class") == "src_private_base" and len(address_vgprs) == 2:
+        after.extend(
+            emit_mid_kernel_private_segment_scalar_advance(
+                anchor_address=anchor_address,
+                offset=spill_offset,
+            )
         )
-    )
-    for index, source_vgpr in enumerate(source_vgprs):
-        load_offset = spill_offset + (index * 4)
+        addr_lo, addr_hi = int(address_vgprs[0]), int(address_vgprs[1])
+        for index, source_vgpr in enumerate(source_vgprs):
+            after.extend(
+                emit_src_private_base_flat_address_moves(
+                    anchor_address=anchor_address,
+                    address_vgprs=address_vgprs,
+                )
+            )
+            after.append(
+                make_instruction(
+                    anchor_address,
+                    "flat_load_dword",
+                    f"v{source_vgpr}, v[{addr_lo}:{addr_hi}]",
+                    [f"v{source_vgpr}", f"v[{addr_lo}:{addr_hi}]"],
+                )
+            )
+            if index + 1 < len(source_vgprs):
+                after.extend(
+                    emit_mid_kernel_private_segment_scalar_advance(
+                        anchor_address=anchor_address,
+                        offset=4,
+                    )
+                )
+        after.extend(
+            [
+                make_instruction(
+                    anchor_address,
+                    "s_waitcnt",
+                    "vmcnt(0)",
+                    ["vmcnt(0)"],
+                ),
+                make_instruction(
+                    anchor_address,
+                    "s_mov_b32",
+                    "s0, s{}".format(scratch_restore_pair[0]),
+                    ["s0", f"s{scratch_restore_pair[0]}"],
+                ),
+                make_instruction(
+                    anchor_address,
+                    "s_mov_b32",
+                    "s1, s{}".format(scratch_restore_pair[1]),
+                    ["s1", f"s{scratch_restore_pair[1]}"],
+                ),
+            ]
+        )
+    else:
         after.append(
             make_instruction(
                 anchor_address,
-                "buffer_load_dword",
-                f"v{source_vgpr}, off, s[0:3], s{scratch_soffset_sgpr} offset:{load_offset}",
-                [
-                    f"v{source_vgpr}",
-                    "off",
-                    "s[0:3]",
-                    f"s{scratch_soffset_sgpr}",
-                    f"offset:{load_offset}",
-                ],
+                "s_mov_b32",
+                f"s{scratch_soffset_sgpr}, 0",
+                [f"s{scratch_soffset_sgpr}", "0"],
             )
         )
-    after.extend(
-        [
-            make_instruction(
-                anchor_address,
-                "s_waitcnt",
-                "vmcnt(0)",
-                ["vmcnt(0)"],
-            ),
-            make_instruction(
-                anchor_address,
-                "s_mov_b32",
-                "s0, s{}".format(scratch_restore_pair[0]),
-                ["s0", f"s{scratch_restore_pair[0]}"],
-            ),
-            make_instruction(
-                anchor_address,
-                "s_mov_b32",
-                "s1, s{}".format(scratch_restore_pair[1]),
-                ["s1", f"s{scratch_restore_pair[1]}"],
-            ),
-        ]
-    )
+        for index, source_vgpr in enumerate(source_vgprs):
+            load_offset = spill_offset + (index * 4)
+            after.append(
+                make_instruction(
+                    anchor_address,
+                    "buffer_load_dword",
+                    f"v{source_vgpr}, off, s[0:3], s{scratch_soffset_sgpr} offset:{load_offset}",
+                    [
+                        f"v{source_vgpr}",
+                        "off",
+                        "s[0:3]",
+                        f"s{scratch_soffset_sgpr}",
+                        f"offset:{load_offset}",
+                    ],
+                )
+            )
+        after.extend(
+            [
+                make_instruction(
+                    anchor_address,
+                    "s_waitcnt",
+                    "vmcnt(0)",
+                    ["vmcnt(0)"],
+                ),
+                make_instruction(
+                    anchor_address,
+                    "s_mov_b32",
+                    "s0, s{}".format(scratch_restore_pair[0]),
+                    ["s0", f"s{scratch_restore_pair[0]}"],
+                ),
+                make_instruction(
+                    anchor_address,
+                    "s_mov_b32",
+                    "s1, s{}".format(scratch_restore_pair[1]),
+                    ["s1", f"s{scratch_restore_pair[1]}"],
+                ),
+            ]
+        )
     return before, after
 
 
@@ -1819,54 +1979,108 @@ def emit_mid_kernel_sgpr_save_restore(
         private_offset_restore_sgpr=private_offset_restore_sgpr,
         save_original=True,
     )
-    before.append(
-        make_instruction(
-            anchor_address,
-            "s_mov_b32",
-            f"s{scratch_soffset_sgpr}, 0",
-            [f"s{scratch_soffset_sgpr}", "0"],
+    address_vgprs = [int(value) for value in spill_plan.get("address_vgprs", [])]
+    if spill_plan.get("private_segment_pattern_class") == "src_private_base" and len(address_vgprs) == 2:
+        before.extend(
+            emit_mid_kernel_private_segment_scalar_advance(
+                anchor_address=anchor_address,
+                offset=spill_offset,
+            )
         )
-    )
-    for index, source_sgpr in enumerate(source_sgprs):
-        store_offset = spill_offset + (index * 4)
+        addr_lo, addr_hi = int(address_vgprs[0]), int(address_vgprs[1])
+        for index, source_sgpr in enumerate(source_sgprs):
+            before.extend(
+                [
+                    make_instruction(
+                        anchor_address,
+                        "v_mov_b32_e32",
+                        f"v{shuttle_vgpr}, s{source_sgpr}",
+                        [f"v{shuttle_vgpr}", f"s{source_sgpr}"],
+                    ),
+                    *emit_src_private_base_flat_address_moves(
+                        anchor_address=anchor_address,
+                        address_vgprs=address_vgprs,
+                    ),
+                    make_instruction(
+                        anchor_address,
+                        "flat_store_dword",
+                        f"v[{addr_lo}:{addr_hi}], v{shuttle_vgpr}",
+                        [f"v[{addr_lo}:{addr_hi}]", f"v{shuttle_vgpr}"],
+                    ),
+                ]
+            )
+            if index + 1 < len(source_sgprs):
+                before.extend(
+                    emit_mid_kernel_private_segment_scalar_advance(
+                        anchor_address=anchor_address,
+                        offset=4,
+                    )
+                )
         before.extend(
             [
                 make_instruction(
                     anchor_address,
-                    "v_mov_b32_e32",
-                    f"v{shuttle_vgpr}, s{source_sgpr}",
-                    [f"v{shuttle_vgpr}", f"s{source_sgpr}"],
+                    "s_mov_b32",
+                    f"s0, s{scratch_restore_pair[0]}",
+                    ["s0", f"s{scratch_restore_pair[0]}"],
                 ),
                 make_instruction(
                     anchor_address,
-                    "buffer_store_dword",
-                    f"v{shuttle_vgpr}, off, s[0:3], s{scratch_soffset_sgpr} offset:{store_offset}",
-                    [
-                        f"v{shuttle_vgpr}",
-                        "off",
-                        "s[0:3]",
-                        f"s{scratch_soffset_sgpr}",
-                        f"offset:{store_offset}",
-                    ],
+                    "s_mov_b32",
+                    f"s1, s{scratch_restore_pair[1]}",
+                    ["s1", f"s{scratch_restore_pair[1]}"],
                 ),
             ]
         )
-    before.extend(
-        [
+    else:
+        before.append(
             make_instruction(
                 anchor_address,
                 "s_mov_b32",
-                f"s0, s{scratch_restore_pair[0]}",
-                ["s0", f"s{scratch_restore_pair[0]}"],
-            ),
-            make_instruction(
-                anchor_address,
-                "s_mov_b32",
-                f"s1, s{scratch_restore_pair[1]}",
-                ["s1", f"s{scratch_restore_pair[1]}"],
-            ),
-        ]
-    )
+                f"s{scratch_soffset_sgpr}, 0",
+                [f"s{scratch_soffset_sgpr}", "0"],
+            )
+        )
+        for index, source_sgpr in enumerate(source_sgprs):
+            store_offset = spill_offset + (index * 4)
+            before.extend(
+                [
+                    make_instruction(
+                        anchor_address,
+                        "v_mov_b32_e32",
+                        f"v{shuttle_vgpr}, s{source_sgpr}",
+                        [f"v{shuttle_vgpr}", f"s{source_sgpr}"],
+                    ),
+                    make_instruction(
+                        anchor_address,
+                        "buffer_store_dword",
+                        f"v{shuttle_vgpr}, off, s[0:3], s{scratch_soffset_sgpr} offset:{store_offset}",
+                        [
+                            f"v{shuttle_vgpr}",
+                            "off",
+                            "s[0:3]",
+                            f"s{scratch_soffset_sgpr}",
+                            f"offset:{store_offset}",
+                        ],
+                    ),
+                ]
+            )
+        before.extend(
+            [
+                make_instruction(
+                    anchor_address,
+                    "s_mov_b32",
+                    f"s0, s{scratch_restore_pair[0]}",
+                    ["s0", f"s{scratch_restore_pair[0]}"],
+                ),
+                make_instruction(
+                    anchor_address,
+                    "s_mov_b32",
+                    f"s1, s{scratch_restore_pair[1]}",
+                    ["s1", f"s{scratch_restore_pair[1]}"],
+                ),
+            ]
+        )
 
     after = emit_mid_kernel_private_segment_address_setup(
         anchor_address=anchor_address,
@@ -1875,60 +2089,119 @@ def emit_mid_kernel_sgpr_save_restore(
         private_offset_restore_sgpr=private_offset_restore_sgpr,
         save_original=False,
     )
-    after.append(
-        make_instruction(
-            anchor_address,
-            "s_mov_b32",
-            f"s{scratch_soffset_sgpr}, 0",
-            [f"s{scratch_soffset_sgpr}", "0"],
+    if spill_plan.get("private_segment_pattern_class") == "src_private_base" and len(address_vgprs) == 2:
+        after.extend(
+            emit_mid_kernel_private_segment_scalar_advance(
+                anchor_address=anchor_address,
+                offset=spill_offset,
+            )
         )
-    )
-    for index, source_sgpr in enumerate(source_sgprs):
-        load_offset = spill_offset + (index * 4)
+        addr_lo, addr_hi = int(address_vgprs[0]), int(address_vgprs[1])
+        for index, source_sgpr in enumerate(source_sgprs):
+            after.extend(
+                [
+                    *emit_src_private_base_flat_address_moves(
+                        anchor_address=anchor_address,
+                        address_vgprs=address_vgprs,
+                    ),
+                    make_instruction(
+                        anchor_address,
+                        "flat_load_dword",
+                        f"v{shuttle_vgpr}, v[{addr_lo}:{addr_hi}]",
+                        [f"v{shuttle_vgpr}", f"v[{addr_lo}:{addr_hi}]"],
+                    ),
+                    make_instruction(
+                        anchor_address,
+                        "s_waitcnt",
+                        "vmcnt(0)",
+                        ["vmcnt(0)"],
+                    ),
+                    make_instruction(
+                        anchor_address,
+                        "v_readlane_b32",
+                        f"s{source_sgpr}, v{shuttle_vgpr}, 0",
+                        [f"s{source_sgpr}", f"v{shuttle_vgpr}", "0"],
+                    ),
+                ]
+            )
+            if index + 1 < len(source_sgprs):
+                after.extend(
+                    emit_mid_kernel_private_segment_scalar_advance(
+                        anchor_address=anchor_address,
+                        offset=4,
+                    )
+                )
         after.extend(
             [
                 make_instruction(
                     anchor_address,
-                    "buffer_load_dword",
-                    f"v{shuttle_vgpr}, off, s[0:3], s{scratch_soffset_sgpr} offset:{load_offset}",
-                    [
-                        f"v{shuttle_vgpr}",
-                        "off",
-                        "s[0:3]",
-                        f"s{scratch_soffset_sgpr}",
-                        f"offset:{load_offset}",
-                    ],
+                    "s_mov_b32",
+                    f"s0, s{scratch_restore_pair[0]}",
+                    ["s0", f"s{scratch_restore_pair[0]}"],
                 ),
                 make_instruction(
                     anchor_address,
-                    "s_waitcnt",
-                    "vmcnt(0)",
-                    ["vmcnt(0)"],
-                ),
-                make_instruction(
-                    anchor_address,
-                    "v_readlane_b32",
-                    f"s{source_sgpr}, v{shuttle_vgpr}, 0",
-                    [f"s{source_sgpr}", f"v{shuttle_vgpr}", "0"],
+                    "s_mov_b32",
+                    f"s1, s{scratch_restore_pair[1]}",
+                    ["s1", f"s{scratch_restore_pair[1]}"],
                 ),
             ]
         )
-    after.extend(
-        [
+    else:
+        after.append(
             make_instruction(
                 anchor_address,
                 "s_mov_b32",
-                f"s0, s{scratch_restore_pair[0]}",
-                ["s0", f"s{scratch_restore_pair[0]}"],
-            ),
-            make_instruction(
-                anchor_address,
-                "s_mov_b32",
-                f"s1, s{scratch_restore_pair[1]}",
-                ["s1", f"s{scratch_restore_pair[1]}"],
-            ),
-        ]
-    )
+                f"s{scratch_soffset_sgpr}, 0",
+                [f"s{scratch_soffset_sgpr}", "0"],
+            )
+        )
+        for index, source_sgpr in enumerate(source_sgprs):
+            load_offset = spill_offset + (index * 4)
+            after.extend(
+                [
+                    make_instruction(
+                        anchor_address,
+                        "buffer_load_dword",
+                        f"v{shuttle_vgpr}, off, s[0:3], s{scratch_soffset_sgpr} offset:{load_offset}",
+                        [
+                            f"v{shuttle_vgpr}",
+                            "off",
+                            "s[0:3]",
+                            f"s{scratch_soffset_sgpr}",
+                            f"offset:{load_offset}",
+                        ],
+                    ),
+                    make_instruction(
+                        anchor_address,
+                        "s_waitcnt",
+                        "vmcnt(0)",
+                        ["vmcnt(0)"],
+                    ),
+                    make_instruction(
+                        anchor_address,
+                        "v_readlane_b32",
+                        f"s{source_sgpr}, v{shuttle_vgpr}, 0",
+                        [f"s{source_sgpr}", f"v{shuttle_vgpr}", "0"],
+                    ),
+                ]
+            )
+        after.extend(
+            [
+                make_instruction(
+                    anchor_address,
+                    "s_mov_b32",
+                    f"s0, s{scratch_restore_pair[0]}",
+                    ["s0", f"s{scratch_restore_pair[0]}"],
+                ),
+                make_instruction(
+                    anchor_address,
+                    "s_mov_b32",
+                    f"s1, s{scratch_restore_pair[1]}",
+                    ["s1", f"s{scratch_restore_pair[1]}"],
+                ),
+            ]
+        )
     return before, after
 
 
@@ -2522,6 +2795,7 @@ def inject_memory_stubs(
             "mid_kernel_resume_profile": mid_kernel_resume_profile,
             "injected_sites": injected_sites,
             "total_sgprs": scalar_plan["total_sgprs"],
+            "total_vgprs": int(spill_plan.get("required_total_vgprs", 0) or 0),
         }
     }
     return output
@@ -2970,6 +3244,7 @@ def inject_basic_block_stubs(
             "mid_kernel_resume_profile": mid_kernel_resume_profile,
             "injected_sites": injected_sites,
             "total_sgprs": scalar_plan["total_sgprs"],
+            "total_vgprs": int(spill_plan.get("required_total_vgprs", 0) or 0),
         }
     }
     return output

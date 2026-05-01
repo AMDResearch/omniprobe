@@ -854,6 +854,189 @@ PY
     fi
 }
 
+run_basic_block_src_private_base_test() {
+    local arch="$1"
+    local ir_fixture="$2"
+    local manifest_fixture="$3"
+    local function_name="$4"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    local test_name="binary_probe_inject_basic_block_${arch}_src_private_base"
+    echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $test_name"
+    local out_ir="$OUTPUT_DIR/${test_name}.ir.json"
+    local plan_json="$OUTPUT_DIR/${test_name}.plan.json"
+    local thunk_json="$OUTPUT_DIR/${test_name}.thunks.json"
+
+    python3 - "$ir_fixture" "$plan_json" "$thunk_json" "$function_name" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+function_name = sys.argv[4]
+function = next(entry for entry in payload["functions"] if entry.get("name") == function_name)
+start_address = int(function["instructions"][0]["address"])
+
+helper_abi = {
+    "schema": "omniprobe.helper_abi.v1",
+    "model": "explicit_runtime_v1",
+    "compiler_generated_liveins_allowed": False,
+    "compiler_generated_builtins_allowed": False,
+    "requires_wrapper_captured_state": True,
+    "requires_runtime_dispatch_payload": True,
+    "required_runtime_views": [],
+    "helper_visible_sources": {
+        "kernel_args": [],
+        "instruction_fields": [],
+        "builtins": {
+            "requested": [],
+            "provider": "runtime_ctx.dh_builtins",
+        },
+        "event_payload": {
+            "contract": "basic_block_v1",
+            "when": ["basic_block"],
+        },
+    },
+    "notes": [],
+}
+
+plan = {
+    "kernels": [
+        {
+            "source_kernel": function_name,
+            "clone_kernel": f"__amd_crk_{function_name}",
+            "hidden_omniprobe_ctx": {"offset": 224},
+            "planned_sites": [
+                {
+                    "binary_site_id": 0,
+                    "status": "planned",
+                    "contract": "basic_block_v1",
+                    "when": "basic_block",
+                    "helper_context": {"builtins": []},
+                    "helper_abi": helper_abi,
+                    "event_materialization": {
+                        "timestamp": {"kind": "dynamic_timestamp"},
+                        "block_id": {"kind": "static_block_id", "value": 0},
+                    },
+                    "injection_point": {
+                        "kind": "basic_block",
+                        "block_id": 0,
+                        "block_label": "bb0",
+                        "start_address": start_address,
+                    },
+                }
+            ],
+        }
+    ]
+}
+
+thunks = {
+    "thunks": [
+        {
+            "source_kernel": function_name,
+            "clone_kernel": f"__amd_crk_{function_name}",
+            "thunk": f"__omniprobe_basic_block_{function_name}_thunk",
+            "when": "basic_block",
+            "contract": "basic_block_v1",
+            "helper_context": {"builtins": []},
+            "helper_abi": helper_abi,
+            "capture_bindings": [],
+            "call_arguments": [
+                {
+                    "kind": "hidden_ctx",
+                    "name": "hidden_ctx",
+                    "c_type": "const void *",
+                    "size_bytes": 8,
+                    "dword_count": 2,
+                    "kernel_arg_offset": 224,
+                    "vgprs": [0, 1],
+                },
+                {
+                    "kind": "timestamp",
+                    "name": "timestamp",
+                    "c_type": "uint64_t",
+                    "size_bytes": 8,
+                    "dword_count": 2,
+                    "vgprs": [2, 3],
+                },
+                {
+                    "kind": "event",
+                    "name": "block_id",
+                    "c_type": "uint32_t",
+                    "size_bytes": 4,
+                    "dword_count": 1,
+                    "vgprs": [4],
+                },
+            ],
+        }
+    ]
+}
+
+json.dump(plan, open(sys.argv[2], "w", encoding="utf-8"), indent=2)
+open(sys.argv[2], "a", encoding="utf-8").write("\n")
+json.dump(thunks, open(sys.argv[3], "w", encoding="utf-8"), indent=2)
+open(sys.argv[3], "a", encoding="utf-8").write("\n")
+PY
+
+    if python3 "$INJECTOR" "$ir_fixture" \
+        --plan "$plan_json" \
+        --thunk-manifest "$thunk_json" \
+        --manifest "$manifest_fixture" \
+        --function "$function_name" \
+        --output "$out_ir" > "$OUTPUT_DIR/${test_name}.out"; then
+        if python3 - "$out_ir" "$function_name" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+function_name = sys.argv[2]
+fn = next(entry for entry in payload["functions"] if entry.get("name") == function_name)
+meta = fn["instrumentation"]["basic_block_stubs"]
+spill = meta["preserved_low_vgprs"]
+resume = meta["mid_kernel_resume_profile"]
+
+assert spill["private_segment_pattern_class"] == "src_private_base"
+assert spill["private_segment_offset_source_sgpr"] == 11
+expected_addr_lo = len(spill["source_vgprs"])
+if expected_addr_lo % 2:
+    expected_addr_lo += 1
+assert spill["address_vgprs"] == [expected_addr_lo, expected_addr_lo + 1]
+assert spill["required_total_vgprs"] == expected_addr_lo + 2
+assert meta["total_vgprs"] == expected_addr_lo + 2
+assert meta["total_vgprs"] > len(spill["source_vgprs"])
+assert resume["supported_class"] == "wave64-direct-vgpr-xyz-src-private-base-mid-kernel-private-spill-v1"
+
+site = meta["injected_sites"][0]
+instructions = fn["instructions"]
+cursor = site["original_instruction_index"]
+synthetic_before = []
+while cursor < len(instructions) and instructions[cursor].get("synthetic"):
+    synthetic_before.append(instructions[cursor])
+    cursor += 1
+assert synthetic_before
+texts = [f"{insn['mnemonic']} {insn.get('operand_text', '')}".strip() for insn in synthetic_before]
+addr_pair = f"v[{expected_addr_lo}:{expected_addr_lo + 1}]"
+assert any(text == "s_mov_b64 s[0:1], src_private_base" for text in texts)
+assert any(text == "s_add_u32 s0, s0, s11" for text in texts)
+assert any(text == f"v_mov_b32_e32 v{expected_addr_lo}, s0" for text in texts)
+assert any(text == f"v_mov_b32_e32 v{expected_addr_lo + 1}, s1" for text in texts)
+assert any(text == f"flat_store_dword {addr_pair}, v0" for text in texts)
+assert any(text == f"flat_load_dword v0, {addr_pair}" for text in texts)
+assert not any("buffer_store_dword" in text and "s[0:3]" in text for text in texts)
+assert not any("buffer_load_dword" in text and "s[0:3]" in text for text in texts)
+PY
+        then
+            echo -e "  ${GREEN}✓ PASS${NC} - ${arch} basic-block injector uses flat-address private spills for src_private_base mid-kernel resumes"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            echo -e "  ${RED}✗ FAIL${NC} - ${arch} src_private_base basic-block injection did not match expectations"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - ${arch} src_private_base basic-block injector execution failed"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
 run_basic_block_inject_test() {
     local arch="$1"
     local ir_fixture="$2"
@@ -1145,6 +1328,11 @@ run_entry_missing_helper_abi_rejection_test \
     "gfx942" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.ir.json" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942.manifest.json"
+run_basic_block_src_private_base_test \
+    "gfx942_real" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_mlk_xyz.ir.json" \
+    "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_mlk_xyz.manifest.json" \
+    "mlk_xyz"
 run_basic_block_resume_rejection_test \
     "gfx942_single" \
     "${SCRIPT_DIR}/probe_specs/fixtures/amdgpu_entry_abi_gfx942_real_single_vgpr.ir.json" \
