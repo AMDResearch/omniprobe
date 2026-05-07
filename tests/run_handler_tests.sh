@@ -43,5 +43,8 @@ source "${SCRIPT_DIR}/run_scope_filter_tests.sh"
 # Module-load kernel discovery tests (hipModuleLoad .hsaco)
 source "${SCRIPT_DIR}/run_module_load_tests.sh"
 
+# Dynamic LDS preservation tests (extern __shared__ at launch)
+source "${SCRIPT_DIR}/run_dynamic_lds_tests.sh"
+
 # Print summary
 print_summary
