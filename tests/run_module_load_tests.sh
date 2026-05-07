@@ -143,5 +143,73 @@ else
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+################################################################################
+# Test: kernel name filter (-k / LOGDUR_FILTER) excludes runtime-discovered
+#       kernels.
+#
+# Without the fix, runtime-discovered kernels bypass the kernel name filter
+# and get instrumented anyway. With the fix, the filter is applied uniformly
+# between coCache::addFile() and hsaInterceptor::addKernel().
+################################################################################
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="module_load_kernel_filter_excludes"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+echo "  Run with -k regex that excludes module_load_kernel"
+echo "  Expect: instrumented alternative NOT used"
+
+OUTPUT_FILE="$OUTPUT_DIR/${TEST_NAME}.out"
+
+ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
+    LD_LIBRARY_PATH="${OMNIPROBE_ROOT}/lib:${LD_LIBRARY_PATH}" \
+    "$OMNIPROBE" -i -a Heatmap \
+    --library-filter "$FILTER_FILE" \
+    -k "this_kernel_does_not_match_anything" \
+    -- "$MODULE_LOAD_TEST" "$MODULE_LOAD_HSACO" > "$OUTPUT_FILE" 2>&1 \
+    && run_ok=true || run_ok=true
+
+if grep -q "Found instrumented alternative for module_load_kernel" "$OUTPUT_FILE"; then
+    echo -e "  ${RED}✗ FAIL${NC} - Kernel was instrumented despite -k filter"
+    grep -E "instrumented alternative" "$OUTPUT_FILE" || true
+    echo "  Output saved to: $OUTPUT_FILE"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+    echo -e "  ${GREEN}✓ PASS${NC} - Kernel correctly excluded by -k filter"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
+
+################################################################################
+# Test: kernel name filter (-k) INCLUDES the runtime-discovered kernel.
+#
+# Sanity check: a -k regex matching the kernel name should NOT prevent
+# instrumentation. Guards against accidentally over-filtering in addKernel().
+################################################################################
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="module_load_kernel_filter_includes"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+echo "  Run with -k regex that matches module_load_kernel"
+echo "  Expect: instrumented alternative used"
+
+OUTPUT_FILE="$OUTPUT_DIR/${TEST_NAME}.out"
+
+ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
+    LD_LIBRARY_PATH="${OMNIPROBE_ROOT}/lib:${LD_LIBRARY_PATH}" \
+    "$OMNIPROBE" -i -a Heatmap \
+    --library-filter "$FILTER_FILE" \
+    -k "module_load_kernel" \
+    -- "$MODULE_LOAD_TEST" "$MODULE_LOAD_HSACO" > "$OUTPUT_FILE" 2>&1 \
+    && run_ok=true || run_ok=true
+
+if grep -q "Found instrumented alternative for module_load_kernel" "$OUTPUT_FILE"; then
+    echo -e "  ${GREEN}✓ PASS${NC} - Kernel correctly included by -k filter"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - Kernel NOT instrumented despite matching -k filter"
+    grep -E "instrumented alternative" "$OUTPUT_FILE" || true
+    echo "  Output saved to: $OUTPUT_FILE"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 # Export updated counters for parent script
 export TESTS_RUN TESTS_PASSED TESTS_FAILED
