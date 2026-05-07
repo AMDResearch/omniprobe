@@ -98,6 +98,21 @@ if [ -x "$MEMORY_ANALYSIS_TEST" ]; then
     echo "Library Filter Tests"
     echo "================================================================================"
 
+    # Resolve native library paths from the test binary's own linkage.
+    # Architecture-agnostic: ldd returns the paths the dynamic linker
+    # would actually use for this binary, regardless of distro layout.
+    LIBM_PATH=$(ldd "$MEMORY_ANALYSIS_TEST" 2>/dev/null \
+        | awk '$1 ~ /^libm\.so/{print $3; exit}')
+    if [ -z "$LIBM_PATH" ] || [ ! -e "$LIBM_PATH" ]; then
+        echo -e "${RED}ERROR: Could not resolve libm.so path from ${MEMORY_ANALYSIS_TEST}${NC}" >&2
+        echo "  ldd output:" >&2
+        ldd "$MEMORY_ANALYSIS_TEST" 2>&1 | sed 's/^/    /' >&2
+        exit 1
+    fi
+    NATIVE_LIB_DIR=$(dirname "$LIBM_PATH")
+    LIBCRYPT_PATH=$(ls "${NATIVE_LIB_DIR}"/libcrypt.so.* 2>/dev/null \
+        | head -1)
+
     # Test: Baseline - exclude non-existent library (should PASS, no behavior change)
     run_library_filter_test "libfilter_exclude_nonexistent" \
         "$MEMORY_ANALYSIS_TEST" \
@@ -105,17 +120,17 @@ if [ -x "$MEMORY_ANALYSIS_TEST" ]; then
         "present" \
         "libm.so"
 
-    # Test: Exclude /lib64/libm.so.6 (should NOT appear in "Adding" output)
+    # Test: Exclude libm (should NOT appear in "Adding" output)
     run_library_filter_test "libfilter_exclude_libm" \
         "$MEMORY_ANALYSIS_TEST" \
-        '{"exclude": ["/lib64/libm.so.6"]}' \
+        "{\"exclude\": [\"${LIBM_PATH}\"]}" \
         "absent" \
         "libm.so"
 
     # Test: Include a file that wouldn't normally be scanned
     run_library_filter_test "libfilter_include_extra" \
         "$MEMORY_ANALYSIS_TEST" \
-        '{"include": ["/lib64/libcrypt.so.2"]}' \
+        "{\"include\": [\"${LIBCRYPT_PATH}\"]}" \
         "present" \
         "libcrypt.so"
 
