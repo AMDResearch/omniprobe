@@ -19,14 +19,29 @@ set(INST_PLUGIN "${CMAKE_BINARY_DIR}/lib/plugins/libAMDGCNSubmitAddressMessages-
 set(DH_COMMS_LIB_DIR "${CMAKE_BINARY_DIR}/external/dh_comms/lib")
 set(BITCODE_DIR "${CMAKE_BINARY_DIR}/lib/bitcode")
 
+# Build the list of bitcode files to copy (must mirror dh_comms/CMakeLists.txt)
+set(BITCODE_COPY_FILES
+    ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna2_co5.bc
+    ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna2_co6.bc
+    ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna3_co5.bc
+    ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna3_co6.bc
+)
+foreach(ARCH IN LISTS CMAKE_HIP_ARCHITECTURES)
+    # Strip arch features such as ":xnack+" so the resulting filename
+    # (e.g. dh_comms_dev_gfx908_co5.bc) matches what dh_comms emits.
+    string(REGEX REPLACE ":.*$" "" ARCH_BASE "${ARCH}")
+    list(APPEND BITCODE_COPY_FILES
+        ${DH_COMMS_LIB_DIR}/dh_comms_dev_${ARCH_BASE}_co5.bc
+        ${DH_COMMS_LIB_DIR}/dh_comms_dev_${ARCH_BASE}_co6.bc
+    )
+endforeach()
+list(REMOVE_DUPLICATES BITCODE_COPY_FILES)
+
 # Copy all bitcode files to build/lib/bitcode/
 add_custom_target(copy_bitcode ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${BITCODE_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna2_co5.bc
-        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna3_co5.bc
-        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna2_co6.bc
-        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna3_co6.bc
+        ${BITCODE_COPY_FILES}
         ${BITCODE_DIR}/
     DEPENDS dh_comms_bc
     COMMENT "Copying bitcode files to build/lib/bitcode/"
