@@ -27,6 +27,7 @@ set ( LIB_SRC
   ${LIB_DIR}/interceptor.cc
   ${LIB_DIR}/utils.cc
   ${LIB_DIR}/hsa_mem_mgr.cc
+  ${LIB_DIR}/numa_mem_mgr.cc
   ${LIB_DIR}/comms_mgr.cc
   ${LIB_DIR}/pyHandler.cc
   ${LIB_DIR}/memory_heatmap.cc
@@ -89,6 +90,13 @@ message("${HSACO_TARGET_LIST}")
 add_custom_target(hsaco_targets DEPENDS ${HSACO_TARGET_LIST})
 
 
+# libnuma is required by numa_mem_mgr for NUMA-pinned shared buffers
+# (activated at runtime via OMNIPROBE_NUMA_NODE).  Fail at configure time with
+# a clear message if libnuma-dev / numactl-devel is missing, rather than
+# emitting a cryptic linker error later.
+find_library(NUMA_LIBRARY NAMES numa REQUIRED)
+find_path(NUMA_INCLUDE_DIR NAMES numa.h numaif.h REQUIRED)
+
 link_directories(${ROCM_ROOT_DIR}/lib $ENV{HOME}/.local/lib64 ${CMAKE_INSTALL_PREFIX}/lib .)
 add_library ( ${TARGET_LIB} SHARED ${LIB_SRC})
 set_target_properties(${TARGET_LIB} PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -105,6 +113,7 @@ target_include_directories (
     ${DH_COMMS_INCLUDE_DIR}
     ${CMAKE_INSTALL_PREFIX}/include
     ${Python_INCLUDE_DIRS}
+    ${NUMA_INCLUDE_DIR}
 )
 
 target_link_libraries(
@@ -118,6 +127,7 @@ target_link_libraries(
     kernelDB64
     amd_comgr
     elf
+    ${NUMA_LIBRARY}
     rocprofiler-sdk::rocprofiler-sdk
 )
 
