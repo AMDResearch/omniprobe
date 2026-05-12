@@ -21,8 +21,11 @@ THE SOFTWARE.
 *******************************************************************************/
 #include "inc/comms_mgr.h"
 #include "inc/hsa_mem_mgr.h"
+#include "inc/numa_mem_mgr.h"
 #include "inc/memory_heatmap.h"
 #include "inc/time_interval_handler.h"
+
+#include <cstdlib>
 
 comms_mgr::comms_mgr(HsaApiTable *pTable) : kern_arg_allocator_(pTable, std::cerr), pTable_(pTable)
 {
@@ -144,9 +147,32 @@ bool comms_mgr::addAgent(hsa_agent_t agent)
 
     if (pools.size())
     {
+        const char* numa_env = std::getenv("OMNIPROBE_NUMA_NODE");
         for (auto item : pools)
         {
-            hsa_mem_mgr * mgr = new hsa_mem_mgr(item.agent_, item, kern_arg_allocator_);
+            dh_comms::dh_comms_mem_mgr* mgr;
+            if (numa_env) {
+                int node = std::atoi(numa_env);
+                // numa_mem_mgr throws on invalid node id or libnuma
+                // failure.  This call site runs inside an HSA agent
+                // enumeration path where exceptions get swallowed by
+                // the C runtime, leaving the process to exit cleanly
+                // with no instrumentation -- a confusing silent
+                // failure.  Catch explicitly and abort so the
+                // misconfiguration is immediately visible.
+                try {
+                    mgr = new numa_mem_mgr(node, item.agent_, item,
+                                           kern_arg_allocator_);
+                } catch (const std::exception& e) {
+                    std::cerr << "comms_mgr: failed to create "
+                              << "numa_mem_mgr: " << e.what()
+                              << " - aborting" << std::endl;
+                    std::abort();
+                }
+            } else {
+                mgr = new hsa_mem_mgr(item.agent_, item,
+                                      kern_arg_allocator_);
+            }
             mem_mgrs_[item.agent_] = mgr;
         }
     }
