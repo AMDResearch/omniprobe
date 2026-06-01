@@ -128,7 +128,7 @@ script automates this:
 
 ```bash
 # Install Triton with shared-library LLVM
-./containers/triton_install.sh --triton-version v3.6.0
+./containers/triton_install.sh --triton-version v3.7.0
 
 # Point Omniprobe's build at the resulting LLVM
 cmake -B build \

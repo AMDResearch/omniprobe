@@ -83,7 +83,7 @@ environments).
 ```bash
 git clone https://github.com/triton-lang/triton.git ~/repos/sandbox/triton
 cd ~/repos/sandbox/triton
-git checkout v3.6.0  # or your desired version
+git checkout v3.7.0  # or your desired version
 ```
 
 **2. Clone the LLVM submodule at the correct commit:**
