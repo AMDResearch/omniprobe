@@ -120,6 +120,7 @@ target_link_libraries(
     elf
     rocprofiler-sdk::rocprofiler-sdk
 )
+target_link_options(${TARGET_LIB} PRIVATE -Wl,--as-needed)
 
 find_path(LIBDWARF_INCLUDE_DIR
   NAMES libdwarf.h dwarf.h

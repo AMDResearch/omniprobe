@@ -23,11 +23,9 @@
 #include "inc/memory_analysis_handler.h"
 
 #include "gpu_arch_constants.h"
-#include "hip_utils.h"
 #include "utils.h"
 
 #include <cassert>
-#include <hip/hip_runtime.h>
 #include <set>
 #include <string>
 #include <sstream>
@@ -343,12 +341,16 @@ get_dwarf_info(const dh_comms::message_t &message, const std::string &kernel_nam
 }
 
 bool memory_analysis_handler_t::handle_cache_line_count_analysis(const message_t &message) {
-  uint8_t L2_cache_line_size = gpu_arch_constants::get_l2_cache_line_size(message.wave_header().arch);
+  uint8_t arch = message.wave_header().arch;
+  uint8_t L2_cache_line_size = gpu_arch_constants::get_l2_cache_line_size(arch);
   if (L2_cache_line_size == 0) {
     if (verbose_) {
       printf("Memory analysis handler: message from unsupported GPU hardware, skipping.\n");
     }
     return false;
+  }
+  if (observed_arch_ == 0) {
+    observed_arch_ = arch;
   }
 
   uint8_t rw_kind = message.wave_header().user_data & 0b11;
@@ -885,37 +887,10 @@ void memory_analysis_handler_t::report_json() {
   auto tm = *std::localtime(&now);
   json_output << "    \"timestamp\": \"" << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << "\",\n";
 
-  std::string arch = "unknown";
-  int cache_line_size = 128; // default
-
-  // In case of kernel filtering, multiple dispatches may processed sequentially, causing multiple calls to this hipGetDeviceProperties()
-  // Found that this race condition causes HIP call to hang.
-  // Check if this is JSON output with kernel filtering - if so, skip HIP call that hangs
-  const char* kernelFilter = std::getenv("LOGDUR_FILTER");
-  bool hasKernelFilter = (kernelFilter && strlen(kernelFilter) > 0);
-
-  if (hasKernelFilter) {
-    std::cout << "DEBUG: Skipping GPU properties query for JSON output with kernel filtering to avoid contention" << std::endl;
-    std::cout << "DEBUG: Using default GPU info: arch='" << arch << "', cache_line_size=" << cache_line_size << std::endl;
-  } else {
-    hipDeviceProp_t props;
-    hipError_t err = hipGetDeviceProperties(&props, 0);
-    if (err == hipSuccess) {
-      std::string gcnArchName_str(props.gcnArchName);
-      size_t colon_pos = gcnArchName_str.find(':');
-      if (colon_pos != std::string::npos) {
-        arch = gcnArchName_str.substr(0, colon_pos);
-      } else {
-        arch = gcnArchName_str;
-      }
-
-      // Convert arch string to enum and lookup cache line size
-      uint8_t arch_enum = gpu_arch_constants::arch_string_to_enum(arch);
-      cache_line_size = gpu_arch_constants::get_l2_cache_line_size(arch_enum);
-      if (cache_line_size == 0) {
-          cache_line_size = 128; // fallback to default
-      }
-    }
+  std::string arch = gpu_arch_constants::arch_enum_to_string(observed_arch_);
+  int cache_line_size = gpu_arch_constants::get_l2_cache_line_size(observed_arch_);
+  if (cache_line_size == 0) {
+    cache_line_size = 128; // fallback to default
   }
 
   json_output << "    \"gpu_info\": {\n";
