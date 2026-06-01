@@ -34,3 +34,31 @@ Use append-only entries with:
 - **Verification**: workflow-readiness-check passed (all items green)
 - **Criteria impact**: None — no execution steps performed yet, packet is planning only
 - **Blocker / Risk**: LLVM API and patch compatibility with v3.7.0 unknown until Steps 1-2
+
+### 2026-06-01 — Session 2, Entry 1
+
+- **Actor**: claude
+- **Planned step**: Step 1 — Verify patch compatibility with Triton v3.7.0
+- **Action taken**: Fetched `third_party/amd/backend/compiler.py` from Triton v3.7.0 tag.
+  Confirmed `assert len(names) == 1` still exists at line 465. Verified grep/sed patterns
+  in `patch_triton_source()` match correctly. Second candidate path
+  (`python/triton/backends/amd/compiler.py`) returns 404 as expected.
+- **Result**: PASS — no changes needed to `triton_install.sh`
+- **Files touched**: none (read-only)
+- **Verification**: manual inspection of v3.7.0 source
+- **Criteria impact**: AC-5 can be met without changes to patch function
+- **Blocker / Risk**: none
+
+### 2026-06-01 — Session 2, Entry 2
+
+- **Actor**: claude
+- **Planned step**: Step 2 — Verify LLVM API compatibility
+- **Action taken**: Compared LLVM hashes (f6ded0be → ac5dc54d, 13,287 commits). Checked
+  all LLVM headers used by instrumentation passes for API changes. Found one breaking
+  change: `llvm/Passes/PassPlugin.h` moved to `llvm/Plugins/PassPlugin.h`. Verified all
+  other APIs (Cloning, Linker, PassBuilder, Module, IR, Bitcode) are unchanged.
+- **Result**: ONE BREAKING CHANGE — PassPlugin.h path moved
+- **Files touched**: none (read-only)
+- **Verification**: manual git diff of LLVM headers at both commits
+- **Criteria impact**: AC-6 requires fixing the include path in 3 files
+- **Blocker / Risk**: Straightforward fix with `__has_include` for version portability
