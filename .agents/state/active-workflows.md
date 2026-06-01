@@ -19,7 +19,8 @@ Packet directories follow the pattern: `.agents/workflows/<state>/<workflow-id>/
 | rf_rename-logduration-to-omniprobe | refactor | active | unassigned | src/, inc/, plugins/, omniprobe/, CMakeLists.txt, containers/, .github/ | Broad scope — overlaps with most other refactors | Open questions need user input | 2026-04-27 |
 | rf_clang-format-consistency | refactor | active (blocked) | unassigned | .clang-format, CMakeLists.txt, scripts/git-hooks/ | None | Team coordination needed | 2026-04-27 |
 | rf_test-organization | refactor | active | unassigned | tests/ | None | Design decisions needed | 2026-04-27 |
-| ft_whitepaper-omniprobe | feature | active | unassigned | ~/repos/whitepaper_omniprobe/ | None (outside omniprobe repo) | None | 2026-04-27 |
+| ft_whitepaper-omniprobe | feature | active | unassigned | ~/repos/whitepaper_omniprobe/ | None (outside omniprobe repo) | Awaiting user review | 2026-04-28 |
+| rf_triton-v3.7-bump | refactor | active | unassigned | containers/toolchain.{Dockerfile,def}, containers/triton_install.sh, docs/, src/instrumentation/ (conditional), tests/triton/ (conditional) | Overlaps with rf_rename-logduration (containers/) — different content, no conflict | None | 2026-06-01 |
 
 ## Completed (migrated from KT)
 

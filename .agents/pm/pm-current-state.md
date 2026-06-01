@@ -8,15 +8,18 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
 
 ## Active Work Areas
 
-1. **Lazy kernelDB loading** — kerneldb PR #27 merged (2026-04-14). Ready to adopt
+1. **Triton v3.7.0 bump** — CI staleness check failing; Triton v3.7.0 released 2026-05-07,
+   pinned version is v3.6.0. Workflow packet created (rf_triton-v3.7-bump), ready to execute.
+   Key risks: LLVM API compatibility and source patch compatibility with v3.7.0.
+2. **Lazy kernelDB loading** — kerneldb PR #27 merged (2026-04-14). Ready to adopt
    `addFile(lazy=true)` in interceptor to replace `scanCodeObject()`. See rf_lazy-kerneldb-loading.
-2. **Exact-architecture bitcode** — dh_comms PR #18 merged (2026-04-15). Plugin needs
+3. **Exact-architecture bitcode** — dh_comms PR #18 merged (2026-04-15). Plugin needs
    `getBitcodePath()` rewrite for exact-arch selection. See rf_exact-arch-bitcode.
-3. **logDuration → omniprobe rename** — comprehensive rename of library, env vars, classes.
+4. **logDuration → omniprobe rename** — comprehensive rename of library, env vars, classes.
    Planned but not started. See rf_rename-logduration-to-omniprobe.
-4. **clang-format consistency** — blocked on team coordination for initial format commit.
+5. **clang-format consistency** — blocked on team coordination for initial format commit.
    See rf_clang-format-consistency.
-5. **Test organization** — design decisions needed before restructuring tests/.
+6. **Test organization** — design decisions needed before restructuring tests/.
    See rf_test-organization.
 
 ## Current Risks
