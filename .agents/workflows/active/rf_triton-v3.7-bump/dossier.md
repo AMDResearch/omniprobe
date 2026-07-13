@@ -22,7 +22,7 @@
 
 ## Objective
 
-Bump the pinned Triton version from v3.6.0 to v3.7.0 across CI containers, build scripts,
+Bump the pinned Triton version from v3.6.0 to v3.7.1 across CI containers, build scripts,
 and documentation. Verify that omniprobe's instrumentation passes, source patches, and test
 suite remain compatible with the new Triton release.
 
@@ -38,6 +38,11 @@ AMD backend changes (gfx1250/RDNA4 focus, warp-pipeline, AsyncCopy), and some br
 changes (triton_kernels matmul refactor, make_block_ptr deprecation, Proton
 GlobalScratchAllocOp replacement).
 
+Triton v3.7.1 (published 2026-06-18) is a patch-only release on top of v3.7.0 with two
+bugfixes and no API changes or LLVM uprev. The workflow target has been pivoted from v3.7.0
+to v3.7.1 because the staleness check now fails against v3.7.1. All v3.7.0 investigation
+findings (Steps 1-2) remain valid for v3.7.1.
+
 ## Contract
 
 - All existing tests that pass before this refactor must continue to pass after.
@@ -48,17 +53,18 @@ GlobalScratchAllocOp replacement).
 
 ## Acceptance Criteria
 
-- AC-1: `containers/toolchain.Dockerfile` pins `TRITON_VERSION=v3.7.0`.
-- AC-2: `containers/toolchain.def` pins `TRITON_VERSION=v3.7.0`.
-- AC-3: `docs/building-from-source.md` references v3.7.0.
-- AC-4: `docs/triton-instrumentation.md` references v3.7.0.
-- AC-5: `triton_install.sh` patch function works with v3.7.0 source tree (assertion is found
+- AC-1: `containers/toolchain.Dockerfile` pins `TRITON_VERSION=v3.7.1`.
+- AC-2: `containers/toolchain.def` pins `TRITON_VERSION=v3.7.1`.
+- AC-3: `docs/building-from-source.md` references v3.7.1.
+- AC-4: `docs/triton-instrumentation.md` references v3.7.1.
+- AC-5: `triton_install.sh` patch function works with v3.7.1 source tree (assertion is found
   and patched, or is confirmed absent/already removed and the function exits gracefully).
-- AC-6: `cmake --build build` succeeds with Triton v3.7.0 LLVM headers (instrumentation
+- AC-6: `cmake --build build` succeeds with Triton v3.7.1 LLVM headers (instrumentation
   passes compile cleanly).
 - AC-7: Handler tests pass (25/25).
-- AC-8: Triton integration tests pass (5/5) with `TRITON_DIR` pointing to a v3.7.0 install.
-- AC-9: `triton-staleness-check` CI job passes (pinned version matches latest release).
+- AC-8: Triton integration tests pass (5/5) with `TRITON_DIR` pointing to a v3.7.1 install.
+- AC-9: `triton-staleness-check` CI job passes (pinned version matches latest release, v3.7.1).
+- AC-10: Stale v3.6.0 references in `triton_install.sh` examples updated to v3.7.1.
 
 ## Failure Policy
 
@@ -76,8 +82,8 @@ GlobalScratchAllocOp replacement).
 
 | File | Change |
 |------|--------|
-| `containers/toolchain.Dockerfile` | `ARG TRITON_VERSION=v3.6.0` → `v3.7.0` |
-| `containers/toolchain.def` | `TRITON_VERSION=v3.6.0` → `v3.7.0` |
+| `containers/toolchain.Dockerfile` | `ARG TRITON_VERSION=v3.7.0` → `v3.7.1` |
+| `containers/toolchain.def` | `TRITON_VERSION=v3.7.0` → `v3.7.1` |
 | `docs/building-from-source.md` | Version reference in install command |
 | `docs/triton-instrumentation.md` | Version reference in checkout command |
 
@@ -85,7 +91,7 @@ GlobalScratchAllocOp replacement).
 
 | File | Condition |
 |------|-----------|
-| `containers/triton_install.sh` | Patch target moved or changed in v3.7.0 |
+| `containers/triton_install.sh` | Patch target moved or changed in v3.7.1; stale v3.6.0 examples |
 | `src/instrumentation/*.cpp` | LLVM API surface changed |
 | `tests/triton/*.py` | Triton Python API changed |
 
@@ -99,8 +105,8 @@ GlobalScratchAllocOp replacement).
 ## Constraints and Assumptions
 
 - Target GPU architecture remains gfx90a with sramecc+:xnack-.
-- Local Triton install at `/home1/rvanoo/repos/triton` is currently v3.6.0 and will need
-  rebuilding to v3.7.0 for local verification.
+- Local Triton install at `/home1/rvanoo/repos/triton` is currently v3.7.0 and will need
+  rebuilding to v3.7.1 for local verification.
 - The toolchain container rebuild (~3.5 hours on GitHub Actions) is triggered automatically
   when `containers/toolchain.Dockerfile` changes on main.
 - Pre-existing test failures (from pm-current-state.md): library filter chain test 2 hangs;
@@ -108,7 +114,7 @@ GlobalScratchAllocOp replacement).
 
 ## Dependencies
 
-- Triton v3.7.0 release (external, already published 2026-05-07).
+- Triton v3.7.1 release (external, published 2026-06-18).
 - No dependency on other active omniprobe workflows.
 - Overlap note: rf_rename-logduration-to-omniprobe has `containers/` in its write scope but
   targets different content (symbol/env var names, not version pins).
@@ -117,28 +123,28 @@ GlobalScratchAllocOp replacement).
 
 ### Step 1: Verify patch compatibility (read-only investigation)
 
-Clone or fetch Triton v3.7.0 source. Check whether `assert len(names) == 1` still exists
+Clone or fetch Triton v3.7.1 source. Check whether `assert len(names) == 1` still exists
 in `third_party/amd/backend/compiler.py` or `python/triton/backends/amd/compiler.py`.
 Determine if the patch function in `triton_install.sh` needs updating.
 
 ### Step 2: Verify LLVM API compatibility (read-only investigation)
 
-Compare LLVM headers between v3.6.0 and v3.7.0 Triton builds. Check that the LLVM APIs
+Compare LLVM headers between v3.6.0 and v3.7.1 Triton builds. Check that the LLVM APIs
 used in `src/instrumentation/` are still present and have compatible signatures.
 
 ### Step 3: Rebuild local Triton install
 
-Run `triton_install.sh --triton-version v3.7.0` to build Triton v3.7.0 locally. This
+Run `triton_install.sh --triton-version v3.7.1` to build Triton v3.7.1 locally. This
 updates `/home1/rvanoo/repos/triton` and provides the new LLVM build directory.
 
 ### Step 4: Build omniprobe against new Triton LLVM
 
-Run `cmake --build build` with `-DTRITON_LLVM` pointing to the v3.7.0 LLVM build. Fix any
+Run `cmake --build build` with `-DTRITON_LLVM` pointing to the v3.7.1 LLVM build. Fix any
 compilation errors in instrumentation passes.
 
 ### Step 5: Run test suite
 
-Run `./tests/run_all_tests.sh` with `TRITON_DIR` pointing to v3.7.0 install. Verify all
+Run `./tests/run_all_tests.sh` with `TRITON_DIR` pointing to v3.7.1 install. Verify all
 30 tests pass (25 handler + 5 Triton integration).
 
 ### Step 6: Bump version pins
@@ -148,6 +154,7 @@ Update the 4 files with hardcoded version references (AC-1 through AC-4).
 ### Step 7: Update triton_install.sh if needed
 
 If Step 1 found patch compatibility issues, update the patch function (AC-5).
+Clean up stale v3.6.0 references in examples (AC-10).
 
 ### Step 8: Final verification
 
@@ -163,12 +170,13 @@ After each step, run the relevant verification:
 | 3 | `triton_install.sh` exit code | Script completes without error |
 | 4 | `cmake --build build` | Zero compilation errors |
 | 5 | `./tests/run_all_tests.sh` | 30/30 pass (pre-existing failures excluded) |
-| 6 | `grep TRITON_VERSION containers/toolchain.Dockerfile` | Shows `v3.7.0` |
+| 6 | `grep TRITON_VERSION containers/toolchain.Dockerfile` | Shows `v3.7.1` |
 | 8 | `./tests/run_all_tests.sh` | 30/30 pass |
 
 ## References
 
 - Triton v3.7.0 release: https://github.com/triton-lang/triton/releases/tag/v3.7.0
+- Triton v3.7.1 release: https://github.com/triton-lang/triton/releases/tag/v3.7.1
 - Staleness check workflow: `.github/workflows/triton-staleness-check.yml`
 - Toolchain image workflow: `.github/workflows/toolchain-image.yml`
 - Triton install script: `containers/triton_install.sh`

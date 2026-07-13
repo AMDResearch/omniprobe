@@ -76,3 +76,17 @@ Use append-only entries with:
 - **Verification**: Script exit code 0; 121 shared LLVM .so files present
 - **Criteria impact**: Enables AC-6 (omniprobe build) and AC-8 (Triton integration tests)
 - **Blocker / Risk**: None
+
+### 2026-07-13 — Session 3, Entry 1
+
+- **Actor**: claude
+- **Planned step**: Pivot workflow target from v3.7.0 to v3.7.1
+- **Action taken**: Updated dossier.md (objective, AC-1 through AC-4, AC-9 target changed to
+  v3.7.1; added AC-10 for stale v3.6.0 cleanup; added background note about v3.7.1 as
+  patch-only release; added v3.7.1 release reference). Updated handoff.md to reflect current
+  state and pivot plan. Updated plan-of-record steps with v3.7.1 references.
+- **Result**: SUCCESS — workflow packet updated for v3.7.1 target
+- **Files touched**: dossier.md, handoff.md, run-log.md
+- **Verification**: manual review of updated documents
+- **Criteria impact**: All ACs now target v3.7.1 instead of v3.7.0
+- **Blocker / Risk**: None — v3.7.1 is patch-only, all v3.7.0 findings apply
