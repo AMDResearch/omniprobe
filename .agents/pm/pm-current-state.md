@@ -8,23 +8,21 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
 
 ## Active Work Areas
 
-1. **Triton v3.7.0 bump** — CI staleness check failing; Triton v3.7.0 released 2026-05-07,
-   pinned version is v3.6.0. Workflow packet created (rf_triton-v3.7-bump), ready to execute.
-   Key risks: LLVM API compatibility and source patch compatibility with v3.7.0.
-2. **Lazy kernelDB loading** — kerneldb PR #27 merged (2026-04-14). Ready to adopt
+1. **Lazy kernelDB loading** — kerneldb PR #27 merged (2026-04-14). Ready to adopt
    `addFile(lazy=true)` in interceptor to replace `scanCodeObject()`. See rf_lazy-kerneldb-loading.
-3. **Exact-architecture bitcode** — dh_comms PR #18 merged (2026-04-15). Plugin needs
+2. **Exact-architecture bitcode** — dh_comms PR #18 merged (2026-04-15). Plugin needs
    `getBitcodePath()` rewrite for exact-arch selection. See rf_exact-arch-bitcode.
-4. **logDuration → omniprobe rename** — comprehensive rename of library, env vars, classes.
+3. **logDuration → omniprobe rename** — comprehensive rename of library, env vars, classes.
    Planned but not started. See rf_rename-logduration-to-omniprobe.
-5. **clang-format consistency** — blocked on team coordination for initial format commit.
+4. **clang-format consistency** — blocked on team coordination for initial format commit.
    See rf_clang-format-consistency.
-6. **Test organization** — design decisions needed before restructuring tests/.
+5. **Test organization** — design decisions needed before restructuring tests/.
    See rf_test-organization.
 
 ## Current Risks
 
-- **Library filter chain tests flaky**: Test 2 hangs; tests 4-5 previously failed.
+- **Library filter chain tests**: Previously flaky (test 2 hung, tests 4-5 failed). As of
+  2026-07-13 all 5 tests pass.
 - **rocBLAS integration test broken**: Instrumented sscal not found in current build.
 
 ## Changed Assumptions
@@ -37,6 +35,8 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
 - `cleanroom-test` is a project-local skill (not from the agentic meta project template).
 - PM restructured (2026-04-27): `plugins` + `comms-mgr` merged into `handler-pipeline`;
   new `build-system` unit created from `architecture` + `instrumentation` extracts.
+- Triton pinned at v3.7.1 (bumped from v3.6.0, 2026-07-13). LLVM `PassPlugin.h` moved to
+  `llvm/Plugins/PassPlugin.h`; instrumentation passes use `__has_include` for portability.
 
 ## Recommended Read Order
 
