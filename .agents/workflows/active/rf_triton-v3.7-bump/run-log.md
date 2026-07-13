@@ -62,3 +62,17 @@ Use append-only entries with:
 - **Verification**: manual git diff of LLVM headers at both commits
 - **Criteria impact**: AC-6 requires fixing the include path in 3 files
 - **Blocker / Risk**: Straightforward fix with `__has_include` for version portability
+
+### 2026-06-01 — Session 2, Entry 3
+
+- **Actor**: claude
+- **Planned step**: Step 3 — Rebuild local Triton install at v3.7.0
+- **Action taken**: Backed up v3.6.0 install to /home1/rvanoo/repos/triton-v3.6.0-backup.
+  Ran `env -u HTTP_PROXY ... triton_install.sh --triton-version v3.7.0` from /home1/rvanoo/repos/.
+  Script completed all 6 steps: clone, patch (assertion in compiler.py), LLVM build (shared libs),
+  venv setup (Python 3.12, PyTorch 2.12.0+rocm7.2), Triton build (3.7.0+git5f3f125e).
+- **Result**: SUCCESS — Triton v3.7.0 installed at /home1/rvanoo/repos/triton
+- **Files touched**: /home1/rvanoo/repos/triton (rebuilt from scratch)
+- **Verification**: Script exit code 0; 121 shared LLVM .so files present
+- **Criteria impact**: Enables AC-6 (omniprobe build) and AC-8 (Triton integration tests)
+- **Blocker / Risk**: None

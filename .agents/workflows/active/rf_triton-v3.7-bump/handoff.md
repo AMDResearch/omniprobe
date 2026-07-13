@@ -12,9 +12,12 @@ Steps 1-2 verified 2026-06-01.
 
 ## Next Exact Step
 
-Step 3: Rebuild local Triton at /home1/rvanoo/repos/triton from v3.6.0 to v3.7.0 using
-`triton_install.sh --triton-version v3.7.0`. Use `env -u` proxy bypass pattern for
-network traffic.
+Step 3 IN PROGRESS: Triton v3.7.0 rebuild running at /home1/rvanoo/repos/triton.
+Old v3.6.0 install backed up to /home1/rvanoo/repos/triton-v3.6.0-backup.
+Build launched via `env -u HTTP_PROXY ... triton_install.sh --triton-version v3.7.0`.
+Currently at LLVM build phase (30-90 min). After completion:
+Step 4: Build omniprobe with `cmake --build build`.
+Step 5: Run test suite.
 
 ## Active Risks / Blockers
 
