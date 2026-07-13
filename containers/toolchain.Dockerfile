@@ -7,7 +7,7 @@
 ARG ROCM_VERSION=7.2
 FROM rocm/dev-ubuntu-24.04:${ROCM_VERSION}
 ARG ROCM_VERSION=7.2
-ARG TRITON_VERSION=v3.7.0
+ARG TRITON_VERSION=v3.7.1
 LABEL Description="Omniprobe toolchain: ROCm + LLVM + Triton + PyTorch"
 WORKDIR /app
 

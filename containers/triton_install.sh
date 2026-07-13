@@ -59,8 +59,8 @@ Options:
 
 Examples:
   ./triton_install.sh                           # auto-detect everything
-  ./triton_install.sh --triton-version v3.6.0   # specific Triton tag
-  ./triton_install.sh -g v3.6.0 --pytorch-rocm 7.1
+  ./triton_install.sh --triton-version v3.7.1   # specific Triton tag
+  ./triton_install.sh -g v3.7.1 --pytorch-rocm 7.1
   ./triton_install.sh --local-sources ~/repos/sandbox/triton
 HELP
 }
@@ -402,7 +402,7 @@ fi
 
 # Pass all CMake args explicitly as positional arguments to the build script.
 # This overrides the script's defaults, which is necessary because:
-# - v3.6.0's build-llvm-project.sh doesn't support LLVM_BUILD_SHARED_LIBS env var
+# - Triton's build-llvm-project.sh doesn't support LLVM_BUILD_SHARED_LIBS env var
 # - We need -DBUILD_SHARED_LIBS=ON for Omniprobe plugin compatibility
 # - We need clang in LLVM_ENABLE_PROJECTS for Triton compilation
 scripts/build-llvm-project.sh \

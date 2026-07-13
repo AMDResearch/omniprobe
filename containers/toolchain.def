@@ -10,7 +10,7 @@ From: rocm/dev-ubuntu-24.04:{{ ROCM_VERSION }}
 
 %arguments
     ROCM_VERSION=7.2
-    TRITON_VERSION=v3.7.0
+    TRITON_VERSION=v3.7.1
 
 %labels
     Description Omniprobe toolchain: ROCm + LLVM + Triton + PyTorch
