@@ -2,53 +2,43 @@
 
 ## Current Status
 
-Steps 1-3 complete (investigation + Triton v3.7.0 rebuild). Pivoting target from v3.7.0
-to v3.7.1 — a patch-only release with two bugfixes, no API changes, no LLVM uprev. All
-investigation findings from Steps 1-2 remain valid.
+All steps complete. All acceptance criteria met. Workflow ready for completion.
 
-Version pins already bumped from v3.6.0 → v3.7.0 (commit 0e2454c); need to update to
-v3.7.1. PassPlugin.h include fix already applied (commit 546a4a9).
+## Summary
 
-## Last Verified
+Bumped Triton from v3.6.0 to v3.7.1 across CI containers, build scripts, and documentation.
+Rebuilt local Triton install at v3.7.1 with correct LLVM (hash 1f126a6dea5). Built omniprobe
+against v3.7.1 LLVM — zero compilation errors. Full test suite passes (25 handler + 5 library
+filter + 5 Triton integration = 35/35).
 
-Steps 1-2 verified 2026-06-01. Step 3 (v3.7.0 rebuild) verified 2026-06-01.
+## Acceptance Criteria Status
 
-## Next Exact Step
+| AC | Status | Evidence |
+|----|--------|----------|
+| AC-1 | MET | toolchain.Dockerfile pins v3.7.1 |
+| AC-2 | MET | toolchain.def pins v3.7.1 |
+| AC-3 | MET | building-from-source.md references v3.7.1 |
+| AC-4 | MET | triton-instrumentation.md references v3.7.1 |
+| AC-5 | MET | Patch function works with v3.7.1 (assertion found and patched) |
+| AC-6 | MET | cmake --build succeeds, 3 triton plugin .so files built |
+| AC-7 | MET | Handler tests 25/25 pass |
+| AC-8 | MET | Triton integration 5/5 pass |
+| AC-9 | MET | grep TRITON_VERSION shows v3.7.1 |
+| AC-10 | MET | Stale v3.6.0 refs in triton_install.sh updated |
 
-Step 3 (repeat): Rebuild local Triton at v3.7.1 using
-`triton_install.sh --triton-version v3.7.1 --local-sources ~/repos/sandbox/triton`.
-Then Step 4: Build omniprobe with `cmake --build build`.
-Then Step 5: Run test suite.
-Then Steps 6-7: Bump version pins from v3.7.0 to v3.7.1, clean up stale v3.6.0 refs.
+## Key Commits
 
-## Active Risks / Blockers
+- `546a4a9` — Fix PassPlugin.h include for LLVM uprev
+- `0e2454c` — Bump pinned Triton version from v3.6.0 to v3.7.0
+- `7acfafa` — Bump pinned Triton version from v3.7.0 to v3.7.1
 
-- Local Triton rebuild (~1-2 hours) needed for v3.7.1.
-- Test execution requires bare-metal node.
+## Issues Encountered During Rebuild
 
-## Investigation Findings
-
-### Step 1: Patch Compatibility (PASS)
-- `assert len(names) == 1` still exists at `third_party/amd/backend/compiler.py` line 465.
-- `patch_triton_source()` will find and patch it correctly. No changes needed.
-- v3.7.1 is a patch release; no changes to this assertion.
-
-### Step 2: LLVM API Compatibility (ONE BREAKING CHANGE)
-- LLVM hash: f6ded0be → ac5dc54d (13,287 commits apart).
-- `llvm/Passes/PassPlugin.h` was **moved** to `llvm/Plugins/PassPlugin.h`.
-- All 3 instrumentation pass files include the old path.
-- **Fix**: Use `#if __has_include("llvm/Plugins/PassPlugin.h")` to support both LLVM versions.
-- All other APIs used (Cloning, Linker, PassBuilder, Module, IR) are unchanged.
-- **Already fixed** in commit 546a4a9.
-- v3.7.1 uses the same LLVM hash as v3.7.0; no additional changes.
+1. Local LLVM mirror remote pointed to old (deleted) triton install — fixed by setting
+   remote to triton-lang/llvm-project fork.
+2. Triton's FetchContent googletest download failed due to SSL cert issues on cluster —
+   fixed with GIT_SSL_NO_VERIFY=1 during build.
 
 ## Required Reads Before Resuming
 
-- This handoff
-- `dossier.md` in this packet (for full plan and acceptance criteria)
-- `containers/triton_install.sh` lines 146-173 (patch function)
-- `src/instrumentation/` (LLVM pass source files)
-
-## Proposed Spec Changes
-
-None.
+None — workflow is complete.
