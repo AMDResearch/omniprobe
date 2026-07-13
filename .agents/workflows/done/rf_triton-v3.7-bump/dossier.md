@@ -4,7 +4,7 @@
 
 - Workflow ID: rf_triton-v3.7-bump
 - Workflow Type: refactor
-- Lifecycle State: active
+- Lifecycle State: done
 - Owner / Current Executor: unassigned
 - Intended Write Scope:
   - `containers/toolchain.Dockerfile`

@@ -159,3 +159,15 @@ Use append-only entries with:
 - **Verification**: AC-1 through AC-10 all met
 - **Criteria impact**: AC-9 met (staleness check would pass with v3.7.1)
 - **Blocker / Risk**: None
+
+### 2026-07-13 — Session 3, Entry 7
+
+- **Actor**: claude
+- **Planned step**: Workflow completion
+- **Action taken**: All acceptance criteria verified. Workflow marked done. Dossier lifecycle
+  state set to done, packet moved to done/, active-workflows.md and current-focus.md updated.
+- **Result**: success
+- **Files touched**: dossier.md, handoff.md, run-log.md, active-workflows.md, current-focus.md
+- **Verification**: AC-1 through AC-10 all met; 35/35 tests pass; version pin grep confirms v3.7.1
+- **Criteria impact**: All criteria met
+- **Blocker / Risk**: none
