@@ -33,3 +33,9 @@ Record recurring process failures here when they matter beyond a single session.
 - **Description**: Workflow packet began execution before the contract was autonomy-ready.
 - **Impact**: Work done against incomplete or ambiguous criteria; rework likely.
 - **Mitigation**: Run `workflow-readiness-check` before transitioning from `draft` to `active`.
+
+## FM-4: Stale local build-environment state
+- **Observed**: 2026-07-13
+- **Description**: Long-lived local build artifacts (cloned repos, LLVM mirrors, install directories) accumulate stale configuration — broken remote URLs, wrong checked-out commits, leftover directories that block fresh clones. Build scripts may not validate these preconditions, causing silent failures or cascading errors discovered only at build time.
+- **Impact**: Multiple rebuild cycles wasted; diagnosis time for each failure; proxy/network interruptions compound the problem since each retry re-encounters the same stale state.
+- **Mitigation**: Before starting a build that depends on a local mirror or prior install, verify key preconditions: (1) git remote URLs point to valid upstreams, (2) expected commit hashes match `git rev-parse HEAD`, (3) target directories are absent or in expected state. Report mismatches as blockers rather than proceeding optimistically.
