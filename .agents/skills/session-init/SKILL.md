@@ -90,9 +90,11 @@ Read these files in order. Stop and report if any file marked [required] is miss
      since the last session. Run `/state-check` to verify state consistency."
    - If `pm-index.md` has units with `Last Verified` older than 14 days: recommend
      `/pm-validate` — "Some PM units may be stale. Run `/pm-validate` to check."
-   - If unreviewed session captures have accumulated (>= 5 captures since last review):
+   - If unreviewed session captures have accumulated (>= 5 since last review):
      recommend `/session-review` — "Multiple captures are unreviewed. Run `/session-review`
-     in batch mode."
+     in batch mode." To determine which captures are unreviewed, find the most recent file
+     in `.agents/improvement/session-reviews/`. Captures whose modification time is newer
+     than that file are unreviewed. If no review files exist, all captures are unreviewed.
    - If resuming a workflow: recommend reading the workflow's handoff first via
      `/workflow-resume` — "Use `/workflow-resume <workflow-id>` for structured resumption."
    - If open feedback items exist (check `.untracked/feedback/feedback-index.md` if it
