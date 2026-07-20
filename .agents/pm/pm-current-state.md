@@ -8,18 +8,15 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
 
 ## Active Work Areas
 
-1. **Python API + JSON output** — structured JSON schemas for MemoryAnalysis and
-   BasicBlockAnalysis. Python API at `omniprobe/api/` wraps CLI for programmatic access.
-   All ACs met. See ft_omniprobe-python-api.
-2. **Lazy kernelDB loading** — kerneldb PR #27 merged (2026-04-14). Ready to adopt
+1. **Lazy kernelDB loading** — kerneldb PR #27 merged (2026-04-14). Ready to adopt
    `addFile(lazy=true)` in interceptor to replace `scanCodeObject()`. See rf_lazy-kerneldb-loading.
-3. **Exact-architecture bitcode** — dh_comms PR #18 merged (2026-04-15). Plugin needs
+2. **Exact-architecture bitcode** — dh_comms PR #18 merged (2026-04-15). Plugin needs
    `getBitcodePath()` rewrite for exact-arch selection. See rf_exact-arch-bitcode.
-4. **logDuration → omniprobe rename** — comprehensive rename of library, env vars, classes.
+3. **logDuration → omniprobe rename** — comprehensive rename of library, env vars, classes.
    Planned but not started. See rf_rename-logduration-to-omniprobe.
-5. **clang-format consistency** — blocked on team coordination for initial format commit.
+4. **clang-format consistency** — blocked on team coordination for initial format commit.
    See rf_clang-format-consistency.
-6. **Test organization** — design decisions needed before restructuring tests/.
+5. **Test organization** — design decisions needed before restructuring tests/.
    See rf_test-organization.
 
 ## Current Risks
