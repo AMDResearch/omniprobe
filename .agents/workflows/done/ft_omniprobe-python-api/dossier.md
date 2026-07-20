@@ -4,7 +4,7 @@
 
 - Workflow ID: ft_omniprobe-python-api
 - Workflow Type: feature
-- Lifecycle State: active
+- Lifecycle State: done
 - Owner / Current Executor: unassigned
 - Intended Write Scope: `omniprobe/api/` (new), `src/memory_analysis_handler.cc`, `src/basic_block_analysis.cc`, `plugins/`, `omniprobe/omniprobe` (CLI script), `tests/`
 - Dependencies On Other Active Workflows: Potential overlap with `rf_rename-logduration-to-omniprobe` (broad scope). If the rename refactor lands first, file paths in this workflow's write scope will change. Coordinate accordingly.

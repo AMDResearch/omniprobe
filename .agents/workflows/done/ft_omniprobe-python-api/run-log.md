@@ -119,3 +119,14 @@ Use append-only entries with:
 - `-l` sets `LOGDUR_LOG_LOCATION` for file output.
 - `finalize_json_output()` handles MemoryAnalysis array closing bracket.
 - No equivalent JSON finalization for BasicBlockAnalysis.
+
+### 2026-07-20 20:00
+
+- **Actor**: claude (omniprobe session)
+- **Planned step**: Workflow completion
+- **Action taken**: All acceptance criteria verified. Workflow marked done. Dossier lifecycle set to done. Packet moved to done/. active-workflows.md archived. current-focus.md pruned.
+- **Result**: success
+- **Files touched**: dossier.md, handoff.md, active-workflows.md, current-focus.md
+- **Verification**: AC-1 through AC-7 all met with evidence (see Acceptance Criteria Status table above). 35/35 C++ tests pass, 10/10 Python API tests pass, build clean, docs updated.
+- **Criteria impact**: All criteria met
+- **Blocker / Risk**: none
