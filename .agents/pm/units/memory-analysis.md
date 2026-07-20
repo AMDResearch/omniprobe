@@ -45,6 +45,12 @@ needed. For LDS: detects bank conflicts.
   - 16 bytes: 8 non-contiguous sets
 - ISA-level access size may differ from IR-level (`dwordx4` optimization).
 - Output formats: Console, CSV (`LOGDUR_LOG_FORMAT=csv`), JSON (`LOGDUR_LOG_FORMAT=json`).
+- JSON schema (as of ft_omniprobe-python-api): flat per-access objects with `kernel`,
+  `dispatch_id` at top level. Each access has `source_file`, `line`, `column`,
+  `memory_space` ("global"/"lds"), `access_type`, `execution_count`, `excess_cache_lines`,
+  `bank_conflicts`. Global accesses also have `cache_lines_needed`, `cache_lines_used`,
+  `ir_bytes`, `isa_bytes`, `isa_instruction`. Metadata section with version, timestamp,
+  gpu_info. Multi-dispatch output wrapped in JSON array by `finalize_json_output()` in CLI.
 
 ## Dependencies
 
@@ -61,4 +67,4 @@ None.
 
 ## Last Verified
 
-2026-04-27 (re-verified; fixed class/method line numbers, corrected handle() signature)
+2026-07-20 (updated JSON schema documentation for ft_omniprobe-python-api)

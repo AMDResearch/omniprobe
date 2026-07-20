@@ -621,7 +621,14 @@ def add_general_group(parser):
         dest="log_format",
         required=False,
         default="csv",
-        help="\tThe format for logging results. Default is 'csv'. Valid options: [csv|json]"
+        help="\tThe format for logging results. Default is 'csv'. Valid options: [csv|json]\n"
+             "\tJSON output produces structured, machine-readable objects per dispatch.\n"
+             "\tMemoryAnalysis JSON: per-access objects with source_file, line, column,\n"
+             "\texcess_cache_lines, and bank_conflicts.\n"
+             "\tBasicBlockAnalysis JSON: per-block objects with basic_block_id, source_file,\n"
+             "\tline, timing percentiles (p25-p99), min/max cycles, and wave_count.\n"
+             "\tUse with -l to write to a file for programmatic consumption.\n"
+             "\tSee also: omniprobe.api Python module for programmatic access."
     )
 
 

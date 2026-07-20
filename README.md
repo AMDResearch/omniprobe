@@ -83,7 +83,7 @@ See [docs/usage.md](docs/usage.md) for the complete reference with examples.
 | `-i`, `--instrumented` | Enable instrumented kernel dispatch | [Instrumented mode](docs/usage.md#instrumented-mode) |
 | `-k`, `--kernels` | Regex to select which kernels to instrument | [Kernel filtering](docs/usage.md#kernel-filtering) |
 | `-d`, `--dispatches` | Which dispatches to capture (`all`, `random`, `1`) | [Dispatch capture](docs/usage.md#dispatch-capture) |
-| `-t`, `--log-format` | Output format (`csv`, `json`) | [Output format](docs/usage.md#output-format-and-location) |
+| `-t`, `--log-format` | Output format (`csv`, `json`); JSON produces structured, machine-readable output | [Output format](docs/usage.md#output-format-and-location) |
 | `-l`, `--log-location` | Output file or `console` | [Output location](docs/usage.md#output-format-and-location) |
 | `--filter-x/y/z` | Block index filtering (`N` or `N:M` range) | [Block filtering](docs/usage.md#block-index-filtering) |
 | `--library-filter` | JSON config for library include/exclude | [Library filtering](docs/usage.md#library-filtering) |
@@ -122,11 +122,32 @@ for a walkthrough.
 Omniprobe can instrument Triton kernels by intercepting the Triton compilation
 cache. See [docs/triton-instrumentation.md](docs/triton-instrumentation.md).
 
+## Python API
+
+For programmatic access, Omniprobe includes a Python API that drives the CLI
+and returns structured results:
+
+```python
+from omniprobe.api import Omniprobe
+
+op = Omniprobe()
+result = op.analyze_memory("./my_hip_app")
+for kernel in result.kernels:
+    for access in kernel.accesses:
+        if access.excess_cache_lines > 0:
+            print(f"{access.source_file}:{access.line} — "
+                  f"{access.excess_cache_lines} excess cache lines")
+```
+
+See [docs/usage.md#python-api](docs/usage.md#python-api) for the full
+reference.
+
 ## Project Structure
 
 ```
 omniprobe/
     omniprobe/          CLI script and Python config
+    omniprobe/api/      Python API module (Omniprobe class, result dataclasses)
     src/                Interceptor, handlers, and instrumentation passes
     inc/                C++ headers
     plugins/            Handler plugin interface

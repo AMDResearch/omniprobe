@@ -8,15 +8,18 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
 
 ## Active Work Areas
 
-1. **Lazy kernelDB loading** — kerneldb PR #27 merged (2026-04-14). Ready to adopt
+1. **Python API + JSON output** — structured JSON schemas for MemoryAnalysis and
+   BasicBlockAnalysis. Python API at `omniprobe/api/` wraps CLI for programmatic access.
+   All ACs met. See ft_omniprobe-python-api.
+2. **Lazy kernelDB loading** — kerneldb PR #27 merged (2026-04-14). Ready to adopt
    `addFile(lazy=true)` in interceptor to replace `scanCodeObject()`. See rf_lazy-kerneldb-loading.
-2. **Exact-architecture bitcode** — dh_comms PR #18 merged (2026-04-15). Plugin needs
+3. **Exact-architecture bitcode** — dh_comms PR #18 merged (2026-04-15). Plugin needs
    `getBitcodePath()` rewrite for exact-arch selection. See rf_exact-arch-bitcode.
-3. **logDuration → omniprobe rename** — comprehensive rename of library, env vars, classes.
+4. **logDuration → omniprobe rename** — comprehensive rename of library, env vars, classes.
    Planned but not started. See rf_rename-logduration-to-omniprobe.
-4. **clang-format consistency** — blocked on team coordination for initial format commit.
+5. **clang-format consistency** — blocked on team coordination for initial format commit.
    See rf_clang-format-consistency.
-5. **Test organization** — design decisions needed before restructuring tests/.
+6. **Test organization** — design decisions needed before restructuring tests/.
    See rf_test-organization.
 
 ## Current Risks
@@ -37,6 +40,11 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
   new `build-system` unit created from `architecture` + `instrumentation` extracts.
 - Triton pinned at v3.7.1 (bumped from v3.6.0, 2026-07-13). LLVM `PassPlugin.h` moved to
   `llvm/Plugins/PassPlugin.h`; instrumentation passes use `__has_include` for portability.
+- JSON output restructured (2026-07-20, ft_omniprobe-python-api): MemoryAnalysis and
+  BasicBlockAnalysis emit flat, machine-readable JSON schemas. Previous nested
+  `kernel_analysis.cache_analysis` structure replaced. Python API at `omniprobe/api/`
+  provides programmatic access via `Omniprobe.analyze_memory()` and
+  `Omniprobe.analyze_basic_blocks()`.
 
 ## Recommended Read Order
 
