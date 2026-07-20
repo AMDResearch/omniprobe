@@ -20,6 +20,7 @@ Packet directories follow the pattern: `.agents/workflows/<state>/<workflow-id>/
 | rf_clang-format-consistency | refactor | active (blocked) | unassigned | .clang-format, CMakeLists.txt, scripts/git-hooks/ | None | Team coordination needed | 2026-04-27 |
 | rf_test-organization | refactor | active | unassigned | tests/ | None | Design decisions needed | 2026-04-27 |
 | ft_whitepaper-omniprobe | feature | active | unassigned | ~/repos/whitepaper_omniprobe/ | None (outside omniprobe repo) | Awaiting user review | 2026-04-28 |
+| ft_omniprobe-python-api | feature | active | unassigned | omniprobe/api/, src/memory_analysis_handler.cc, src/basic_block_analysis.cc, plugins/ | Potential overlap with rf_rename-logduration-to-omniprobe | None | 2026-07-20 |
 
 ## Completed
 
