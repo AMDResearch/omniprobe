@@ -84,7 +84,8 @@ See [docs/usage.md](docs/usage.md) for the complete reference with examples.
 | `-k`, `--kernels` | Regex to select which kernels to instrument | [Kernel filtering](docs/usage.md#kernel-filtering) |
 | `-d`, `--dispatches` | Which dispatches to capture (`all`, `random`, `1`) | [Dispatch capture](docs/usage.md#dispatch-capture) |
 | `-t`, `--log-format` | Output format (`csv`, `json`); JSON produces structured, machine-readable output | [Output format](docs/usage.md#output-format-and-location) |
-| `-l`, `--log-location` | Output file or `console` | [Output location](docs/usage.md#output-format-and-location) |
+| `-o`, `--output` | JSON output file; auto-generates timestamped name when omitted with `-t json` | [JSON output file](docs/usage.md#output-format-and-location) |
+| `-l`, `--log-location` | Output file or `console` (primarily for CSV) | [Output location](docs/usage.md#output-format-and-location) |
 | `--filter-x/y/z` | Block index filtering (`N` or `N:M` range) | [Block filtering](docs/usage.md#block-index-filtering) |
 | `--library-filter` | JSON config for library include/exclude | [Library filtering](docs/usage.md#library-filtering) |
 | `-c`, `--cache-location` | Triton kernel cache directory | [Triton cache](docs/usage.md#triton-instrumentation) |

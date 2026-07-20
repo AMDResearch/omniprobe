@@ -321,6 +321,7 @@ and focusing the report on the memory operations you care about.
 | `--instrumentation-scope-file` | File containing scope definitions (same syntax, one per line). |
 | `--filter-x`, `--filter-y`, `--filter-z` | Filter output by block index. Format: `N` (single) or `N:M` (half-open range). |
 | `--library-filter` | JSON config for filtering which libraries are scanned. |
-| `-l`, `--log-location` | Output destination. Default: `console`. |
+| `-o`, `--output` | JSON output file. Auto-generates timestamped name when omitted with `-t json`. |
+| `-l`, `--log-location` | Output destination (primarily for CSV). Default: `console`. |
 | `-t`, `--log-format` | Output format: `csv` or `json`. |
 | `-v`, `--verbose` | Verbose output. |

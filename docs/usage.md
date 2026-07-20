@@ -284,6 +284,25 @@ with a `basic_blocks` array.
 | `p25`–`p99` | Timing percentiles across all wave observations |
 | `wave_count` | Number of wave executions of this block |
 
+### JSON output file (`-o`, `--output`)
+
+```bash
+# Auto-generate timestamped file (results_yyyy-mm-dd_hhmmss.json)
+omniprobe -i -a MemoryAnalysis -t json -- ./my_app
+
+# Specify output file explicitly
+omniprobe -i -a MemoryAnalysis -t json -o results.json -- ./my_app
+```
+
+When `-t json` is active and no `-l` is provided, omniprobe automatically
+writes results to a file:
+
+- If `-o FILE` is given, results are written to that path.
+- If `-o` is omitted, a timestamped file (`results_yyyy-mm-dd_hhmmss.json`)
+  is generated in the current directory.
+
+The output path is printed after the run completes. Ignored when `-t csv`.
+
 ### Output location (`-l`, `--log-location`)
 
 ```bash
@@ -294,7 +313,8 @@ omniprobe -i -a AddressLogger -- ./my_app
 omniprobe -i -a AddressLogger -l output.csv -- ./my_app
 ```
 
-Default is `console` (stdout).
+Default is `console` (stdout). Primarily used for CSV output. When `-t json`
+is active, prefer `-o` instead.
 
 ## Block index filtering
 
@@ -442,8 +462,8 @@ documented here for debugging and advanced use cases.
 ## Python API
 
 Omniprobe includes a Python API module for programmatic access to analysis
-results. The API invokes the CLI with `-t json` under the hood and parses
-the output into structured dataclasses.
+results. The API invokes the CLI with `-t json -o <tempfile>` under the hood,
+reads the JSON output file, and parses it into structured dataclasses.
 
 ### Quick example
 

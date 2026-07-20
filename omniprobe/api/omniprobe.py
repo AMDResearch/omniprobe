@@ -79,7 +79,7 @@ class Omniprobe:
         """
         raw = self._run(
             command,
-            analyzer="MemAnalysis",
+            analyzer="MemoryAnalysis",
             kernel_filter=kernel_filter,
             dispatches=dispatches,
         )
@@ -108,7 +108,7 @@ class Omniprobe:
         """
         raw = self._run(
             command,
-            analyzer="BasicBlocks",
+            analyzer="BasicBlockAnalysis",
             kernel_filter=kernel_filter,
             dispatches=dispatches,
         )
@@ -137,7 +137,7 @@ class Omniprobe:
                 "-a", analyzer,
                 "-i",
                 "-t", "json",
-                "-l", tmp_path,
+                "-o", tmp_path,
                 "-d", dispatches,
             ]
             if kernel_filter is not None:
@@ -154,13 +154,14 @@ class Omniprobe:
             if result.returncode != 0:
                 raise RuntimeError(
                     f"omniprobe exited with code {result.returncode}: "
-                    f"{result.stderr}"
+                    f"{result.stderr or result.stdout}"
                 )
 
             output_path = Path(tmp_path)
-            if not output_path.exists() or output_path.stat().st_size == 0:
-                return "[]"
-            return output_path.read_text()
+            if output_path.exists() and output_path.stat().st_size > 0:
+                return output_path.read_text()
+
+            return "[]"
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 

@@ -30,6 +30,7 @@ import shutil
 import glob
 import subprocess
 import logging
+from datetime import datetime
 from pathlib import Path
 from pyfiglet import figlet_format
 
@@ -37,15 +38,18 @@ sys.stdout.reconfigure(line_buffering=True)
 
 
 def finalize_json_output(location, handlers):
-    """Finalize JSON output by adding closing bracket if needed (MemoryAnalysis plugin only)"""
+    """Finalize JSON output by adding closing bracket if needed (MemoryAnalysis and BasicBlockAnalysis)"""
     if location == "console":
         return
-        
-    # Check if MemoryAnalysis plugin is being used
-    using_memory_analysis = any("libMemAnalysis64.so" in handler for handler in handlers)
-    if not using_memory_analysis:
+
+    # Check if any JSON-capable handler is being used
+    json_handlers = ("libMemAnalysis64.so", "libBasicBlocks64.so")
+    using_json_handler = any(
+        any(h in handler for h in json_handlers) for handler in handlers
+    )
+    if not using_json_handler:
         return
-        
+
     # Check if JSON format is being used
     if os.environ.get("LOGDUR_LOG_FORMAT") == "json":
         try:
@@ -311,6 +315,15 @@ def setup_env(parms):
             env_dump['LOGDUR_LOG_FORMAT'] = parms.log_format
 
             
+    # When -t json is active and no explicit -l was provided, derive log_location
+    # from -o/--output (or auto-generate a timestamped filename).
+    if parms.log_format == "json" and parms.log_location == "console":
+        if parms.output_file:
+            parms.log_location = parms.output_file
+        else:
+            ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+            parms.log_location = f"results_{ts}.json"
+
     if len(parms.log_location):
         if parms.log_location != "console":
             if os.path.isdir(parms.log_location):
@@ -627,10 +640,25 @@ def add_general_group(parser):
              "\texcess_cache_lines, and bank_conflicts.\n"
              "\tBasicBlockAnalysis JSON: per-block objects with basic_block_id, source_file,\n"
              "\tline, timing percentiles (p25-p99), min/max cycles, and wave_count.\n"
-             "\tUse with -l to write to a file for programmatic consumption.\n"
+             "\tUse with -o to specify an output file, or a timestamped file is\n"
+             "\tgenerated automatically. Use -l for CSV output location.\n"
              "\tSee also: omniprobe.api Python module for programmatic access."
     )
 
+
+    general_group.add_argument (
+        "-o",
+        "--output",
+        type=str,
+        metavar="FILE",
+        dest="output_file",
+        required=False,
+        default="",
+        help="\tOutput file for JSON results. Only used when -t json is active.\n"
+             "\tIf -t json is used without -o, a timestamped file\n"
+             "\t(results_yyyy-mm-dd_hhmmss.json) is generated automatically.\n"
+             "\tIgnored when -t csv."
+    )
 
     general_group.add_argument (
         "-l",
@@ -796,6 +824,9 @@ def main():
         # Finalize JSON output if needed
         log_location = parms.log_location if parms.log_location else "console"
         finalize_json_output(log_location, parms.handlers)
+        if log_location != "console" and os.environ.get("LOGDUR_LOG_FORMAT") == "json":
+            if os.path.exists(log_location) and os.path.getsize(log_location) > 0:
+                print(f"\nJSON results written to: {log_location}")
     elif parms.dump_env == True:
         setup_env(parms)
 

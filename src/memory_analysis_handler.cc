@@ -918,6 +918,12 @@ void memory_analysis_handler_t::report_json() {
 
   // Write to the log file
   *log_file_ << json_output.str();
+
+  if (location_ != "console")
+  {
+      delete log_file_;
+      log_file_ = nullptr;
+  }
 }
 
 } // namespace dh_comms
