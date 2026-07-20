@@ -4,15 +4,15 @@
 
 ## Current Status
 
-Promoted to active. Readiness check passed (11/11). Ready to begin execution.
+All acceptance criteria implemented and verified. Ready for user review and merge.
 
 ## Last Verified
 
-N/A — no work executed yet.
+2026-07-20: Build clean, 35/35 C++ tests pass. 10/10 Python API unit tests pass.
 
 ## Next Exact Step
 
-Create a feature branch and begin with Plan of Record step 1 (audit current JSON output).
+User review of the feature branch `ft/omniprobe-python-api`. If approved, merge to main via `/workflow-complete`.
 
 ## Active Risks / Blockers
 
