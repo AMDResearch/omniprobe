@@ -86,6 +86,17 @@ Use append-only entries with:
 | AC-6 | Met | `FileNotFoundError`, `RuntimeError`, `ValueError` raised per spec; tested |
 | AC-7 | Met | 10 unit tests covering both handlers' JSON parsing and error cases |
 
+### 2026-07-20 19:30
+
+- **Actor**: claude (omniprobe session)
+- **Planned step**: Document new features in user docs, agent docs, and CLI help
+- **Action taken**: Updated 7 files: `docs/usage.md` (JSON schema reference, Python API section with example/reference/error table), `README.md` (Python API section, project structure), `omniprobe/omniprobe` (-t help text expanded with schema descriptions and API reference), `.agents/pm/units/memory-analysis.md` (JSON schema), `.agents/pm/units/omniprobe-cli.md` (Python API files, JSON schema section, corrected flag names), `.agents/pm/pm-current-state.md` (active work areas, changed assumptions), `.agents/pm/pm-index.md` (updated CLI unit scope).
+- **Result**: success — commit 798d3bf
+- **Files touched**: docs/usage.md, README.md, omniprobe/omniprobe, .agents/pm/units/memory-analysis.md, .agents/pm/units/omniprobe-cli.md, .agents/pm/pm-current-state.md, .agents/pm/pm-index.md
+- **Verification**: `omniprobe -h` shows expanded -t help. All tests pass.
+- **Criteria impact**: Documentation gap closed. All ACs remain met.
+- **Blocker / Risk**: None
+
 **Audit findings — PoR Step 1:**
 
 **MemoryAnalysis (`memory_analysis_handler.cc`):**
