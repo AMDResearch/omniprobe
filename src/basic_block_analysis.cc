@@ -299,15 +299,17 @@ bool basic_block_analysis::handle(const dh_comms::message_t &message)
                 if (wsit != wave_states_.end())
                 {
                     biit = block_info_.find(wsit->second.current_block_);
+                    double sample_duration = static_cast<double>(hdr.timestamp - wsit->second.start_time_);
                     if (biit != block_info_.end())
                     {
                         biit->second.count_+= wsit->second.count_;
                         biit->second.thread_count_ += countSetBits(hdr.exec);
                         biit->second.duration_ += hdr.timestamp - wsit->second.start_time_;
+                        biit->second.duration_samples_.push_back(sample_duration);
                     }
                     else
                     {
-                        block_info_[wsit->second.current_block_] = {countSetBits(hdr.exec), 1, hdr.timestamp - wsit->second.start_time_};
+                        block_info_[wsit->second.current_block_] = {countSetBits(hdr.exec), 1, hdr.timestamp - wsit->second.start_time_, 0, {sample_duration}};
                     }
 
                     if (instructions[instructions.size() - 1].inst_ == "s_endpgm")
@@ -351,14 +353,12 @@ void basic_block_analysis::report()
         return;
     }
 
-    bool bFormatCsv = true;
     const char* logDurLogFormat= std::getenv("LOGDUR_LOG_FORMAT");
-    if (logDurLogFormat)
-    {
-        std::string strFormat = logDurLogFormat;
-        if (strFormat == "json")
-            bFormatCsv = false;
+    if (logDurLogFormat && std::string(logDurLogFormat) == "json") {
+        report_json();
+        return;
     }
+
     std::map<std::string, uint64_t> inst_counts;
     bool first_time = false, initialized = true;
     setupLogger();
@@ -376,29 +376,18 @@ void basic_block_analysis::report()
         thread_exec_count += it->second.thread_count_;
         it++;
     }
-    std::map<std::string, std::string> strings;
-    std::map<std::string, uint64_t> bigints;
-    std::map<std::string, double> doubles;
 
-    strings["Kernel"] = strKernel_;
-    bigints["Dispatch"] = dispatch_id_;
-    doubles["Branchiness"] = 1.0 - ( (double) ((double)thread_exec_count / ((double)block_exec_count * 64.0)));
-    if (bFormatCsv)
-    {
-        *log_file_ << "Kernel: " << strKernel_ << std::endl;
-        *log_file_ << "Dispatch: " << dispatch_id_ << std::endl;
-        *log_file_ << "Branchiness: " << 1.0 - ( (double) ((double)thread_exec_count / ((double)block_exec_count * 64.0))) << std::endl;
-        *log_file_  << "Start Line, End Line, Duration, FileName, Branchiness, Overhead, Count\n";
-    }
+    *log_file_ << "Kernel: " << strKernel_ << std::endl;
+    *log_file_ << "Dispatch: " << dispatch_id_ << std::endl;
+    *log_file_ << "Branchiness: " << 1.0 - ( (double) ((double)thread_exec_count / ((double)block_exec_count * 64.0))) << std::endl;
+    *log_file_  << "Start Line, End Line, Duration, FileName, Branchiness, Overhead, Count\n";
+
     it = block_info_.begin();
     while (it != block_info_.end())
     {
-        std::vector<std::string> isa, files;
         auto instructions = it->first->getInstructions();
         for (auto inst : instructions)
         {
-            isa.push_back(inst.disassembly_);
-            files.push_back(kdb_p_->getFileName(kernel_name_, inst.path_id_));
             auto ic = inst_counts.find(inst.inst_);
             if (ic != inst_counts.end())
             {
@@ -415,48 +404,13 @@ void basic_block_analysis::report()
                     inst_counts[inst.inst_] = it->second.count_;
             }
         }
-        std::vector<std::pair<std::string, uint64_t>> inst_results(inst_counts.begin(), inst_counts.end());
-        std::sort(inst_results.begin(), inst_results.end(), [](const auto& a, const auto& b) {
-            return b.second < a.second;});
 
-        std::stringstream ss;
         try
         {
-            ss << "{";
-            strings.clear();
-            bigints.clear();
-            doubles.clear();
-            strings["kernel"] = strKernel_;
-            bigints["dispatch_id"] = dispatch_id_;
-            doubles["kernel_branchiness"] = 1.0 - ( (double) ((double)thread_exec_count / ((double)block_exec_count * 64.0)));
-            bigints["block_start_line"] = instructions[0].line_;
-            bigints["block_end_line"] = instructions[instructions.size() - 1].line_;
-            bigints["block_duration"] = it->second.duration_;
-            strings["kernel_file_name"] = kdb_p_->getFileName(kernel_name_, instructions[0].path_id_);
-            doubles["block_branchiness"] = 1.0 - ((double) ((double)it->second.thread_count_  / ((double) it->second.count_ * 64.0)));
-            doubles["block_overhead"] = (double)((double) it->second.duration_ / (double) duration);
-            doubles["block_count"] = it->second.count_;
-            if (bFormatCsv)
-            {
-                *log_file_ << instructions[0].line_ << "," << instructions[instructions.size() - 1].line_ << "," << it->second.duration_ << "," <<
-                    kdb_p_->getFileName(kernel_name_, instructions[0].path_id_) << "," <<  1.0 - ((double) ((double)it->second.thread_count_  / ((double) it->second.count_ * 64.0))) << "," <<
-                        (double)((double) it->second.duration_ / (double) duration)
-                            << "," << it->second.count_ << std::endl;
-            }
-            else
-            {
-                renderJSON(strings, ss, false);
-                renderJSON(bigints, ss, false);
-                renderJSON(doubles, ss, false);
-                ss << "\"instructions\": {";
-                renderJSON(inst_results, ss, true, false);
-                ss << "}";
-                ss << "}\n";
-                *log_file_ << ss.str();
-            }
-            ss.str("");
-            ss.clear();
-
+            *log_file_ << instructions[0].line_ << "," << instructions[instructions.size() - 1].line_ << "," << it->second.duration_ << "," <<
+                kdb_p_->getFileName(kernel_name_, instructions[0].path_id_) << "," <<  1.0 - ((double) ((double)it->second.thread_count_  / ((double) it->second.count_ * 64.0))) << "," <<
+                    (double)((double) it->second.duration_ / (double) duration)
+                        << "," << it->second.count_ << std::endl;
         }
         catch (const std::exception& e)
         {
@@ -465,6 +419,111 @@ void basic_block_analysis::report()
 
         it++;
     }
+    if (location_ != "console")
+    {
+        delete log_file_;
+        log_file_ = nullptr;
+    }
+}
+
+// Escape a string for use as a JSON string value.
+static std::string bb_json_escape(const std::string &s) {
+  std::string out;
+  out.reserve(s.size() + 8);
+  for (char c : s) {
+    switch (c) {
+    case '"':  out += "\\\""; break;
+    case '\\': out += "\\\\"; break;
+    case '\b': out += "\\b";  break;
+    case '\f': out += "\\f";  break;
+    case '\n': out += "\\n";  break;
+    case '\r': out += "\\r";  break;
+    case '\t': out += "\\t";  break;
+    default:
+      if (static_cast<unsigned char>(c) < 0x20) {
+        char buf[8];
+        snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned char>(c));
+        out += buf;
+      } else {
+        out += c;
+      }
+    }
+  }
+  return out;
+}
+
+void basic_block_analysis::report_json()
+{
+    setupLogger();
+    std::stringstream json_output;
+
+    json_output << "{\n";
+    json_output << "  \"kernel\": \"" << bb_json_escape(strKernel_) << "\",\n";
+    json_output << "  \"dispatch_id\": " << dispatch_id_ << ",\n";
+    json_output << "  \"basic_blocks\": [\n";
+
+    bool first_block = true;
+    uint32_t block_index = 0;
+
+    for (auto &bi : block_info_) {
+        auto instructions = bi.first->getInstructions();
+        if (instructions.empty())
+            continue;
+
+        if (!first_block) {
+            json_output << ",\n";
+        }
+        first_block = false;
+
+        std::string source_file;
+        try {
+            source_file = kdb_p_->getFileName(kernel_name_, instructions[0].path_id_);
+        } catch (...) {
+            source_file = "<unknown>";
+        }
+
+        // Calculate percentiles from duration_samples_
+        double min_cycles = 0, max_cycles = 0;
+        double p25 = 0, p50 = 0, p75 = 0, p95 = 0, p99 = 0;
+        if (!bi.second.duration_samples_.empty()) {
+            std::vector<double> samples = bi.second.duration_samples_;
+            std::sort(samples.begin(), samples.end());
+            min_cycles = samples.front();
+            max_cycles = samples.back();
+            p25 = calculatePercentile(samples, 0.25);
+            p50 = calculatePercentile(samples, 0.50);
+            p75 = calculatePercentile(samples, 0.75);
+            p95 = calculatePercentile(samples, 0.95);
+            p99 = calculatePercentile(samples, 0.99);
+        } else if (bi.second.count_ > 0) {
+            // Fallback: use average if no samples were collected
+            double avg = static_cast<double>(bi.second.duration_) / bi.second.count_;
+            min_cycles = max_cycles = p25 = p50 = p75 = p95 = p99 = avg;
+        }
+
+        json_output << "    {\n";
+        json_output << "      \"basic_block_id\": " << block_index << ",\n";
+        json_output << "      \"source_file\": \"" << bb_json_escape(source_file) << "\",\n";
+        json_output << "      \"line\": " << instructions[0].line_ << ",\n";
+        json_output << "      \"end_line\": " << instructions[instructions.size() - 1].line_ << ",\n";
+        json_output << "      \"min_cycles\": " << std::fixed << std::setprecision(1) << min_cycles << ",\n";
+        json_output << "      \"max_cycles\": " << max_cycles << ",\n";
+        json_output << "      \"p25\": " << p25 << ",\n";
+        json_output << "      \"p50\": " << p50 << ",\n";
+        json_output << "      \"p75\": " << p75 << ",\n";
+        json_output << "      \"p95\": " << p95 << ",\n";
+        json_output << "      \"p99\": " << p99 << ",\n";
+        json_output << "      \"wave_count\": " << bi.second.count_ << "\n";
+        json_output << "    }";
+
+        block_index++;
+    }
+
+    json_output << "\n  ]\n";
+    json_output << "}\n";
+
+    *log_file_ << json_output.str();
+
     if (location_ != "console")
     {
         delete log_file_;

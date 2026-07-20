@@ -25,6 +25,7 @@ THE SOFTWARE.
 #include "message_handlers.h"
 #include "inc/kdb_message_handler_base.h"
 #include <set>
+#include <vector>
 #include <atomic>
 
 typedef struct {
@@ -32,6 +33,7 @@ typedef struct {
     uint64_t count_;
     uint64_t duration_;
     uint32_t dwarf_line_;
+    std::vector<double> duration_samples_;
 }blockInfo_t;
 
 typedef struct {
@@ -128,6 +130,7 @@ public:
     void updateComputeResources(dh_comms::wave_header_t& hdr);
     void printComputeResources(std::ostream& out, const std::string& format);
     void renderComputeResources(std::ostream& out, const std::string& format);
+    void report_json();
 private:
     uint64_t first_start_;
     uint64_t last_stop_;

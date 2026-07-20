@@ -756,6 +756,33 @@ std::string getCodeContext(const std::string &fname, uint16_t line) {
   return processed_line.substr(start, end - start + 1);
 }
 
+// Escape a string for use as a JSON string value.
+// Handles backslash, double-quote, and control characters.
+static std::string json_escape(const std::string &s) {
+  std::string out;
+  out.reserve(s.size() + 8);
+  for (char c : s) {
+    switch (c) {
+    case '"':  out += "\\\""; break;
+    case '\\': out += "\\\\"; break;
+    case '\b': out += "\\b";  break;
+    case '\f': out += "\\f";  break;
+    case '\n': out += "\\n";  break;
+    case '\r': out += "\\r";  break;
+    case '\t': out += "\\t";  break;
+    default:
+      if (static_cast<unsigned char>(c) < 0x20) {
+        char buf[8];
+        snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned char>(c));
+        out += buf;
+      } else {
+        out += c;
+      }
+    }
+  }
+  return out;
+}
+
 void memory_analysis_handler_t::report_json() {
   std::stringstream json_output;
 
@@ -776,91 +803,75 @@ void memory_analysis_handler_t::report_json() {
   }
 
   json_output << "{\n";
-  json_output << "  \"kernel_analysis\": {\n";
+  json_output << "  \"kernel\": \"" << json_escape(kernel_) << "\",\n";
+  json_output << "  \"dispatch_id\": " << dispatch_id_ << ",\n";
 
-  // Kernel info section
-  json_output << "    \"kernel_info\": {\n";
-  json_output << "      \"name\": \"" << kernel_ << "\",\n";
-  json_output << "      \"dispatch_id\": " << dispatch_id_ << "\n";
-  json_output << "    },\n";
+  // Flat accesses array combining cache line and bank conflict data per source location
+  json_output << "  \"accesses\": [\n";
 
-  // Cache analysis section
-  json_output << "    \"cache_analysis\": {\n";
-  json_output << "      \"accesses\": [\n";
+  bool first_access = true;
 
-  bool first_cache_access = true;
+  // Emit global memory accesses (cache line analysis)
   for (const auto &[fname, line_col] : global_accesses) {
     for (const auto &[line, col_accesses] : line_col) {
       for (const auto &[col, accesses] : col_accesses) {
         for (const auto &access : accesses) {
-          if (!first_cache_access) {
+          if (!first_access) {
             json_output << ",\n";
           }
-          first_cache_access = false;
+          first_access = false;
 
-          json_output << "        {\n";
-          json_output << "          \"source_location\": {\n";
-          json_output << "            \"file\": \"" << fname << "\",\n";
-          json_output << "            \"line\": " << line << ",\n";
-          json_output << "            \"column\": " << col << "\n";
-          json_output << "          },\n";
-          json_output << "          \"code_context\": \"" << getCodeContext(fname, line) << "\",\n";
-          json_output << "          \"access_info\": {\n";
-          json_output << "            \"type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
-          json_output << "            \"execution_count\": " << access.no_accesses << ",\n";
-          json_output << "            \"ir_bytes\": " << access.ir_access_size << ",\n";
-          json_output << "            \"isa_bytes\": " << access.isa_access_size << ",\n";
-          json_output << "            \"isa_instruction\": \"" << access.isa_instruction << "\",\n";
-          json_output << "            \"cache_lines\": {\n";
-          json_output << "              \"needed\": " << access.min_cache_lines_needed << ",\n";
-          json_output << "              \"used\": " << access.no_cache_lines_used << "\n";
-          json_output << "            }\n";
-          json_output << "          }\n";
-          json_output << "        }";
+          size_t excess = (access.no_cache_lines_used > access.min_cache_lines_needed)
+                              ? (access.no_cache_lines_used - access.min_cache_lines_needed)
+                              : 0;
+
+          json_output << "    {\n";
+          json_output << "      \"source_file\": \"" << json_escape(fname) << "\",\n";
+          json_output << "      \"line\": " << line << ",\n";
+          json_output << "      \"column\": " << col << ",\n";
+          json_output << "      \"memory_space\": \"global\",\n";
+          json_output << "      \"access_type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
+          json_output << "      \"execution_count\": " << access.no_accesses << ",\n";
+          json_output << "      \"ir_bytes\": " << access.ir_access_size << ",\n";
+          json_output << "      \"isa_bytes\": " << access.isa_access_size << ",\n";
+          json_output << "      \"isa_instruction\": \"" << json_escape(access.isa_instruction) << "\",\n";
+          json_output << "      \"cache_lines_needed\": " << access.min_cache_lines_needed << ",\n";
+          json_output << "      \"cache_lines_used\": " << access.no_cache_lines_used << ",\n";
+          json_output << "      \"excess_cache_lines\": " << excess << ",\n";
+          json_output << "      \"bank_conflicts\": 0\n";
+          json_output << "    }";
         }
       }
     }
   }
 
-  json_output << "\n      ]\n";
-  json_output << "    },\n";
-
-  // Bank conflicts section
-  json_output << "    \"bank_conflicts\": {\n";
-  json_output << "      \"accesses\": [\n";
-
-  bool first_bank_access = true;
+  // Emit LDS accesses (bank conflict analysis)
   for (const auto &[fname, line_col] : lds_accesses) {
     for (const auto &[line, col_accesses] : line_col) {
       for (const auto &[col, accesses] : col_accesses) {
         for (const auto &access : accesses) {
-          if (!first_bank_access) {
+          if (!first_access) {
             json_output << ",\n";
           }
-          first_bank_access = false;
+          first_access = false;
 
-          json_output << "        {\n";
-          json_output << "          \"source_location\": {\n";
-          json_output << "            \"file\": \"" << fname << "\",\n";
-          json_output << "            \"line\": " << line << ",\n";
-          json_output << "            \"column\": " << col << "\n";
-          json_output << "          },\n";
-          json_output << "          \"code_context\": \"" << getCodeContext(fname, line) << "\",\n";
-          json_output << "          \"access_info\": {\n";
-          json_output << "            \"type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
-          json_output << "            \"execution_count\": " << access.no_accesses << ",\n";
-          json_output << "            \"ir_bytes\": " << access.ir_access_size << ",\n";
-          json_output << "            \"total_conflicts\": " << access.no_bank_conflicts << "\n";
-          json_output << "          }\n";
-          json_output << "        }";
+          json_output << "    {\n";
+          json_output << "      \"source_file\": \"" << json_escape(fname) << "\",\n";
+          json_output << "      \"line\": " << line << ",\n";
+          json_output << "      \"column\": " << col << ",\n";
+          json_output << "      \"memory_space\": \"lds\",\n";
+          json_output << "      \"access_type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
+          json_output << "      \"execution_count\": " << access.no_accesses << ",\n";
+          json_output << "      \"ir_bytes\": " << access.ir_access_size << ",\n";
+          json_output << "      \"excess_cache_lines\": 0,\n";
+          json_output << "      \"bank_conflicts\": " << access.no_bank_conflicts << "\n";
+          json_output << "    }";
         }
       }
     }
   }
 
-  json_output << "\n      ]\n";
-  json_output << "    }\n";
-  json_output << "  },\n";
+  json_output << "\n  ],\n";
 
   // Metadata section
   json_output << "  \"metadata\": {\n";
