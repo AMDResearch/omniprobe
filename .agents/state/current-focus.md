@@ -21,10 +21,11 @@
 
 ## Project-Level Risks
 
-- Library filter chain test 2 hangs; rocBLAS integration test broken.
+- rocBLAS integration test broken (instrumented sscal not found in current build).
 
 ## Recent Decisions
 
+- Completed ft_omniprobe-python-api (2026-07-20): Python API at `omniprobe/api/`, structured JSON schemas for MemoryAnalysis and BasicBlockAnalysis. Enables IntelliKit integration.
 - Completed rf_triton-v3.7-bump (2026-07-13): Triton bumped v3.6.0 → v3.7.1, all tests pass.
 - PM restructured (2026-04-27): merged plugins+comms-mgr → handler-pipeline; created build-system unit.
 - PM units re-verified against source code (2026-04-27); all 10 units current.

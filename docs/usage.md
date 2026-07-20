@@ -201,7 +201,88 @@ omniprobe -i -a AddressLogger -t json -- ./my_app
 | Format | Description |
 |--------|-------------|
 | `csv` | Comma-separated values (default) |
-| `json` | JSON format |
+| `json` | Structured JSON (see schemas below) |
+
+#### MemoryAnalysis JSON schema
+
+When using `-a MemoryAnalysis -t json`, each dispatch produces an object with
+a flat `accesses` array. Multiple dispatches are wrapped in a JSON array.
+
+```json
+{
+  "kernel": "my_kernel",
+  "dispatch_id": 1,
+  "accesses": [
+    {
+      "source_file": "/path/to/source.hip",
+      "line": 42,
+      "column": 5,
+      "memory_space": "global",
+      "access_type": "read",
+      "execution_count": 1024,
+      "ir_bytes": 4,
+      "isa_bytes": 16,
+      "isa_instruction": "global_load_dwordx4",
+      "cache_lines_needed": 2,
+      "cache_lines_used": 5,
+      "excess_cache_lines": 3,
+      "bank_conflicts": 0
+    }
+  ],
+  "metadata": {
+    "version": "...",
+    "timestamp": "...",
+    "gpu_info": { "architecture": "gfx90a", "cache_line_size": 128 }
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `source_file` | Source file path from DWARF info |
+| `line`, `column` | Source location |
+| `memory_space` | `"global"` or `"lds"` |
+| `access_type` | `"read"`, `"write"`, or `"read/write"` |
+| `execution_count` | Number of times this access was observed |
+| `excess_cache_lines` | Extra L2 cache lines fetched beyond the minimum needed (global only) |
+| `bank_conflicts` | Total LDS bank conflicts observed (LDS only) |
+
+#### BasicBlockAnalysis JSON schema
+
+When using `-a BasicBlockAnalysis -t json`, each dispatch produces an object
+with a `basic_blocks` array.
+
+```json
+{
+  "kernel": "my_kernel",
+  "dispatch_id": 1,
+  "basic_blocks": [
+    {
+      "basic_block_id": 0,
+      "source_file": "/path/to/source.hip",
+      "line": 10,
+      "end_line": 25,
+      "min_cycles": 100.0,
+      "max_cycles": 500.0,
+      "p25": 150.0,
+      "p50": 200.0,
+      "p75": 300.0,
+      "p95": 450.0,
+      "p99": 490.0,
+      "wave_count": 64
+    }
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `basic_block_id` | Sequential index of the basic block within the kernel |
+| `source_file` | Source file from DWARF info |
+| `line`, `end_line` | Start and end lines of the basic block |
+| `min_cycles`, `max_cycles` | Fastest and slowest observed execution of this block |
+| `p25`–`p99` | Timing percentiles across all wave observations |
+| `wave_count` | Number of wave executions of this block |
 
 ### Output location (`-l`, `--log-location`)
 
@@ -357,3 +438,60 @@ documented here for debugging and advanced use cases.
 | `DH_COMMS_GROUP_FILTER_Z` | `--filter-z` | Block index filter for Z dimension |
 | `INSTRUMENTATION_SCOPE` | `--instrumentation-scope` | Compile-time scope filter (Triton) |
 | `INSTRUMENTATION_SCOPE_FILE` | `--instrumentation-scope-file` | Scope filter file (Triton) |
+
+## Python API
+
+Omniprobe includes a Python API module for programmatic access to analysis
+results. The API invokes the CLI with `-t json` under the hood and parses
+the output into structured dataclasses.
+
+### Quick example
+
+```python
+from omniprobe.api import Omniprobe
+
+op = Omniprobe()  # finds omniprobe on PATH
+
+# Memory analysis
+result = op.analyze_memory("./my_hip_app", kernel_filter="matmul")
+for kernel in result.kernels:
+    for access in kernel.accesses:
+        if access.excess_cache_lines > 0:
+            print(f"{access.source_file}:{access.line} — "
+                  f"{access.excess_cache_lines} excess cache lines")
+
+# Basic block analysis
+bb_result = op.analyze_basic_blocks("./my_hip_app")
+for kernel in bb_result.kernels:
+    for bb in kernel.basic_blocks:
+        print(f"BB {bb.bb_id}: p50={bb.p50:.0f} cycles, "
+              f"wave_count={bb.wave_count}")
+```
+
+### API reference
+
+**`Omniprobe(omniprobe_path=None)`** — Constructor. Pass an explicit path or
+let it search `PATH`. Raises `FileNotFoundError` if not found.
+
+**`analyze_memory(command, kernel_filter=None, dispatches="all")`** — Returns
+a `MemoryAnalysisResult` with per-kernel `accesses` containing `source_file`,
+`line`, `column`, `excess_cache_lines`, and `bank_conflicts`.
+
+**`analyze_basic_blocks(command, kernel_filter=None, dispatches="all")`** —
+Returns a `BasicBlockResult` with per-kernel `basic_blocks` containing
+`bb_id`, `source_file`, `line`, timing percentiles (`p25`–`p99`),
+`min_cycles`, `max_cycles`, and `wave_count`.
+
+### Error handling
+
+| Exception | Condition |
+|-----------|-----------|
+| `FileNotFoundError` | `omniprobe` binary not found |
+| `RuntimeError` | Non-zero exit code (includes stderr) |
+| `ValueError` | Malformed JSON output |
+
+### Module location
+
+The API lives at `omniprobe/api/` in the source tree. It is importable as
+`omniprobe.api` when the `omniprobe/` directory is on `PYTHONPATH` or when
+running from the Omniprobe install tree.

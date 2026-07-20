@@ -11,10 +11,16 @@ Python script that orchestrates running instrumented applications. Sets up envir
 | `omniprobe/omniprobe` | Main Python orchestrator script |
 | `omniprobe/config/analytics.py` | Analyzer configuration (handler + plugin mapping) |
 | `omniprobe/config/triton_config.py` | Triton-specific configuration |
+| `omniprobe/api/__init__.py` | Python API public exports |
+| `omniprobe/api/omniprobe.py` | `Omniprobe` class — programmatic API for running analyses |
+| `omniprobe/api/results.py` | Result dataclasses (`MemoryAnalysisResult`, `BasicBlockResult`, etc.) |
 
 ## Key Types and Classes
 
-N/A — Python script, no classes.
+- **`Omniprobe`** (`omniprobe/api/omniprobe.py`) — Drives the CLI with `-t json` and parses output. Methods: `analyze_memory()`, `analyze_basic_blocks()`.
+- **Result dataclasses** (`omniprobe/api/results.py`):
+  - `MemoryAnalysisResult` → `KernelMemoryResult` → `MemoryAccess`
+  - `BasicBlockResult` → `KernelBBResult` → `BasicBlock`
 
 ## Key Functions and Entry Points
 
@@ -33,8 +39,8 @@ N/A — script-level orchestration.
 |------|---------|
 | `-i` | Enable instrumented kernel dispatch |
 | `-a handler` | Select analysis handler |
-| `-o path` | Output location (file path or "console") |
-| `-f format` | Output format (csv, json) |
+| `-l path` | Output location (file path or "console") |
+| `-t format` | Output format (csv, json); JSON produces structured schemas |
 | `-c cache` | Triton cache location (triggers Triton mode) |
 | `--filter-x/y/z` | Filter messages by block index |
 | `--library-filter FILE` | JSON config for library include/exclude filtering |
@@ -58,6 +64,15 @@ N/A — script-level orchestration.
 ### Library Filter Config Format
 
 The `--library-filter FILE` flag accepts a JSON file that controls which HIP libraries are intercepted. The file specifies include and/or exclude lists of library paths. Only dispatches from matching libraries will be instrumented.
+
+## JSON Output Schemas
+
+When `-t json` is specified, handlers emit structured JSON suitable for machine parsing.
+
+- **MemoryAnalysis**: per-dispatch object with `kernel`, `dispatch_id`, flat `accesses` array. Each access has `source_file`, `line`, `column`, `excess_cache_lines`, `bank_conflicts`, `memory_space`, `access_type`.
+- **BasicBlockAnalysis**: per-dispatch object with `kernel`, `dispatch_id`, `basic_blocks` array. Each block has `basic_block_id`, `source_file`, `line`, timing percentiles (`p25`–`p99`), `min_cycles`, `max_cycles`, `wave_count`.
+
+The Python API (`omniprobe/api/`) wraps this: `Omniprobe.analyze_memory()` and `Omniprobe.analyze_basic_blocks()` return dataclasses that parse these schemas.
 
 ## Invariants
 
@@ -83,4 +98,4 @@ None.
 
 ## Last Verified
 
-- 2026-03-24
+- 2026-07-20 (updated for Python API, JSON schema docs, corrected flag names)
