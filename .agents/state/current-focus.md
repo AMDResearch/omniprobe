@@ -25,6 +25,7 @@
 
 ## Recent Decisions
 
+- L2 cache miss investigation: SQTT research completed (2026-07-28). See `.untracked/l2-cache-miss-investigation.md`.
 - Completed ft_omniprobe-python-api (2026-07-20): Python API at `omniprobe/api/`, structured JSON schemas for MemoryAnalysis and BasicBlockAnalysis. Enables IntelliKit integration.
 - Completed rf_triton-v3.7-bump (2026-07-13): Triton bumped v3.6.0 → v3.7.1, all tests pass.
 - PM restructured (2026-04-27): merged plugins+comms-mgr → handler-pipeline; created build-system unit.
@@ -34,3 +35,4 @@
 
 1. `.agents/state/current-focus.md`
 2. `.agents/state/active-workflows.md`
+3. `.untracked/l2-cache-miss-investigation.md` — if continuing SQTT/L2 work

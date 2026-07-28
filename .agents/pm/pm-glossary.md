@@ -56,6 +56,29 @@ Project-specific terms, abbreviations, and parameters. Updated by `pm-update`.
 | Sub-buffer | Partition of main message buffer for parallelism |
 | Atomic Flag | Synchronization between device writers and host reader |
 
+## GPU Memory Hierarchy
+
+| Term | Definition |
+|------|------------|
+| TCP | Texture Cache per-CU (L1 data cache), 32 KB per CU, write-through write-no-allocate |
+| TCA | Texture Cache Arbiter — per-SE arbiter routing CU requests to TCX crossbar |
+| TCX | Texture Cache Crossbar — connects all TCAs to all TCC channels within an XCC |
+| TCC | Texture Cache per-Channel (L2 cache) — 16 channels per XCC, 256 KB per channel, 4 MB total per XCC |
+| MTYPE | Memory Type — PTE-level cache policy (UC=uncacheable, NC=non-coherent, RW=read-write, CC=cached-coherent) |
+| MTYPE_UC | Uncacheable — traffic passes through TCC for routing but does NOT allocate cache lines |
+| SLC | System-Level Cache hint (gfx90a) — streaming eviction policy at L2, does NOT bypass L2 |
+
+## SQTT (SQ Thread Trace)
+
+| Term | Definition |
+|------|------------|
+| SQTT | SQ Thread Trace — hardware mechanism for tracing shader execution |
+| SQG | SQ Global — block inside SPI that collects SQTT tokens from all CUs in an SE, adds timestamps, writes 256-bit packets to memory |
+| s_ttracedata | Scalar instruction inserting M0 content as user data token into SQTT stream; executes as s_nop when tracing disabled |
+| ATT | Advanced Thread Tracing — public name for SQTT in rocprofv3/rocprofiler-sdk |
+| TCC_PERF_EN | SQTT_MODE bit controlling whether SQTT traffic counts in TCC performance counters (counter visibility only, not data path) |
+| aqlprofile | ROCm library generating PM4 command packets for SQTT/perf counter programming |
+
 ## Analysis
 
 | Term | Definition |
