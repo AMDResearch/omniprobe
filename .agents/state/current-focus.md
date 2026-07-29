@@ -25,7 +25,7 @@
 
 ## Recent Decisions
 
-- L2 cache miss investigation: SQTT research completed (2026-07-28). See `.untracked/l2-cache-miss-investigation.md`.
+- L2 cache miss investigation (2026-07-29): memory-system deep-dive continued. Confirmed MI300X L2 is per-XCD (not per-SE); documented `SC[1:0]` scope model + MTYPE bypass levers; found latent dh_comms `0x4` alloc-flag typo (benign); built + ran standalone host-pinned coherence test (`.untracked/coherence-test/`, all flags pass mid-kernel handshake on MI350X/gfx950). SQTT research completed (2026-07-28). See `.untracked/l2-cache-miss-investigation.md` and `.untracked/amd_gpu_memory_system.md`.
 - Completed ft_omniprobe-python-api (2026-07-20): Python API at `omniprobe/api/`, structured JSON schemas for MemoryAnalysis and BasicBlockAnalysis. Enables IntelliKit integration.
 - Completed rf_triton-v3.7-bump (2026-07-13): Triton bumped v3.6.0 → v3.7.1, all tests pass.
 - PM restructured (2026-04-27): merged plugins+comms-mgr → handler-pipeline; created build-system unit.
@@ -36,3 +36,4 @@
 1. `.agents/state/current-focus.md`
 2. `.agents/state/active-workflows.md`
 3. `.untracked/l2-cache-miss-investigation.md` — if continuing SQTT/L2 work
+4. `.untracked/amd_gpu_memory_system.md` — memory hierarchy, scope/MTYPE model, Part 4 atomics/coherence placeholder

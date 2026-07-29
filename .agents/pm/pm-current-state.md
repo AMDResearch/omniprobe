@@ -42,6 +42,14 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
   `kernel_analysis.cache_analysis` structure replaced. Python API at `omniprobe/api/`
   provides programmatic access via `Omniprobe.analyze_memory()` and
   `Omniprobe.analyze_basic_blocks()`.
+- L2 cache-miss investigation (research, docs in `.untracked/`, 2026-07-29): MI300X L2 is
+  per-XCD not per-SE; ISA `SC[1:0]` scope model governs all vector memory ops; MTYPE_UC
+  (`hipHostMallocUncached` / `hipDeviceMallocUncached`) and system-scope both bypass device
+  L2 — candidate mitigations for dh_comms L2 pollution. Found latent `0x4` alloc-flag typo in
+  `dh_comms.cpp` (benign, see `sub-dh-comms` Known Issues). Standalone host-pinned coherence
+  test at `.untracked/coherence-test/` (build to `/tmp`, run there — repo mount is FUSE, no
+  mmap). Not yet a workflow; deep atomics/coherence chapter is a placeholder in
+  `amd_gpu_memory_system.md`.
 
 ## Recommended Read Order
 

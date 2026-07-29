@@ -56,6 +56,20 @@ None (leaf submodule).
 - Sub-project KT at `external/dh_comms/.agents/kt/` may not be initialized yet. Do not assume it exists.
 - Use `git -C "$(git rev-parse --show-toplevel)/external/dh_comms"` for git operations in the submodule. Do not `cd` into the submodule directory and run `git` directly.
 
+## Known Issues
+
+- **Host-pinned alloc flag typo (`dh_comms.cpp:39`, latent):** the file hand-defines
+  `static constexpr unsigned int hipHostMallocCoherent = 0x4;`, but in ROCm 7.2 `0x4` is
+  actually `hipHostMallocWriteCombined` (real `hipHostMallocCoherent` = `0x40000000`).
+  Introduced by commit `0c8a3635` (2026-06-01, dlsym refactor) when the `<hip/hip_runtime.h>`
+  include was dropped and the constant re-transcribed by value. `0x4` (WriteCombined) is
+  non-functional on AMD, so it silently falls back to a default pinned allocation. Confirmed
+  **benign on MI350X/gfx950, ROCm 7.2** (2026-07-29): mid-kernel device↔host handshakes pass
+  identically for `0x4`, `0x40000000`, and `0x0` (standalone test at
+  `.untracked/coherence-test/`). Fix: set the value to `0x40000000`, or switch `calloc()` to
+  `hipHostMallocUncached` (`0x10000000`, MTYPE_UC) to also avoid L2 pollution. See
+  `.untracked/l2-cache-miss-investigation.md` and `.untracked/amd_gpu_memory_system.md`.
+
 ## Open Questions
 
 None.
