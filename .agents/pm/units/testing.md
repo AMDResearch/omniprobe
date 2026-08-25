@@ -61,4 +61,10 @@ GoogleTest are planned but disabled.
 
 ## Last Verified
 
-2026-04-27 (removed transient bug/workflow references per pm-reflect)
+- 2026-04-27 (removed transient bug/workflow references per pm-reflect)
+- 2026-08-25 — the 25-test claim in Current Truth re-counted against the scripts and **held
+  exactly**: basic 6, block_filter 6, library_filter 3, scope_filter 7, module_load 3. Counted from
+  each suite's own runner, which differs per file (`run_test`, `run_filter_test`,
+  `run_library_filter_test`, `run_scope_test`, and inline `TEST_NAME=` blocks in `module_load`
+  with no runner function at all). **A single grep idiom undercounts this suite** — three
+  successive attempts reported 6, then 22, before the fourth was right.
