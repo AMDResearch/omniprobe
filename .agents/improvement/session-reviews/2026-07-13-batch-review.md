@@ -30,5 +30,9 @@ state.
 ## Action Taken
 
 - [x] Added to failure-modes.md as FM-4
+      <!-- 2026-08-25: that entry is now FM-L1. The line above is left as written because it
+           records what this session did; FM-4 was correct on 2026-07-13 and is not correct now.
+           The framework's own FM-4 is a different failure mode entirely. -->
+
 - [ ] Drafted local proposal (if actionable) — not warranted; the friction is environmental (cluster-specific), not a process gap the agent system can prevent
 - [ ] No action needed (pattern is known and already mitigated)
