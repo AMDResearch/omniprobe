@@ -26,11 +26,11 @@
     "code",
     "design"
   ],
-  "plugins": [
-    "../amd-agent-infra"
-  ],
   "supports": {
     "claude": true,
     "codex": true
-  }
+  },
+  "plugins": [
+    "../amd-agent-infra"
+  ]
 }
