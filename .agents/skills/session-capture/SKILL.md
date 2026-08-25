@@ -34,6 +34,8 @@ Create a normalized session capture file when raw transcripts are not available 
    - Date and approximate time range.
    - Agent identifier (e.g., `claude`, `codex`, or a custom name).
    - Associated workflow ID(s), or `none` if ad-hoc work.
+   - Mode: `standard` or `sidecar` (if `project.json` contains `"sidecar": true`, note
+     the target repo path and include the target repo's current git branch and HEAD commit).
 
    **Session Goal**
    - One or two sentences: what was this session trying to accomplish?
@@ -59,20 +61,80 @@ Create a normalized session capture file when raw transcripts are not available 
 4. **If a workflow was active**, ensure the workflow's `handoff.md` has also been updated before ending the session. The session capture supplements the handoff -- it does not replace it.
 5. **Run-log check.** If a workflow was active and `run-log.md` has no entries from this session, append a summary entry before completing the capture. The run-log should never be empty for a session that did meaningful work.
 6. **Check review cadence.** After writing the capture file:
-   a. Count the number of session capture files in `.untracked/session-captures/`.
-   b. Count the number of session review files in `.agents/improvement/session-reviews/`
-      (exclude `README.md`).
-   c. If (captures - reviews * 5) >= 5, append to the capture file:
+   a. Find the most recent session review file in `.agents/improvement/session-reviews/`
+      (exclude `README.md`). If there is none, every capture is unreviewed.
+   b. **List** the capture files in `.untracked/session-captures/` that are newer than that
+      review, then count the list. Call this N. Do not infer N from review *count* — a batch
+      review covers the whole backlog it found, not a fixed number of captures — and do not
+      arrive at N by adding one to a remembered figure. Both shortcuts have produced a
+      mis-stated N in a step whose own instruction is to derive it from timestamps.
+
+   c. **Count the declines.** Of those same captures, count how many already carry a review
+      recommendation footer. Call this D. This is the signal the plain count misses: a
+      recommendation declined several times over is evidence that it should fire *less often*
+      or be *harder to skip*, not that it should keep firing unchanged.
+
+      Counting footers rather than tracking consecutiveness is deliberate. "Three in a row"
+      breaks the moment a capture is written outside a normal session; "how many unreviewed
+      captures asked for a review" survives that and answers the same question.
+
+   d. **Check whether a packet is in flight.** If any directory exists under
+      `.agents/workflows/active/`, a workflow is mid-execution.
+
+      **Suppress the standing recommendation while one is**, unless the ceiling in (g) applies.
+      Stopping mid-packet to review process is disruptive and reviews an unfinished story; the
+      cheapest and most informative moment is the first close after `active/` empties. Emit the
+      deferred form instead:
+
+      ```
+      ---
+      **Review due on completion.** There are <N> unreviewed session captures, and
+      <workflow-id> is still in `active/`. A batch review is most useful once the packet
+      completes — it can then see the whole execution rather than a fragment. Run
+      `/session-review` at the first close after `active/` empties.
+      ```
+
+   e. If `active/` is empty and N >= 5, append the standing recommendation:
 
       ```
       ---
       **Review recommended.** There are <N> unreviewed session captures. Run `/session-review`
-      on the last 5 captures to extract improvement opportunities.
+      in batch mode to extract improvement opportunities. It covers all <N>, not just the
+      most recent five — five is only the threshold at which a review is worth running.
       ```
 
-   d. Also include this recommendation in the agent's response to the user:
-      "Note: <N> session captures have accumulated without review. Consider running
-      `/session-review` to extract process improvements."
+   f. **Escalate on repetition, not on an absolute count.** If D >= 3 — three or more
+      unreviewed captures already asked for a review and it has not happened — append this
+      instead of (e), naming the decline count. Compute the span from the oldest unreviewed
+      capture's date to today:
+
+      ```
+      ---
+      **Review overdue.** <N> session captures have gone unreviewed across <span> days, and
+      <D> of them already recommended a review. The recommendation has been declined <D>
+      times; repeating it unchanged is not the remedy. Cross-session patterns — the thing a
+      batch review exists to find — stay invisible until it runs. Run `/session-review` in
+      batch mode before starting new work this session.
+      ```
+
+      An absolute threshold is not used here because it does not measure what matters. A
+      count is a proxy for elapsed time and stops being one during a burst: nine captures in
+      28 hours reads as "across 2 days", which sounds fine. Neither the count nor the span
+      carries the signal. The repetition does.
+
+   g. **The suppression has a ceiling.** If the oldest unreviewed capture is more than 14 days
+      old, (d) no longer suppresses — emit (e) or (f) even while a packet is active, and add:
+      "Suppression no longer applies: the backlog is older than 14 days." A packet that runs
+      for weeks must not defer the review for weeks with it.
+
+   h. Also include the recommendation in the agent's response to the user, matching whichever
+      of (d), (e) or (f) fired:
+      - deferred: "Note: <N> captures are unreviewed, but <workflow-id> is still active. A
+        review is due at the first close after it completes."
+      - recommended: "Note: <N> session captures have accumulated without review. Consider
+        running `/session-review` to extract process improvements."
+      - overdue: "Note: <N> captures span <span> days and <D> of them already asked for a
+        review. Run `/session-review` in batch mode before new work."
 
 ## Output
 

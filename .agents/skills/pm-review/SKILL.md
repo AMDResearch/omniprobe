@@ -41,7 +41,7 @@ Create or manage a review workflow packet. Reviews evaluate existing code, docum
 4. **Write `run-log.md`.** Initialize from `run-log-template.md`. Review run-logs should record each file examined, time spent, and findings per file.
 5. **Write `handoff.md`.** Initialize from `handoff-template.md`. Set "Next Exact Step" to the first file or area to review.
 6. **Write `artifacts.md`.** Initialize from `artifacts-template.md`. This will hold the structured findings table and summary.
-7. **Update `.agents/workflows/INDEX.md`** if a tracking table is maintained.
+7. **Add a row to `.agents/state/active-workflows.md`.** That file is the workflow tracking table, and it is preserved across upgrades. Do not open a second table in `.agents/workflows/INDEX.md`: that file is framework reference content, an upgrade refreshes it, and anything recorded there is lost.
 
 ### Managing an existing review packet
 

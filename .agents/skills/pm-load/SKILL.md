@@ -36,7 +36,7 @@ Load the smallest set of Project Memory units relevant to the current task. This
 5. **Read the selected units.** For each loaded unit, absorb Current Truth / Key Source
    Files, Boundaries / Dependencies, and Negative Knowledge. These are the facts that
    constrain your work.
-6. **Check for stale data.** If any unit's `Last Verified` date is older than 30 days, note it as a caveat -- the information may be outdated. Do not refuse to use it, but flag it for refresh during pm-update.
+6. **Check for stale data.** If any unit's most recent `Last Verified` entry is older than 30 days, note it as a caveat -- the information may be outdated. That section is an append-only list: take the maximum `- <YYYY-MM-DD>` date under the heading, not the first line, which is the oldest. Do not refuse to use it, but flag it for refresh during pm-update.
 7. **Read `pm-decisions.md` selectively.** Scan for decisions that affect the task's area. You do not need to read every decision.
 8. **Read `pm-glossary.md` if the task involves domain-specific terms.** Skip this if the task is purely mechanical.
 9. **Stop.** Do not load units outside the task scope. If you are unsure whether a unit is relevant, skip it -- you can load it later if needed.

@@ -31,7 +31,9 @@ Persist durable knowledge back into Project Memory after meaningful work. Update
    - Add to `Negative Knowledge` if you discovered something that does not work.
    - Update `Boundaries and Dependencies` if relationships changed.
    - Clear or update `Open Questions` that were resolved.
-   - Set `Last Verified` to today's date with a one-line note.
+   - **Append** a `Last Verified` entry dated today with a one-line note. The section is an
+     append-only list — do not replace existing entries. Say what you did *not* re-verify and
+     which pass it is still resting on; that is the part a later reader cannot reconstruct.
 3. **Refresh code-navigation units.** If source files were created, renamed, moved, or
    substantially restructured during this session:
    a. Identify which code-navigation units (type `code-nav` in `pm-index.md`) are affected.
@@ -40,7 +42,7 @@ Persist durable knowledge back into Project Memory after meaningful work. Update
       or entry points were added.
    d. Update `Data Flow` if the flow through the subsystem changed.
    e. Add to `Negative Knowledge` if an approach was tried and abandoned.
-   f. Set `Last Verified` to today's date.
+   f. Append a `Last Verified` entry dated today.
    g. If a new subsystem emerged (new cluster of files with a distinct responsibility),
       create a new code-navigation unit and add it to `pm-index.md`.
 
@@ -69,7 +71,27 @@ Persist durable knowledge back into Project Memory after meaningful work. Update
    introduced?" If yes, add it to `pm-glossary.md`:
    `| <term> | <meaning> | <where-used or "project-wide"> |`
 7. **Update `pm-index.md`** if you created a new unit or if a unit's purpose or facet changed.
-8. **Create new units if needed.** If you worked in an area that has no PM unit and the knowledge is durable, create a new `.agents/pm/units/<area>.md` with all eight standard sections and add it to the index.
+
+   **Populate every column, `Type` and `Always-Load` included.** The index is eight columns
+   wide — `Unit`, `Type`, `Purpose`, `Status`, `Facet`, `Always-Load`, `When To Load`,
+   `Dependencies` — and "add a row" is not an instruction to fill them all. Read the header
+   rather than imitating the row above it, which is how a column silently stops being written.
+
+   - **`Type`** is the unit's kind: `arch-overview`, `code-nav`, `infra`, `domain`. `pm-load`
+     and `pm-validate` both read it.
+   - **`Always-Load`** is `true` only for a unit that should be read in **every** session
+     before anything else — in practice the architecture overview, and usually exactly one per
+     project. Default it to `false`. It is a context-budget decision: every `true` is paid for
+     on every session, so if you are unsure, `false` is the answer and someone can raise it
+     later.
+
+   **Reconsider `Always-Load` when a unit's role changes**, not only when a row is created. If
+   an existing unit has grown into the project's architecture overview, this is the step that
+   sets its flag. Nothing else in the catalog revisits it: `pm-init` sets it once for the one
+   overview it generates, and before this instruction existed no skill could change it
+   afterwards, so a project whose overview arrived later had no supported way to mark it.
+
+8. **Create new units if needed.** If you worked in an area that has no PM unit and the knowledge is durable, create a new `.agents/pm/units/<area>.md` with all eight standard sections and add it to the index — with every column populated, per step 7.
 
 ## Output
 
@@ -78,7 +100,8 @@ Persist durable knowledge back into Project Memory after meaningful work. Update
 
 ## Completion Criteria
 
-- Every unit you touched has an updated `Last Verified` date.
+- Every unit you touched has a new `Last Verified` entry dated today, appended below the
+  existing ones rather than replacing them.
 - `pm-current-state.md` reflects the project state as of this moment.
 - `pm-index.md` lists every unit file that exists in `units/`.
 - No session-specific or chronological content was written into PM (that belongs in run-log or session captures).

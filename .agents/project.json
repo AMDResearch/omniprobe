@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "amplify_version": "0.3",
+  "amplify_version": "0.6",
   "project_name": "omniprobe",
   "primary_type": "code",
   "enabled_facets": [

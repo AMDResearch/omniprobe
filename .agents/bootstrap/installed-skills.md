@@ -15,6 +15,7 @@
 | workflow-create | After refining a brief into a complete specification |
 | workflow-readiness-check | Before promoting any draft to active |
 | workflow-resume | When executing/continuing a workflow — defaults to autonomous execution |
+| workflow-execute | Running a workflow unattended under the acceptance-gate Stop hook |
 | workflow-complete | When all acceptance criteria are met (also called by session-close) |
 
 ## Project Memory

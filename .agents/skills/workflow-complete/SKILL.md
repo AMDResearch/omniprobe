@@ -16,7 +16,7 @@ This skill ensures all completion steps are performed together when a workflow r
 ## Preconditions
 
 - A workflow packet exists in `.agents/workflows/active/<workflow-id>/` (or `blocked/`, `suspended/`).
-- All acceptance criteria in `dossier.md` have been verified as met (or marked best-effort per failure policy).
+- The packet's `acceptance.sh` exits 0. This is a precondition, not a formality: a packet does not become done because an agent believes it is done.
 
 ## Required Reads
 
@@ -28,11 +28,25 @@ This skill ensures all completion steps are performed together when a workflow r
 
 ## Procedure
 
-1. **Verify acceptance criteria.** Read `dossier.md` and confirm every acceptance criterion is marked as met with verification evidence. If any criterion is unmet and the failure policy is not `best_effort`, stop: "Cannot complete workflow — unmet criteria: [list]. Resolve or change failure policy first."
-2. **Update dossier metadata.** Set the `Lifecycle State` field in `dossier.md` to `done`.
+1. **Run `acceptance.sh`.** Before reading anything else about criteria status, run the packet's acceptance script and capture its full output:
+
+   ```
+   bash .agents/workflows/<current-state>/<workflow-id>/acceptance.sh
+   ```
+
+   **If it exits non-zero, stop.** Report: "Cannot complete workflow — acceptance.sh exited <N>. Unmet criteria: [the FAIL lines]." Do not proceed with any other completion step. Do not edit `acceptance.sh` to make it pass, and do not weaken a criterion in the dossier -- record a proposed spec change in `handoff.md` instead and take it to the user.
+
+   If the packet has no `acceptance.sh` -- it predates the convention -- say so explicitly in the closing run-log entry, and fall back to reading the dossier and confirming each criterion against verification evidence. An absent gate is not a passed gate; it just means the evidence is manual.
+
+2. **Acknowledge every `JUDGE` line.** A judgement criterion is non-gating by design, so `acceptance.sh` can exit 0 with judgement criteria unresolved. Each one must be explicitly human-acknowledged in `artifacts.md` before the packet moves: quote the `JUDGE` line, state who reviewed it, and state the finding. A packet with unacknowledged `JUDGE` lines is not complete.
+
+   Record `WEAK` lines in `artifacts.md` too. They do not require sign-off, but the completion record should show which criteria were established by an indirect check rather than a direct one.
+
+3. **Verify remaining acceptance criteria.** Read `dossier.md` and confirm every criterion not covered by the script is met with verification evidence. If any criterion is unmet and the failure policy is not `best_effort`, stop: "Cannot complete workflow — unmet criteria: [list]. Resolve or change failure policy first."
+4. **Update dossier metadata.** Set the `Lifecycle State` field in `dossier.md` to `done`.
    Verify the update was written: re-read the `Lifecycle State` line from `dossier.md` and
    confirm it now says `done`. If it does not, stop and report the error.
-3. **Write final run-log entry.** Append a closing entry to `run-log.md`:
+5. **Write final run-log entry.** Append a closing entry to `run-log.md`:
    ```markdown
    ### <timestamp>
 
@@ -45,26 +59,26 @@ This skill ensures all completion steps are performed together when a workflow r
    - **Criteria impact**: All criteria met
    - **Blocker / Risk**: none
    ```
-4. **Write final handoff.** Update `handoff.md` with final status:
+6. **Write final handoff.** Update `handoff.md` with final status:
    - Current Status: **Done. All acceptance criteria met.**
    - Last Verified: <timestamp and summary>
    - Next Exact Step: N/A — workflow complete.
    - Active Risks / Blockers: none.
-5. **Move the packet directory.** Relocate the entire workflow directory from `.agents/workflows/<current-state>/<workflow-id>/` to `.agents/workflows/done/<workflow-id>/`.
-6. **Archive completed entry in active-workflows.md.** Move the workflow's row from the main
+7. **Move the packet directory.** Relocate the entire workflow directory from `.agents/workflows/<current-state>/<workflow-id>/` to `.agents/workflows/done/<workflow-id>/`.
+8. **Archive completed entry in active-workflows.md.** Move the workflow's row from the main
    table to a `## Completed` section at the bottom of the file. If the `## Completed` section
    does not exist, create it with a minimal table header (`| ID | Type | Completed |`). The
    archived row needs only the workflow ID, type, and completion date — strip the owner, write
    scope, dependencies, and blocker columns. If the Completed section exceeds 30 rows, remove
    the oldest rows (they remain discoverable via the `done/` directory).
-7. **Prune current-focus.md.** Remove this workflow from "Current Focus Areas" and
+9. **Prune current-focus.md.** Remove this workflow from "Current Focus Areas" and
    "Active Workflows" sections entirely. If this workflow appears in "Recent Decisions"
    only as a completion notice (not a substantive decision), remove that entry too.
    Add a one-line entry to "Recent Decisions" only if a durable project decision was made
    during this workflow (technology choice, architecture decision, scope decision). Keep
    the total "Recent Decisions" section under 15 entries by removing the oldest
    non-architectural entries when the limit is reached.
-8. **Verify state consistency.** After completing all updates, perform a quick check:
+10. **Verify state consistency.** After completing all updates, perform a quick check:
    - Confirm the workflow directory is now at `.agents/workflows/done/<workflow-id>/`.
    - Confirm `active-workflows.md` shows the workflow in the Completed section.
    - Confirm `dossier.md` lifecycle state reads `done`.
@@ -76,6 +90,8 @@ No separate output file. The skill modifies existing state files in place and mo
 
 ## Completion Criteria
 
+- `acceptance.sh` was run and exited 0, and its output is recorded in `artifacts.md`.
+- Every `JUDGE` line in that output is acknowledged in `artifacts.md` with a reviewer and a finding.
 - `dossier.md` lifecycle state is `done`.
 - Run-log has a closing entry.
 - `handoff.md` reflects final state.
@@ -86,6 +102,8 @@ No separate output file. The skill modifies existing state files in place and mo
 ## Error Handling
 
 - If the workflow directory does not exist at the expected path, search other lifecycle directories and report the actual location.
+- If `acceptance.sh` exits non-zero, stop and report — do not mark as done, and do not touch the script or the criteria to change that.
+- If `acceptance.sh` crashes rather than reporting failures, treat it as a broken gate, not a passed one. Fix the script, then re-run.
 - If acceptance criteria are unmet, stop and report — do not mark as done.
 - If `.agents/workflows/done/` does not exist, create it.
 - If a workflow with the same ID already exists in `done/`, append a timestamp suffix to avoid collision.

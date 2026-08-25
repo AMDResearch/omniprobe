@@ -33,8 +33,22 @@ Over time, PM units drift from the project's actual shape: units stay monolithic
 2. **Granularity assessment.** For each unit, count the number of distinct topics in its Current Truth section. If a single unit covers more than 3 unrelated topics, flag it as a split candidate. If two or more units cover the same narrow topic, flag them as merge candidates.
 3. **Load-frequency estimate.** For each unit, count how many of the recent workflow dossiers reference it (by name or by the subsystem it covers). Flag units referenced by zero workflows as potentially obsolete. Flag units referenced by every workflow as potentially too broad.
 4. **Transient noise check.** Scan each unit's Current Truth for statements that describe temporary states (e.g., "currently blocked on...", "waiting for PR...", version-pinned workarounds). Flag these as transient noise that belongs in a workflow packet, not PM.
-5. **Negative knowledge audit.** Check whether any unit's Negative Knowledge section is empty. Cross-reference with `failure-modes.md` to see if known failure patterns should be captured as negative knowledge in specific units.
-6. **Compile recommendations.** For each finding, state the specific unit name, the issue, and a concrete suggested action (split, merge, archive, extract, add negative knowledge).
+5. **Default-load assessment.** Ask whether the right unit is loaded by default. Read the
+   `Always-Load` column of `pm-index.md` and check three things:
+   - **Is anything `true`?** A project with zero always-loaded units has no unit a fresh
+     session reads before it decides what else to read. That is a coverage gap, not a tidy
+     default — flag it and name the unit that looks most like the architecture overview.
+   - **Is the right thing `true`?** The flag belongs on the unit that orients a reader who
+     knows nothing, which is usually one `arch-overview`. If it sits on a narrow `code-nav`
+     unit, or on several units at once, flag it: every `true` is paid for by every session.
+   - **Has a `Type: arch-overview` unit been left `false`?** That is the common shape, because
+     `Always-Load` is set once at `pm-init` for the one overview it generates, and a project
+     whose overview arrived later — or was carved out by a split — never had it set.
+
+   This is a recommendation, like everything else this skill produces. Acting on it is
+   `pm-restructure`'s or `pm-update`'s job.
+6. **Negative knowledge audit.** Check whether any unit's Negative Knowledge section is empty. Cross-reference with `failure-modes.md` to see if known failure patterns should be captured as negative knowledge in specific units.
+7. **Compile recommendations.** For each finding, state the specific unit name, the issue, and a concrete suggested action (split, merge, archive, extract, add negative knowledge).
 
 ## Output
 
@@ -59,6 +73,11 @@ Write a reflection report to `.agents/pm/reflection-report.md`:
 
 ## Transient Noise
 - <unit name> :: "<quoted statement>" -- move to workflow packet
+
+## Default-Load Assessment
+
+Which unit, if any, is `Always-Load: true`; whether it is the right one; and any
+`Type: arch-overview` unit left `false`.
 
 ## Missing Negative Knowledge
 - <unit name> -- failure mode "<pattern>" from failure-modes.md not captured

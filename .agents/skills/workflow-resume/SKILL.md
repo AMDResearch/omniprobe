@@ -24,9 +24,10 @@ Read in this exact order. Stop loading as soon as you have enough context to tak
 
 1. `.agents/workflows/<state>/<workflow-id>/handoff.md` -- read this first. It tells you the current status, the exact next step, active risks, and what else you need to read.
 2. `.agents/workflows/<state>/<workflow-id>/dossier.md` -- read the Objective, Acceptance Criteria, Scope, and Plan of Record. Skip Background/Context and References unless the handoff says you need them.
-3. `.agents/state/active-workflows.md` -- check for parallel workflows and write-scope conflicts before making changes.
-4. PM units listed in the handoff's "Required Reads Before Resuming" section, if any.
-5. `.agents/workflows/<state>/<workflow-id>/run-log.md` -- read only the last 3-5 entries unless the handoff indicates you need more history.
+3. `.agents/workflows/<state>/<workflow-id>/acceptance.sh` -- the criteria in executable form. You do not need to read it closely; you need to *run* it (procedure step 7).
+4. `.agents/state/active-workflows.md` -- check for parallel workflows and write-scope conflicts before making changes.
+5. PM units listed in the handoff's "Required Reads Before Resuming" section, if any.
+6. `.agents/workflows/<state>/<workflow-id>/run-log.md` -- read only the last 3-5 entries unless the handoff indicates you need more history.
 
 ## Procedure
 
@@ -45,11 +46,28 @@ Read in this exact order. Stop loading as soon as you have enough context to tak
    Then proceed without waiting for confirmation. If the user has given a directive like
    "execute <workflow-id>" or "work on <workflow-id>", treat it as authorization for
    autonomous execution.
-7. **Begin the next step** as described in the handoff. Log the session start in `run-log.md`
+7. **Establish what "done" means before working.** If the packet has an `acceptance.sh`, run it
+   now and read the output. That is the definition of done for this workflow -- not the handoff's
+   prose, not your own reading of the criteria. The `FAIL` lines are the work that remains; the
+   run also tells you which criteria are `WEAK` or `JUDGE` and so will never be closed by the
+   script alone.
+
+   Running it first is cheap and occasionally decisive: it can reveal that the previous session
+   finished more, or less, than the handoff claims. If the two disagree, the script is right and
+   the handoff is stale -- fix the handoff.
+
+   A packet with no `acceptance.sh` predates the convention. Fall back to the dossier's
+   Acceptance Criteria and Verification Strategy, and note in the run-log that the gate is
+   absent, so nothing later mistakes silence for a pass.
+8. **Begin the next step** as described in the handoff. Log the session start in `run-log.md`
    with a new entry that includes the execution mode and checkpoint expectation:
    `Execution mode: autonomous. Checkpointing per guardrails § Checkpoint Protocol.`
    Follow the checkpoint protocol throughout the session — update `handoff.md` and append
    to `run-log.md` at each trigger defined in `guardrails.md`.
+
+   When a blocking Stop hook is active, `acceptance.sh` exiting 0 is also the mechanical
+   condition for being *allowed* to stop. Nothing else counts -- not your own assessment, and
+   not a plausible account of why a criterion should be considered met.
 
 ## Output
 
@@ -61,6 +79,7 @@ Read in this exact order. Stop loading as soon as you have enough context to tak
 ## Completion Criteria
 
 - The agent has read the handoff and dossier and can state the next concrete action without guessing.
+- The packet's `acceptance.sh` has been run, or its absence noted, so the agent knows the exact set of unmet criteria rather than inferring it.
 - A session-start entry has been appended to the run-log.
 - The agent is ready to execute the next step from the handoff. The resume itself is complete when execution begins.
 

@@ -68,7 +68,8 @@ Initialize or refresh the Project Memory scaffolding for a repository. Survey th
      Example: `Depends on PhysicsParams (load: physics-params.md). Called by SimulationEngine (load: engine.md).`
    - **Negative Knowledge** — approaches that were tried and failed, with reasoning.
    - **Open Questions** — unresolved items.
-   - **Last Verified** — date and brief note.
+   - **Last Verified** — an append-only list, oldest first. Seed it with a single
+     `- <YYYY-MM-DD> by <agent-or-user>` entry and a brief note.
 4. **Create always-loaded architecture overview.** For code-facet projects, create a special
    unit `.agents/pm/units/architecture.md` that provides the system-level view:
    - System purpose (1-2 sentences).
@@ -107,5 +108,5 @@ Initialize or refresh the Project Memory scaffolding for a repository. Survey th
 ## Error Handling
 
 - If the repo is empty or trivial (fewer than 3 meaningful source files), create a single `overview.md` unit and note in `pm-current-state.md` that PM will grow as the project does.
-- If PM already exists, do not overwrite units with less information. Merge new findings into existing sections and update `Last Verified`.
+- If PM already exists, do not overwrite units with less information. Merge new findings into existing sections and append a `Last Verified` entry.
 - If you cannot determine the project structure (e.g., binary-only repo), record that fact in `pm-current-state.md` and create no units.

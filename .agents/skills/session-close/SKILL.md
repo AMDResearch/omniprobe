@@ -59,6 +59,17 @@ capture — a sequence that is the same every time and easy to skip or partially
    (e.g., "ft_feature-name: implement phase 2 acceptance criteria").
    Do not force-push or amend prior commits.
 
+   **Sidecar mode (dual-repo commit):** If `project.json` contains `"sidecar": true`,
+   commits must be split across two repositories:
+   a. **Target repo commits:** Stage and commit code changes in the target repo directory
+      (found at the `target_repo` path in `project.json`, relative to the sidecar). Use
+      `git -C <target-repo-path>` to run git commands there.
+   b. **Sidecar repo commits:** Stage and commit framework state changes (`.agents/`,
+      workflows, PM, state files) in the sidecar directory (the CWD).
+   c. Commit the target repo first, then the sidecar, so the sidecar handoff can reference
+      the target's commit hash if needed.
+   d. If no code changes were made in the target repo, skip the target commit.
+
    Skip/caution rules:
    - If the worktree contains staged or unstaged changes unrelated to the current session's
      work, do not bundle them. Commit only changes the agent made or can confidently
@@ -71,28 +82,88 @@ capture — a sequence that is the same every time and easy to skip or partially
      run `/session-close` again after review."
    - Never force-push or amend prior commits during session-close.
 
-5. **Run session-capture.** Follow the `session-capture` procedure
+5. **Run the repository's outbound-content scan, if it has one.** Some repositories keep a
+   script checking what a push would publish against a project-specific policy; most have
+   none and skip this step entirely.
+
+   **Run it only if both `scripts/leak-scan.sh` exists and `$AMP_DEC6_PATTERN` is set.** That
+   variable holds the scan's pattern list, kept in the environment rather than the repository
+   because a denylist enumerates precisely what it protects. Unset therefore means this
+   repository has not configured such a policy and there is nothing here to check — the step
+   is inert, so do nothing and say nothing about it in the summary. Do not invent a policy for
+   a repository that has not declared one, or treat a missing script as a finding.
+
+   When both hold, resolve the range's two ends to commit ids *before* scanning —
+   `git rev-parse <upstream> HEAD` — run `scripts/leak-scan.sh <base>..<head>`, and:
+
+   a. **Read the exit code directly** — never through a pipeline, which replaces the status
+      you meant to read and once turned a failing scan into a reported `exit=0`.
+   b. Record the census (commits, added lines, messages, tracked files) and the verdict under
+      **Recent Decisions** in `.agents/state/current-focus.md`, dated. The census is what
+      distinguishes a clean result from a scan that never ran, so record it even when clean.
+   c. **Write the range as resolved commit SHAs**, never as a symbolic ref. The format is:
+
+          scanned 4b75398..02df9cb (2 commits, 119 added lines, 617 tracked files, zero hits)
+
+      A SHA range is permanently true and independently re-runnable by anyone, at any later
+      time, on a repository whose branches have moved. The same sentence written as
+      `rwvo/main..HEAD (2 commits ahead)` is false within minutes of the next push, and it
+      invites the following session to "correct" it.
+   d. **Write no claim about push state.** The census is evidence about a completed action and
+      does not go stale; *n commits are unpushed*, or *the tree is fully pushed at `<sha>`*, is
+      a claim about present state and is stale the moment anyone pushes. So:
+      **no claim about push state is written to a tracked file.**
+      The count of unpushed commits belongs in the step-7 summary, which is conversation and is
+      not committed.
+
+      This is not fastidiousness. The record is a loop that has run in two repositories: the
+      close records *n* unpushed, the user pushes, the record is now wrong, someone corrects
+      it, and the correction is itself a new unpushed commit. The commit that records a push
+      necessarily follows the push, so the file can never be right at rest. Note the rule is
+      stronger than "write the command rather than the count" — that still leaves a tracked
+      paragraph whose subject is push state, and the evidence is that people kept editing it.
+   e. Note in the entry that the commit carrying it is outside the range just scanned, so
+      whoever pushes must **re-derive** the range at push time.
+   f. Surface the census, the verdict, and the unpushed count in the step-7 summary.
+
+   **This step does not block the close.** A non-zero exit is reported and the close
+   continues; pushing is the user's action, and refusing to finish would only lengthen the
+   post-close tail this step exists to shrink.
+
+6. **Run session-capture.** Follow the `session-capture` procedure
    (see `.agents/skills/session-capture/SKILL.md`) to create a normalized session record.
    This includes the review cadence check — if enough captures have accumulated, the
    capture will recommend running `/session-review`.
 
-6. **Deliver summary.** Report to the user:
+7. **Deliver summary.** Report to the user:
    - What was committed (brief list of commit messages).
    - Workflow state changes (any completions, new blockers).
    - PM updates made (units touched, decisions recorded).
+   - The outbound-content scan's census and verdict, if step 5 ran.
+   - The number of unpushed commits, from `git rev-list --left-right --count <upstream>...HEAD`.
+     Report it here and nowhere else: this summary is conversation, so it is allowed to state a
+     fact that will be false after the user acts on it. A tracked file is not.
    - Whether a session review is recommended.
    - The session capture file path.
 
-7. **Remove session-active marker.** Delete `.agents/state/session-active.md`. This signals
+8. **Remove session-active marker.** Delete `.agents/state/session-active.md`. This signals
    to the next `/session-init` that this session closed properly. This is the last action
    in the close sequence.
+
+   Note that work sometimes continues after this point — an interrupted close resumed later,
+   or a push and its follow-up. Anything done after this step is outside the session by the
+   framework's own definition: unmarked, absent from the capture just written, and invisible
+   to the next `/session-init`'s recovery detection. Step 5 exists because the most common
+   such tail was the scan itself. If other work lands after the close, amend the capture
+   rather than leaving it describing a state that has stopped being true.
 
 ## Output
 
 No single output file. This skill orchestrates updates across multiple files:
 - Workflow `run-log.md` and `handoff.md` (and `dossier.md` if completing).
 - PM files (`pm-current-state.md`, units, `pm-decisions.md`, `pm-glossary.md`, `pm-index.md`).
-- State files (`current-focus.md`, `active-workflows.md`).
+- State files (`current-focus.md`, `active-workflows.md`), including the scan entry under
+  Recent Decisions when step 5 runs.
 - Git commits.
 - Session capture file at `.untracked/session-captures/<timestamp>-<agent>.md`.
 
@@ -102,6 +173,9 @@ No single output file. This skill orchestrates updates across multiple files:
 - PM has been updated with any durable knowledge from this session.
 - State files reflect current project state.
 - All changes are committed with descriptive messages.
+- If the repository has an outbound-content scan and it is configured, it has been run, its
+  exit code read directly, and its census and verdict recorded under Recent Decisions. If it
+  has none, the step was skipped silently.
 - A session capture file has been written.
 - The user has received a summary of what was done.
 

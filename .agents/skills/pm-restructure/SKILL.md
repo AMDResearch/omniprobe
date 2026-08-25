@@ -79,7 +79,12 @@ Close the gap between `pm-reflect` (analysis-only) and `pm-update` (content chan
       - Verify no content was lost: every non-empty section in the original must have its
         content present in one of the new units.
       - Remove the original unit file.
-      - Update `pm-index.md`: remove the old row, add rows for each new unit.
+      - Update `pm-index.md`: remove the old row, add rows for each new unit, populating
+        **every** column including `Type` and `Always-Load` (see the column rules below).
+      - **Reconsider `Always-Load`.** If the unit being split carried `Always-Load: true`,
+        decide which of the new units inherits it — and it is at most one. A split is exactly
+        the moment an architecture overview gets carved out of a larger unit, and if nobody
+        decides, the flag is silently lost and every future session stops loading it.
 
       **Merge:**
       - Read all source units fully.
@@ -89,7 +94,11 @@ Close the gap between `pm-reflect` (analysis-only) and `pm-update` (content chan
       - Verify no content was lost: every non-empty section from every source must have its
         content present in the merged unit.
       - Remove the source unit files.
-      - Update `pm-index.md`: remove the old rows, add one row for the merged unit.
+      - Update `pm-index.md`: remove the old rows, add one row for the merged unit, populating
+        **every** column including `Type` and `Always-Load` (see the column rules below).
+      - **Reconsider `Always-Load`.** If any source unit carried `Always-Load: true`, the merged
+        unit almost certainly should. A merge is the mirror of the split case: an overview gets
+        absorbed, and the flag is dropped by default unless someone carries it across.
 
       **Archive:**
       - Create `.agents/pm/archive/` if it does not exist.
@@ -108,7 +117,23 @@ Close the gap between `pm-reflect` (analysis-only) and `pm-update` (content chan
       - Create the unit file with all required sections. Populate sections with known facts
         from the reflection report and any context available. Mark unpopulated sections as
         "None yet."
-      - Add a row to `pm-index.md`.
+      - Add a row to `pm-index.md`, populating **every** column including `Type` and
+        `Always-Load` (see the column rules below).
+
+   **Column rules for every `pm-index.md` row this skill writes.** The index is eight columns
+   wide — `Unit`, `Type`, `Purpose`, `Status`, `Facet`, `Always-Load`, `When To Load`,
+   `Dependencies`. Read the header; do not infer the shape from the row above, which is how the
+   two newest columns stopped being written after they were added.
+
+   - **`Type`**: `arch-overview`, `code-nav`, `infra` or `domain`. Read by `pm-load` and
+     `pm-validate`.
+   - **`Always-Load`**: `true` only for a unit that must be read in **every** session before
+     anything else — in practice the architecture overview, usually exactly one per project.
+     Default `false`. Every `true` is paid for on every session, so when unsure, `false`.
+
+   `Always-Load` is the flag this skill is most likely to be the only writer of. Splitting and
+   merging is precisely when an overview is carved out or absorbed, and no other skill revisits
+   the flag on an existing unit.
 
    d. **Report the result.** After each operation, confirm what was done:
       "Done: split `template-engine` into `template-layout` and `template-content`."
@@ -120,8 +145,10 @@ Close the gap between `pm-reflect` (analysis-only) and `pm-update` (content chan
    - Update `pm-index.md` metadata (purpose, facet, load guidance) for any units that
      absorbed content from other units.
 
-6. **Set Last Verified.** For every unit file that was created or modified, set `Last Verified`
-   to today's date with a note like "Created by pm-restructure" or "Merged from X + Y."
+6. **Append Last Verified.** For every unit file that was created or modified, append a
+   `Last Verified` entry dated today with a note like "Created by pm-restructure" or
+   "Merged from X + Y." The section is an append-only list; on a merged unit, carry the
+   source units' entries across rather than discarding their verification history.
 
 7. **Produce summary.** Output a summary of all changes made:
 

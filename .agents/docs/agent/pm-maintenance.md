@@ -24,12 +24,38 @@ Update PM when you learn something **durable** that future sessions should reuse
 ## Update Procedure
 
 1. **Filter for durability.** Before writing anything, ask: "Will a fresh agent session 2 weeks from now benefit from knowing this?" If no, skip it.
-2. **Update affected PM units** in `.agents/pm/units/`. Modify the relevant sections (Current Truth, Negative Knowledge, Open Questions, etc.). Update the `Last Verified` field with today's date and your identifier.
+2. **Update affected PM units** in `.agents/pm/units/`. Modify the relevant sections (Current Truth, Negative Knowledge, Open Questions, etc.). **Append** an entry to `Last Verified` with today's date and your identifier — see "The `Last Verified` Section" below.
 3. **Create new units** when you discover a durable knowledge boundary that does not fit in an existing unit. Follow the unit schema: Purpose, Current Truth, Boundaries and Dependencies, Anchors/References, Negative Knowledge, Open Questions, Related Workflows, Last Verified.
 4. **Update `pm-index.md`** when you create, rename, or change the status of a unit.
 5. **Update `pm-current-state.md`** when the project's active work areas, risks, or focus changed materially.
 6. **Record decisions** in `pm-decisions.md` when a project-level decision was made with durable impact. Include date, decision, rationale, and source.
 7. **Add terms** to `pm-glossary.md` when project-specific vocabulary appeared that could be misinterpreted.
+
+## The `Last Verified` Section
+
+`Last Verified` in a **PM unit** is an append-only list, not a single date. Each entry records
+one session's verification pass:
+
+```markdown
+## Last Verified
+
+- 2026-04-27 by <agent-or-user>
+- 2026-08-10 by <agent-or-user> — counts re-read from the filesystem. Not re-verified: the
+  front-matter bounds, carried over from 2026-04-27.
+```
+
+Two rules follow, and both matter because getting either wrong is silent:
+
+- **Producers append; they never replace.** The value of the list is that an entry can say what
+  was *not* re-checked, so a later reader can see which claims are still resting on an old pass.
+  Overwriting destroys exactly that.
+- **Consumers take the maximum date under the heading.** Not the first line, which is the
+  *oldest* and will report a unit updated this morning as months stale. Not the last line either:
+  entries are conventionally oldest-first, but hand edits do go in out of order, so parse every
+  `- <YYYY-MM-DD>` line and take the maximum.
+
+Note that a workflow `handoff.md` also has a `Last Verified` heading. That one is unrelated — it
+is prose describing what the last step verified, and none of the above applies to it.
 
 ## Unit Lifecycle
 
@@ -69,7 +95,7 @@ Run `pm-validate` when:
 - A major refactor changed the repo structure.
 - Multiple sessions have passed without PM review.
 - You notice that a PM unit's anchors (file paths, module names) no longer match the repo.
-- You suspect units have become stale (the Last Verified date is more than 30 days old).
+- You suspect units have become stale (the most recent `Last Verified` entry is more than 30 days old).
 
 ## When To Run `pm-reflect`
 

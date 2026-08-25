@@ -35,6 +35,10 @@ Read these files in order. Stop and report if any file marked [required] is miss
 ## Procedure
 
 1. **Read project metadata.** Parse `project.json` for project name and adapter type. Confirm the adapter file exists at `.agents/adapters/<adapter>.md`.
+   If `project.json` contains `"sidecar": true`, this is a sidecar workspace. Note the
+   `target_repo` path. In sidecar mode, verify the target repo exists and is accessible.
+   If the target repo is not found, add a warning: "Sidecar target repo not found at
+   <path>. The agent may not be able to access the project codebase."
 2. **Read shared entrypoint.** Note any session-level policies or constraints.
 3. **Read policy documents.** Read `guardrails.md` (required). Read `contract.md` and `verification.md`. Note workspace boundaries, stop conditions, and contract rules. Acknowledge policy ingestion in the briefing.
 4. **Read current focus.** Extract: the recommended next action, any blockers noted by the prior session, and any workflow IDs referenced.
@@ -80,38 +84,64 @@ Read these files in order. Stop and report if any file marked [required] is miss
       handoff.md for any active workflow, (3) run `/session-capture` for the interrupted
       session, (4) proceed with current session."
    f. **Remove stale marker.** If the session-active marker exists from a prior session,
-      remove it now. A fresh marker will be written in step 12.
+      remove it now. A fresh marker will be written in step 14.
 
-8. **Recommend skills based on context.** Based on what was discovered during state reading,
+8. **Check for unpushed commits.** Run
+   `git rev-list --left-right --count <upstream>...HEAD` and report any unpushed commits in the
+   briefing. If the repository has no upstream configured, say so and move on; that is a fact
+   about the repository, not a fault.
+
+   **The briefing is the only place this belongs.** The count is a claim about present state and
+   is false the moment anyone pushes, so it is warned about here and never written to a tracked
+   file — see `session-close` step 5d for the loop that rule exists to stop. Reporting it at
+   session start is what makes the rule affordable: the fact stays available to whoever needs it,
+   at the one moment it is both true and actionable.
+
+9. **Resolve declared plugins.** Run `.agents/hooks/resolve-plugins.sh` and include its output in
+   the briefing verbatim as the `Plugins:` line. If it prints nothing, **omit the line entirely** —
+   no plugins are declared, which is the default and the common case, and an empty `Plugins:` line
+   would be a change every repository sees in return for nothing.
+
+   The hook reads `project.json`, resolves each declared path, and reports each plugin's
+   `amplify_version` and active-workflow count. See `docs/usage/plugins.md` for the format.
+
+   **Do not reimplement this by reading `project.json` yourself.** The point of the hook is that
+   the reported facts expire — a version moves, a workflow completes — so they are derived at read
+   time and written to no tracked file, the same discipline as `Unpushed:` in step 8. A plugin that
+   does not resolve is reported and the session continues; it is never a reason to stop.
+
+10. **Recommend skills based on context.** Based on what was discovered during state reading,
    include relevant skill recommendations in the briefing:
 
    - If the last session capture is more than 2 days ago (check file dates in
      `.untracked/session-captures/`): recommend `/state-check` — "It has been >2 days
      since the last session. Run `/state-check` to verify state consistency."
-   - If `pm-index.md` has units with `Last Verified` older than 14 days: recommend
-     `/pm-validate` — "Some PM units may be stale. Run `/pm-validate` to check."
-   - If unreviewed session captures have accumulated (>= 5 since last review):
+   - If any PM unit's most recent `Last Verified` entry is older than 14 days: recommend
+     `/pm-validate` — "Some PM units may be stale. Run `/pm-validate` to check." The field
+     lives in the unit files under `.agents/pm/units/`, not in `pm-index.md`, and the section
+     is an **append-only list** — take the maximum `- <YYYY-MM-DD>` date under the heading.
+     Reading the first line reports every freshly-updated unit as months stale; this has
+     produced a false briefing more than once.
+   - If unreviewed session captures have accumulated (>= 5 captures since last review):
      recommend `/session-review` — "Multiple captures are unreviewed. Run `/session-review`
-     in batch mode." To determine which captures are unreviewed, find the most recent file
-     in `.agents/improvement/session-reviews/`. Captures whose modification time is newer
-     than that file are unreviewed. If no review files exist, all captures are unreviewed.
+     in batch mode."
    - If resuming a workflow: recommend reading the workflow's handoff first via
      `/workflow-resume` — "Use `/workflow-resume <workflow-id>` for structured resumption."
    - If open feedback items exist (check `.untracked/feedback/feedback-index.md` if it
      exists): note "There are open feedback items that need triage."
 
    Include these recommendations in the briefing output under a new "Suggested actions:" line.
-9. **Check run-log consistency (if resuming).** If resuming a workflow, read the run-log and compare against the handoff to identify any gaps. If the run-log has no entries but the handoff indicates work was done, note the gap in the briefing.
-10. **Classify session type.** Based on the user's opening message (if any) and current-focus, determine the session type:
+11. **Check run-log consistency (if resuming).** If resuming a workflow, read the run-log and compare against the handoff to identify any gaps. If the run-log has no entries but the handoff indicates work was done, note the gap in the briefing.
+12. **Classify session type.** Based on the user's opening message (if any) and current-focus, determine the session type:
    - **Directed work**: user gave a specific task -- match it to an existing workflow or flag that a new one is needed.
    - **Workflow resume**: current-focus points to a specific workflow -- prepare to resume it.
    - **Open session**: no specific direction -- present the briefing and wait for instruction.
-11. **Determine additional reads.** Based on session type:
+13. **Determine additional reads.** Based on session type:
    - Workflow resume: queue the packet's `handoff.md` and `dossier.md` for immediate reading. Queue relevant PM units listed in the dossier's metadata.
    - Directed work on an existing workflow: same as resume.
    - New work: queue `pm-current-state.md` for context.
    - Open session: no additional reads yet.
-12. **Produce briefing.** Output a summary to the user (not a file) containing:
+14. **Produce briefing.** Output a summary to the user (not a file) containing:
    - Project name and adapter.
    - Current focus summary (1-2 sentences).
    - Active workflow count and any that are blocked or unowned.
@@ -126,18 +156,27 @@ The briefing is delivered as a direct response to the user, not written to a fil
 Session initialized for <project-name>.
 
 Policies loaded: guardrails, contract, verification
+Mode: <standard | sidecar (target: <target-repo-path>)>
 Focus: <current focus summary>
 Active workflows: <count> (<blocked count> blocked, <unowned count> unowned)
 Session type: <directed | resume | open>
 
 State: <consistent | N inconsistencies found — run /state-check>
 Recovery: <prior session did not close cleanly — see recovery steps | clean>
+Unpushed: <N commits not on <upstream> | fully pushed | no upstream configured>
+Plugins: <verbatim output of .agents/hooks/resolve-plugins.sh — omit the line entirely when it prints nothing>
 Suggested actions: <list of recommended skills with brief reasons, or "none">
 Next reads: <list of files the agent will read>
 Blockers: <any, or "none">
 
 Reminder: update handoff.md and run-log.md incrementally. Run /session-capture before ending.
 ```
+
+In sidecar mode, additionally include after the "Mode:" line:
+- Target repo git status (branch, clean/dirty)
+- Whether the target repo has an existing `AGENTS.md` (and note that it is the target's
+  own file, not the framework's)
+- A reminder that code changes go in the target repo and framework changes stay in the sidecar
 
 After delivering the briefing, write the session-active marker file at
 `.agents/state/session-active.md` with content:

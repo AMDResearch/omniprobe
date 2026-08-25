@@ -35,8 +35,16 @@ Detect PM rot before it misleads future sessions. This skill checks that PM is s
    **Code-navigation units** (type `code-nav` in index): Responsibility, Key Source Files, Key Types and Classes, Key Functions and Entry Points, Data Flow, Invariants, Dependencies, Negative Knowledge, Open Questions, Last Verified.
    **Architecture overview** (type `arch-overview`): validate it contains a subsystem table and loading guidance.
    Record any unit missing one or more sections.
+   **Cross-check the declared type against the file's section structure**, and report a mismatch
+   as an error naming both. A unit declaring `infra` whose sections are Responsibility, Key Source
+   Files and Data Flow is a `code-nav` unit with the wrong label, and validating it against the
+   infrastructure schema reports eight missing sections that are not actually missing — a false
+   violation that reads exactly like a real one. Read the type from the index's `Type` column;
+   if that column is absent the index predates the schema, so report it and run
+   `upgrade-project` rather than inferring the type silently. Inference is what every consumer
+   used to do, and doing it without saying so is how the missing column went unnoticed.
 4. **Anchor validation.** For each file path or code symbol listed under Anchors/References, verify the path exists in the repo. Record broken anchors with the unit name and the dead reference.
-5. **Staleness check.** Compare each unit's `Last Verified` date to the current date. Flag any unit not verified within the last 30 calendar days.
+5. **Staleness check.** Compare each unit's **most recent** `Last Verified` entry to the current date. That section is an append-only list, so take the **maximum** `- <YYYY-MM-DD>` date under the heading — not the first line, which is the oldest and reports a freshly-updated unit as months stale, and not the last line, which can be out of order after a hand edit. Flag any unit not verified within the last 30 calendar days.
 6. **Cross-reference consistency.** Check that any workflow ID mentioned in a unit's Related Workflows section corresponds to a packet directory under `.agents/workflows/`. Flag dangling references.
 7. **Current-state drift.** Confirm that every unit mentioned in `pm-current-state.md` still exists. Flag references to deleted or renamed units.
 8. **Auto-heal index drift.** After identifying inconsistencies:
@@ -45,8 +53,8 @@ Detect PM rot before it misleads future sessions. This skill checks that PM is s
       a placeholder purpose derived from the file's first heading or Purpose section.
    b. For every entry in `pm-index.md` whose file does not exist on disk, remove the entry
       and report: "Removed dangling index entry: <unit-name>."
-   c. For every indexed unit whose `Last Verified` date is older than 30 days, mark it as
-      `stale` in the report.
+   c. For every indexed unit whose most recent `Last Verified` entry (the maximum date, per
+      step 5) is older than 30 days, mark it as `stale` in the report.
    d. For every unit file that is still generic placeholder content (contains "None yet."
       in 5+ sections), flag it: "<unit-name> appears to be an unpopulated placeholder.
       Either populate it or delete it."

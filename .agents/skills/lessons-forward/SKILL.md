@@ -62,9 +62,18 @@ Write to `.agents/improvement/forward-to-meta/<date>-<slug>.md`:
 
 ## Evidence
 - Session: <capture path or date>
-- Failure mode: <category>
+- Failure mode: <category>, <this repository's id, qualified — e.g. some-repo:FM-L3>
 - Recurrence: <one-time | recurring>
 ```
+
+## Citing a failure mode across repositories
+
+Cite a local failure mode as <repo>:FM-L<n> when forwarding it beyond this repository.
+
+A bare `FM-L3` is not globally meaningful — every project numbers its own modes from 1, so the
+unqualified id names a different failure mode in every repository that has one. The recipient of a
+forwarded lesson is by definition in a different repository, which makes this the one moment the
+qualifier is load-bearing. A bare `FM-<n>` is the framework's and needs no qualifier.
 
 ## Completion Criteria
 

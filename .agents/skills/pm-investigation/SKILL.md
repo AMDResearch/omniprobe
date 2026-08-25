@@ -44,7 +44,7 @@ Create or manage an investigation workflow packet. Investigations explore unknow
 4. **Write `run-log.md`.** Initialize from `run-log-template.md`. Investigation run-logs should record each hypothesis tested, evidence found, and whether the hypothesis was supported or refuted.
 5. **Write `handoff.md`.** Initialize from `handoff-template.md`. Set "Next Exact Step" to the first evidence-gathering action.
 6. **Write `artifacts.md`.** Initialize from `artifacts-template.md`. Investigations should index: data captures, log excerpts, benchmark results, and any reproduction scripts.
-7. **Update `.agents/workflows/INDEX.md`** if a tracking table is maintained.
+7. **Add a row to `.agents/state/active-workflows.md`.** That file is the workflow tracking table, and it is preserved across upgrades. Do not open a second table in `.agents/workflows/INDEX.md`: that file is framework reference content, an upgrade refreshes it, and anything recorded there is lost.
 
 ### Managing an existing investigation packet
 

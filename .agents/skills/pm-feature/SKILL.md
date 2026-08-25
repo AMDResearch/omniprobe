@@ -40,7 +40,7 @@ Create or manage a feature workflow packet. Features add new user-visible behavi
 4. **Write `run-log.md`.** Initialize from `run-log-template.md`.
 5. **Write `handoff.md`.** Initialize from `handoff-template.md`. Set "Next Exact Step" to the first planned action.
 6. **Write `artifacts.md`.** Initialize from `artifacts-template.md`.
-7. **Update `.agents/workflows/INDEX.md`** if a tracking table is maintained.
+7. **Add a row to `.agents/state/active-workflows.md`.** That file is the workflow tracking table, and it is preserved across upgrades. Do not open a second table in `.agents/workflows/INDEX.md`: that file is framework reference content, an upgrade refreshes it, and anything recorded there is lost.
 
 ### Managing an existing feature packet
 

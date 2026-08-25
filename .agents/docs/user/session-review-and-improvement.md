@@ -28,7 +28,9 @@ A batch review processes several captures at once and produces a single consolid
 
 ### Recommended Cadence
 
-The recommended cadence is to run a batch review after every 5 session captures. This balances review effort against pattern visibility — fewer than 5 captures rarely surface meaningful trends, while more than 5 makes the batch unwieldy.
+The recommended cadence is to run a batch review once 5 or more captures have accumulated since the last review. Fewer than 5 rarely surface meaningful trends.
+
+Five is a *trigger*, not a cap. A batch review covers the entire unreviewed backlog — if 12 captures have piled up, all 12 are reviewed, not the most recent 5. Reviewing only the tail would silently discard the oldest sessions, which is where slow-burning patterns are most visible.
 
 ### Automatic Trigger
 

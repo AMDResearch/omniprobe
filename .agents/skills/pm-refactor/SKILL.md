@@ -39,7 +39,7 @@ Create or manage a refactor workflow packet. Refactors restructure existing code
 4. **Write `run-log.md`.** Initialize with the header from `run-log-template.md`. Leave the body empty.
 5. **Write `handoff.md`.** Initialize with the header from `handoff-template.md`. Set "Next Exact Step" to the first planned refactor action.
 6. **Write `artifacts.md`.** Initialize with the header from `artifacts-template.md`.
-7. **Update `.agents/workflows/INDEX.md`** if a tracking table is maintained.
+7. **Add a row to `.agents/state/active-workflows.md`.** That file is the workflow tracking table, and it is preserved across upgrades. Do not open a second table in `.agents/workflows/INDEX.md`: that file is framework reference content, an upgrade refreshes it, and anything recorded there is lost.
 
 ### Managing an existing refactor packet
 
