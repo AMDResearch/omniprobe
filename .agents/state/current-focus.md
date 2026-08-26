@@ -1,5 +1,26 @@
 # Current Focus
 
+## Framework state (2026-08-25)
+
+- **Upgraded to AMP v0.6** from v0.3, three versions in one run. The six workflow packets below
+  were **suspended** first, not abandoned — `upgrade-project` refuses to migrate a repository with
+  anything under `.agents/workflows/active/`, and all six had been dormant since April with
+  blockers already needing human input. Contracts are intact; resume with
+  `/workflow-resume <id>`. Two overlaps recorded in `active-workflows.md` still apply on resume.
+- **This repository declares a plugin:** `plugins: ["../amd-agent-infra"]` in
+  `.agents/project.json`. `session-init` resolves it read-only and reports one line in the
+  briefing. **That names a private repository in this public one, and it was deliberate** — owner
+  decision 2026-08-25, taken after measuring that the name appeared in zero commits of this repo's
+  published history, so it is a first disclosure rather than an incremental one. It names no host,
+  gateway, model, cluster, port or proxy. Recorded upstream as `[SEAM-Q5]` in
+  `agentic_meta_project`'s `pm-decisions.md`. **Do not "fix" it by deleting the line** — the
+  disclosure is in git history either way, and the declaration is what gives the framework's plugin
+  seam a live consumer.
+- **Local failure modes are `FM-L<n>`.** This repo's own `FM-4` collided with the framework's and
+  is now `FM-L1`; content unchanged. Note `.agents/improvement/failure-modes.md` is a *preserved*
+  file, so it never receives framework updates — its convention section is a dated snapshot and it
+  carries none of the framework's FM-5..FM-13.
+
 ## Current Focus Areas
 
 - Review and finalize Omniprobe whitepaper (ft_whitepaper-omniprobe — awaiting user review).
