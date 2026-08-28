@@ -43,5 +43,8 @@ source "${SCRIPT_DIR}/run_scope_filter_tests.sh"
 # Module-load kernel discovery tests (hipModuleLoad .hsaco)
 source "${SCRIPT_DIR}/run_module_load_tests.sh"
 
+# NUMA memory manager tests (OMNIPROBE_NUMA_NODE)
+source "${SCRIPT_DIR}/run_numa_tests.sh"
+
 # Print summary
 print_summary
