@@ -106,9 +106,22 @@ std::string getBitcodePath(const llvm::Module &M) {
     arch = "unknown";
   }
 
+  // Architecture -> bitcode suffix mapping. Must match the bitcode
+  // variants emitted by dh_comms (see dh_comms/CMakeLists.txt):
+  //   gfx94x      -> _cdna3 (legacy bundled bitcode)
+  //   gfx90a      -> _cdna2 (legacy bundled bitcode)
+  //   other gfx*  -> _<arch> per-arch bitcode (e.g. gfx908 -> _gfx908)
+  //   unknown     -> warn and best-effort fall back to _cdna2
   if (arch == "gfx940" || arch == "gfx941" || arch == "gfx942") {
     CDNAVersion = "_cdna3";
+  } else if (arch == "gfx90a") {
+    CDNAVersion = "_cdna2";
+  } else if (arch.size() >= 3 && arch.substr(0, 3) == "gfx") {
+    CDNAVersion = "_" + arch;
   } else {
+    llvm::errs() << "Warning: architecture '" << arch
+                 << "' has no matching bitcode. "
+                 << "Falling back to cdna2.\n";
     CDNAVersion = "_cdna2";
   }
 
