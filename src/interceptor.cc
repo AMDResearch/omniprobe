@@ -812,7 +812,18 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                             fixupKernArgs(new_kernargs, packet->kernarg_address, comms->get_dev_rsrc_ptr(), args);
                             dispatch->kernarg_address = new_kernargs;
                             dispatch->private_segment_size = args.private_segment_size;
-                            dispatch->group_segment_size = args.group_segment_size;
+                            // The original packet's group_segment_size includes both the
+                            // kernel's fixed LDS and any dynamic shared memory requested
+                            // at launch (e.g. extern __shared__). The instrumented clone's
+                            // descriptor only has its fixed portion. Preserve the dynamic
+                            // part by computing: instrumented_fixed + dynamic_from_launch.
+                            {
+                                arg_descriptor_t orig_args = {};
+                                uint32_t dynamic_lds = packet->group_segment_size;
+                                if (kernel_cache_.getArgDescriptor(queues_[queue], it->second.name_, orig_args, false))
+                                    dynamic_lds = packet->group_segment_size - orig_args.group_segment_size;
+                                dispatch->group_segment_size = args.group_segment_size + dynamic_lds;
+                            }
                             // Store the new kernarg address so we can free it up at kernel completion
                             pending_kernargs_[sig] = new_kernargs;
                         }
