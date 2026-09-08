@@ -1,0 +1,65 @@
+# Handoff
+
+**Location**: `.agents/workflows/draft/bf_exit-status-not-propagated/handoff.md`
+
+## Current Status
+
+Draft, filed 2026-09-08 from an incoming seed. No production code changed.
+
+**This packet will be executed in a fresh session by an agent with none of the filing context**,
+so the dossier is written to stand alone. Read it rather than the seed; the seed is preserved at
+`.agents/workflows/seeds/bf_exit-status-not-propagated.md` but the dossier supersedes it and
+records the verification.
+
+## Last Verified
+
+2026-09-08, at `8de44b0`, by reading the source. Every claim in the seed was re-checked in this
+repository and all held:
+
+- `omniprobe/omniprobe:169` — the comment `# Get process return code` is immediately followed by
+  `remaining = process.stdout.read()`. The status is never read.
+- `omniprobe/omniprobe:823` — `main()` discards the call's result, then finalizes JSON at `:825`,
+  then falls off the end.
+- `omniprobe/api/omniprobe.py:154` — the sole failure check is `if result.returncode != 0`.
+  `:164` returns `"[]"` when the output file is missing.
+- A second caller exists at `:225` (`rocminfo`, for ISA detection) and constrains the fix.
+
+The end-to-end measurement (exit 0 on a SIGSEGV target) was made by the filing agent on gfx950 at
+`44547f9` and is **not** re-measured here — Plan Of Record step 1 does that first.
+
+## Next Exact Step
+
+Plan Of Record step 1: reproduce. On any node, no GPU needed:
+
+    build/bin/omniprobe -i -a MemoryAnalysis -- /bin/sh -c 'kill -SEGV $$'; echo "got: $?"
+
+Expect `0`; the defect is that it is not `139`. Then the same with `exit 42`.
+
+Then step 2 — make the three decisions in the dossier's Background and **write them into
+`run-log.md` before implementing**, because each is observable behaviour and a later reader
+cannot tell a decision from an accident.
+
+## Active Risks / Blockers
+
+- **Open Question 1 is unmeasured and could bite at step 3.** If the Triton path drives a target
+  that has always exited nonzero harmlessly, propagating the status turns a silent pass into a
+  loud failure there. Check before implementing. The failure policy says report it, not
+  special-case it back to silence.
+- **`tests/run_all_tests.sh` is shared with two other active packets.** Append only your own
+  `run_suite` line; do not reformat or reorder. See the dossier's § Dependencies.
+- The `SKIP` substring anywhere in the new test's output marks the whole suite skipped
+  (`tests/run_all_tests.sh:59`) and would make AC-8 misreport.
+
+## Required Reads Before Resuming
+
+1. This file, then `dossier.md`.
+2. `.agents/pm/units/omniprobe-cli.md` — PM unit for the script being changed.
+3. The seed only if you want the filing agent's downstream framing; the dossier carries the facts.
+
+## Proposed Spec Changes
+
+None.
+
+## Scope Amendments
+
+None.
