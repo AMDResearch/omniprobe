@@ -296,8 +296,21 @@ not absence of regression in general. Reported as `WEAK`.
 
 ## Open Questions
 
-1. Is the duplicate load *ever* needed for a HIP fat binary, or can it be skipped outright when
-   the clones are already bound to the executable? The write-up argues it can. Unverified.
+1. ~~Is the duplicate load *ever* needed for a HIP fat binary, or can it be skipped outright when
+   the clones are already bound to the executable?~~ **RESOLVED 2026-09-08 (plan step 3): no, it
+   is not needed — but only the *executable-loading* half of `addFile` may be skipped, not the
+   whole function.** `addFile` does two separable things, and only the second causes the defect:
+   (1) `extractCodeObjects()` writes the code objects to temp files, which feed `kernel_co_map_`
+   (kernelDB/DWARF) and `KernelArgHelper(co_file)` (arg descriptors — file-based COMGR, no HSA
+   executable required); (2) `hsa_executable_create_alt` → `load_agent_code_object` → `freeze`
+   builds the second, private executable whose `__constant__` segment nothing initialises, and
+   fills `lookup_map_`/`kernels_` from it. For a HIP fat binary the application has already
+   loaded the same code, so `registerRuntimeKernel` can supply `lookup_map_` and (2) is pure
+   cost. **For Triton the application has never loaded the instrumented kernels, so (2) is the
+   only place they exist and must stay** — which is what the Non-Goal protects. Evidence: with a
+   non-matching `-k`, so that `addFile`'s insert is skipped and `registerRuntimeKernel` wins, the
+   clone is still dispatched and `__constant__` reads **correctly**. See the run-log entry of
+   2026-09-08 (plan step 3).
 2. `-k "gpuMain5"` at 2 ranks exits 1 with no accesses. Unexplained; may be a second defect.
 3. Does the bug reproduce on `gfx90a` / CDNA2? Only observed on `gfx950`. The mechanism looks
    architecture-independent but that has not been tested.

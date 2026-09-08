@@ -235,3 +235,73 @@ interrupted, this log is the only record of progress.
 - **Blocker / Risk**: none new. Note the reproduction used `-fgpu-rdc`, matching the repo's own
   test kernels; the write-up reports the defect is identical without it, which has not been
   re-checked here.
+
+### 2026-09-08 (design decision — plan step 3)
+
+- **Actor**: claude
+- **Planned step**: Plan step 3 — read `rf_unify-kernel-discovery` and choose between (a)
+  reversing first-writer precedence, (b) skipping the duplicate load, or (c) the deferred
+  `KernelRegistry`.
+- **Action taken**: Read the archived packet in full, then read `coCache::addFile`
+  (`src/utils.cc:503–660`) and the dispatch path (`src/interceptor.cc:780–832`) rather than
+  relying on the dossier's summary. Ran two discriminating experiments on the in-repo reproducer.
+- **Result**: **Decision — option (b), with a structural refinement that makes it smaller than it
+  looked, and option (a) as the fallback.**
+
+  **Experiment 1 — does the application's own executable actually serve a correct clone?**
+  Run with a `-k` regex that does *not* match, so `addFile`'s insert is skipped and
+  `registerRuntimeKernel` is the only writer of `lookup_map_`:
+
+      -k "NOSUCHKERNEL"  → Found instrumented alternative … → __constant__ OK
+      -k "probe_g"       → Found instrumented alternative … → __constant__ CORRUPT
+
+  Both dispatch the clone. **Matching the filter is what breaks it.** This confirms the inverted
+  `-k` semantics on a minimal case and, more importantly, proves the app's-own-executable path is
+  correct — the fix has somewhere to land.
+
+  **Experiment 2 — what does that path cost today?** Same two runs under `-a MemoryAnalysis`:
+
+      -k "NOSUCHKERNEL"  → "Found 0 kernels."  no `kernel location:` line   4540 bytes of messages
+      -k "probe_g"       → "Found 8 kernels."  kernel location: /tmp/…      2876 bytes
+
+  So correct constants and DWARF correlation are **currently mutually exclusive**. That is the
+  packet's crux, now measured rather than argued, and it is exactly what AC-8 exists to remove.
+
+  **The structural finding.** `addFile` does two separable things and only the second causes the
+  defect. (1) `extractCodeObjects()` writes temp files, feeding `kernel_co_map_` (kernelDB/DWARF)
+  and `KernelArgHelper(co_file)` — note the helper is constructed from a **path**
+  (`src/utils.cc:555`), so arg descriptors never needed the private executable. (2)
+  `hsa_executable_create_alt` → `load_agent_code_object` → `freeze` (`src/utils.cc:528–551`)
+  builds the private executable and fills `lookup_map_`/`kernels_` from its symbols; its
+  `__constant__` segment is what nothing initialises. **Skip (2) for code the application has
+  already loaded; keep both for Triton**, where the instrumented kernels exist nowhere else.
+  That satisfies the Non-Goal without special-casing Triton by name.
+
+  One consequence to design around: `kernel_co_map_` and `arg_map_` are currently populated
+  *inside the loop over the loaded executable's symbols* (`src/utils.cc:585–650`), so decoupling
+  them means sourcing the kernel-name list elsewhere — kernelDB already parses the extracted file,
+  and `registerRuntimeKernel` already has the names.
+
+  **Why not (a).** Reversing precedence so `registerRuntimeKernel` wins is a smaller change and
+  would satisfy AC-2 and AC-3, but it leaves all 31 code objects still being loaded (AC-9 unmet)
+  and leaves `kernel_co_map_` behind the `-k` filter (AC-8 unmet). It fixes the symptom this
+  packet is named for and none of the rest. Keep it as the fallback if "has the application
+  already loaded this code object?" cannot be answered reliably — the AMD loader API v1.01,
+  already adopted by `rf_unify-kernel-discovery` for exactly this class of query, is the first
+  thing to try.
+
+  **Why not (c).** `rf_unify-kernel-discovery` considered the full `KernelRegistry`, chose the
+  smaller augmentation deliberately ("achieves the goal with much smaller blast radius"), and
+  this defect lives in that deferral — but reversing that call now would mean a large refactor of
+  `src/interceptor.cc` while `rf_rename-logduration-to-omniprobe` and `rf_lazy-kerneldb-loading`
+  both still claim that file. Wrong time, and not needed for this defect.
+- **Files touched**: this packet's `dossier.md` (Open Question 1 marked resolved — Open Questions
+  are not contract-controlled), `handoff.md`, `run-log.md`. No source.
+- **Verification**: the four runs above on MI350X/gfx950, plus `src/utils.cc:503–660` and
+  `src/interceptor.cc:780–832` read directly.
+- **Criteria impact**: none met. The approach for AC-2, AC-3, AC-8 and AC-9 is now chosen and
+  evidenced.
+- **Blocker / Risk**: the decision rests on being able to tell "the application already loaded
+  this code object" from inside `addFile`. If that proves unreliable, fall back to (a) and accept
+  that AC-8 and AC-9 need separate treatment. Unverified as yet — it is the first thing plan
+  step 4 must establish.

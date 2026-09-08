@@ -59,14 +59,23 @@ recorded them. Plan step 1 exists to reproduce before changing anything.
 
 ## Next Exact Step
 
-**Plan step 1 is DONE — the defect is reproduced at HEAD.** See the run-log entry of
-2026-09-08 (reproduction) for the commands and output.
+**Plan steps 1 and 3 are DONE.** The defect is reproduced at HEAD, and the approach is chosen:
+**option (b)** — skip only the executable-loading half of `coCache::addFile` for code objects the
+application has already loaded, keep both halves for Triton. Open Question 1 is resolved in the
+dossier; the evidence is in the run-log entries of 2026-09-08 (reproduction) and (design
+decision).
 
-Next is **plan step 3**: read `.agents/kt.archive/refactors/done/rf_unify-kernel-discovery.md`
-and choose between (a) reversing first-writer precedence so `registerRuntimeKernel` wins for HIP,
-(b) skipping the duplicate load when clones are already bound to the executable, or (c) the
-deferred `KernelRegistry`. This is the packet's first real design decision and Open Question 1
-is what settles it.
+**Next is plan step 4 — implement.** Start by establishing the one thing the decision rests on
+and is not yet verified: **can `addFile` tell that the application has already loaded this code
+object?** Try `hsa_ven_amd_loader_iterate_loaded_code_objects` (the loader API was already
+upgraded to v1.01 by `rf_unify-kernel-discovery` for this class of query). If that is not
+reliable, fall back to option (a) — reverse the first-writer precedence — and treat AC-8 and AC-9
+as separate work; the run-log entry explains what (a) does and does not buy.
+
+Then, in the same pass: decouple `kernel_co_map_` / `arg_map_` population from the loaded
+executable's symbol loop (`src/utils.cc:585–650`), since those need only the extracted file;
+gate the clone swap at `src/interceptor.cc:790` on the `-k` filter (step 5, AC-7); and populate
+`kernel_co_map_` regardless of the filter (step 6, AC-8).
 
 Plan step 2 is partly done: the AC-9 `Adding`-count baseline is captured at
 `.untracked/bf_hip-dup-co/adding-before.log` (**31** loads for a single-kernel reproducer).
