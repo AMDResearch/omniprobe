@@ -205,8 +205,10 @@ EOF
         OMNIPROBE_EXIT=$?
 
         if [ $OMNIPROBE_EXIT -eq 0 ]; then
-            # Static libs should NOT be scanned (excluded)
-            if grep -q "Adding ${BUILD_DIR}/libstatic_head.so" "${TEST_OUTPUT_DIR}/test3_exclude_static.log"; then
+            # Static libs should NOT be scanned (excluded). libstatic_head.so is loaded by
+            # the application, so if the exclusion broke it would be reported as "Indexing",
+            # not "Adding" — matching only the latter would make this check unable to fire.
+            if grep -qE "^(Adding|Indexing) ${BUILD_DIR}/libstatic_head.so" "${TEST_OUTPUT_DIR}/test3_exclude_static.log"; then
                 log_error "Test 3 FAILED: libstatic_head.so was added despite exclude"
                 exit 1
             fi

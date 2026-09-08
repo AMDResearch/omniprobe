@@ -15,7 +15,7 @@ check_omniprobe
 # Helper function for library filter tests
 # Args: test_name, kernel, filter_json, check_type, check_pattern
 #   check_type: "present" (pattern should appear), "absent" (pattern should NOT appear)
-#   check_pattern: grep pattern to search for in "Adding <library>" lines
+#   check_pattern: grep pattern to search for in "Adding|Indexing <library>" lines
 run_library_filter_test() {
     local test_name="$1"
     local kernel="$2"
@@ -39,9 +39,15 @@ run_library_filter_test() {
     if ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
        "$OMNIPROBE" -i -a MemoryAnalysis --library-filter "$filter_file" -- "$kernel" > "$output_file" 2>&1; then
 
-        # Extract "Adding <library>" lines for validation
+        # Extract the per-file lines the library filter decides on, for validation.
+        # A file the application has already mapped is reported as "Indexing"; a file
+        # reached only through a --library-filter include is reported as "Adding",
+        # because that is the case still needing a private HSA executable. The filter
+        # itself runs before either line is printed, so both are equally good evidence
+        # that a library survived it, and matching only "Adding " would silently pass
+        # every check about an application-loaded library.
         local adding_lines
-        adding_lines=$(grep "^Adding " "$output_file" 2>/dev/null || true)
+        adding_lines=$(grep -E "^(Adding|Indexing) " "$output_file" 2>/dev/null || true)
 
         case "$check_type" in
             present)
