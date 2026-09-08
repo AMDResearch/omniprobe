@@ -33,6 +33,24 @@ repository and all held:
 The end-to-end measurement (exit 0 on a SIGSEGV target) was made by the filing agent on gfx950 at
 `44547f9` and is **not** re-measured here — Plan Of Record step 1 does that first.
 
+## Step 0 — re-stamp the base commit before anything else
+
+Three packets were promoted together on 2026-09-08, and the promotion commit touched all three
+packet directories. A packet's own directory is allowlisted by `ac_check_write_scope`; its
+**siblings' are not**. So every one of the three currently reports the other two's files as
+out-of-scope writes:
+
+    FAIL  SCOPE  writes outside declared scope: .agents/workflows/active/<another-packet>/...
+
+That is the check working correctly on the wrong subject. Nothing is actually out of scope, and
+chasing it by re-stamping all three in turn is circular — whichever is stamped last puts the
+others back in range.
+
+**First action on picking this packet up:** set `- Base Commit:` in `dossier.md` to
+`git rev-parse HEAD`, commit that one-line change on its own, and re-run `acceptance.sh`. `SCOPE`
+returns to `PASS` and stays there, because from then on the only commits in range are this
+packet's own.
+
 ## Next Exact Step
 
 Plan Of Record step 1: reproduce. On any node, no GPU needed:
