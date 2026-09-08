@@ -65,17 +65,27 @@ application has already loaded, keep both halves for Triton. Open Question 1 is 
 dossier; the evidence is in the run-log entries of 2026-09-08 (reproduction) and (design
 decision).
 
-**Next is plan step 4 — implement.** Start by establishing the one thing the decision rests on
-and is not yet verified: **can `addFile` tell that the application has already loaded this code
-object?** Try `hsa_ven_amd_loader_iterate_loaded_code_objects` (the loader API was already
-upgraded to v1.01 by `rf_unify-kernel-discovery` for this class of query). If that is not
-reliable, fall back to option (a) — reverse the first-writer precedence — and treat AC-8 and AC-9
-as separate work; the run-log entry explains what (a) does and does not buy.
+**Plan steps 4, 5 and 6 are DONE.** The fix is implemented and behaves correctly on the
+reproducer; the runtime "already loaded?" test proved unnecessary because the distinction is
+available statically at the call site. See the run-log entry of 2026-09-08 (implementation).
 
-Then, in the same pass: decouple `kernel_co_map_` / `arg_map_` population from the loaded
-executable's symbol loop (`src/utils.cc:585–650`), since those need only the extracted file;
-gate the clone swap at `src/interceptor.cc:790` on the `-k` filter (step 5, AC-7); and populate
-`kernel_co_map_` regardless of the filter (step 6, AC-8).
+**Next is plan step 7 — the regression tests.** Nothing is *met* until these exist, because the
+evidence so far is manual. Two scripts, both named by `acceptance.sh` and currently its reason
+for failing AC-2/AC-3/AC-7/AC-8:
+
+- `tests/test_constant_memory_visibility.sh` — takes `--no-filter` (AC-2) and
+  `--with-matching-filter` (AC-3). Builds `tests/test_kernels/constant_memory_test.hip` and
+  asserts the reproducer prints `__constant__ OK` in both modes.
+- `tests/test_kernel_filter_semantics.sh` — plain (AC-7): a kernel matching `-k` runs its clone
+  and a non-matching kernel runs its original. With `--assert-dwarf` (AC-8): a filtered run still
+  reports non-zero source-line attribution for the kernel it does instrument.
+
+The manual commands these should automate, and their expected output, are in the run-log entry of
+2026-09-08 (implementation) as a three-row table. Note the tests must compile the kernel to `/tmp`
+and run it from there — `/work1` and `/home1` are fuseblk on this node and do not support mmap.
+
+Then step 8 (full suite vs baselines), step 9 (the unexplained `-k "gpuMain5"` 2-rank exit 1),
+step 10 (docs + PM).
 
 Plan step 2 is partly done: the AC-9 `Adding`-count baseline is captured at
 `.untracked/bf_hip-dup-co/adding-before.log` (**31** loads for a single-kernel reproducer).

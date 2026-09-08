@@ -500,7 +500,42 @@ bool coCache::getCodeObjectRef(hsa_agent_t agent, const std::string& name, CodeO
     return false;
 }
 
-bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::string& strFilter)
+bool coCache::indexCodeObjectFiles(const std::string& name, hsa_agent_t agent,
+                                   const std::vector<std::string>& code_object_files)
+{
+    bool bResult = false;
+
+    for (const auto& co_file : code_object_files)
+    {
+        /* COMGR reads the file directly; no HSA executable is involved. This is the same
+         * helper addFile() builds, constructed the same way — only the executable load is
+         * being skipped, not the metadata extraction. */
+        KernelArgHelper kh(co_file);
+        std::vector<std::string> kernel_names;
+        kh.getKernelNames(kernel_names);
+
+        for (const auto& strName : kernel_names)
+        {
+            arg_descriptor_t desc;
+            bool bHaveDesc = kh.getArgDescriptor(strName, desc);
+
+            lock_guard<std::mutex> lock(mutex_);
+            if (bHaveDesc)
+                arg_map_[agent][strName] = desc;
+            /* Deliberately not gated on the kernel filter. A -k regex selects which kernels
+             * run instrumented, and that belongs at dispatch. Letting it also decide which
+             * kernels kernelDB can resolve source lines for costs a filtered run its DWARF
+             * correlation for the kernels it does instrument. */
+            kernel_co_map_[agent][strName] = {name, co_file, ""};
+            bResult = true;
+        }
+    }
+
+    return bResult;
+}
+
+bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::string& strFilter,
+                      bool app_loads_object)
 {
     bool bResult = false;
     hsa_status_t status;
@@ -511,6 +546,14 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
     std::vector<std::string> code_object_files = extractCodeObjects(agent, name);
     if (code_object_files.empty())
         return false;
+
+    /* The application loads this code itself, so building a second HSA executable from
+     * the same bytes would give us clones whose __constant__ segment nobody initialises.
+     * Take the file-derived half only: COMGR argument descriptors and the code-object
+     * references kernelDB scans for DWARF. registerRuntimeKernel() supplies the symbols,
+     * off the application's own executable. */
+    if (app_loads_object)
+        return indexCodeObjectFiles(name, agent, code_object_files);
 
     // Create and load an HSA executable for each code object
     std::vector<hsa_executable_t> executables;
@@ -1131,6 +1174,12 @@ void KernelArgHelper::computeKernargData(amd_comgr_metadata_node_t exec_map)
             kernels_[strName] = desc;
         }
     }
+}
+
+void KernelArgHelper::getKernelNames(std::vector<std::string>& names) const
+{
+    for (const auto& entry : kernels_)
+        names.push_back(entry.first);
 }
 
 bool KernelArgHelper::getArgDescriptor(const std::string& strName, arg_descriptor_t& desc)

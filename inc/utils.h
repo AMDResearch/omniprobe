@@ -167,7 +167,21 @@ public:
     uint64_t findInstrumentedAlternative(hsa_executable_symbol_t, const std::string& name, hsa_agent_t queue_agent = {0});
     bool hasKernels(hsa_agent_t agent);
     uint32_t getArgSize(uint64_t kernel_object);
-    bool addFile(const std::string& name, hsa_agent_t agent, const std::string& strFilter);
+    /* Add a code object file to the cache.
+     *
+     * app_loads_object says the application loads this same code into its own HSA
+     * executable — true for the process's own binary and its shared libraries, false for
+     * a Triton JIT cache or a --library-filter include, which name files the application
+     * never loads.
+     *
+     * When it is true we extract the code objects (kernelDB and the argument descriptors
+     * need the files) but do NOT build a second, private HSA executable from them. That
+     * private executable gets its own uninitialised __constant__ segment, so clones
+     * dispatched out of it read every __device__/__constant__ global as zero. The symbols
+     * come from registerRuntimeKernel() instead, off the executable the application itself
+     * loaded and HIP itself initialised. See bf_hip-duplicate-code-object-load. */
+    bool addFile(const std::string& name, hsa_agent_t agent, const std::string& strFilter,
+                 bool app_loads_object = false);
     bool getArgDescriptor(hsa_agent_t agent, std::string& name, arg_descriptor_t& desc, bool instrumented);
     bool getCodeObjectRef(hsa_agent_t agent, const std::string& name, CodeObjectRef& ref);
     uint8_t getArgumentAlignment(uint64_t kernel_object);
@@ -176,6 +190,10 @@ public:
                                uint64_t kernel_object, hsa_agent_t agent, uint32_t kernarg_size);
     bool isKernelFromExcludedFile(uint64_t kernel_object, const class LibraryFilter& filter);
 private:
+    /* Populate arg_map_ and kernel_co_map_ from extracted code-object files alone, without
+     * creating an HSA executable. Used for code the application loads itself. */
+    bool indexCodeObjectFiles(const std::string& name, hsa_agent_t agent,
+                              const std::vector<std::string>& code_object_files);
     bool resolveRuntimeArgDescriptors(hsa_agent_t agent);
     HsaApiTable *apiTable_;
     hsa_ven_amd_loader_1_01_pfn_t loader_api_;
@@ -201,6 +219,9 @@ public:
     ~KernelArgHelper();
     void addCodeObject(const char *bits, size_t length);
     bool getArgDescriptor(const std::string& strName, arg_descriptor_t& desc);
+    /* Demangled names of every kernel COMGR found in the code object. Lets a caller
+     * enumerate a file's kernels without loading it into an HSA executable. */
+    void getKernelNames(std::vector<std::string>& names) const;
     static void getSharedLibraries(std::vector<std::string>& libraries);
 private:
     std::string get_metadata_string(amd_comgr_metadata_node_t node);

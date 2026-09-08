@@ -198,6 +198,25 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                 {
                     std::string cacheLocation = config_["LOGDUR_KERNEL_CACHE"];
                     std::string strFilter = config_["LOGDUR_FILTER"];
+                    /* Compile the kernel filter once, here, so the dispatch path can decide
+                     * whether to run a given kernel instrumented. The filter used to reach
+                     * dispatch only indirectly, by gating which kernels coCache::addFile()
+                     * recorded — which made -k select the *copy* a clone came from rather
+                     * than *whether* it was used. See bf_hip-duplicate-code-object-load. */
+                    if (strFilter.size())
+                    {
+                        try
+                        {
+                            kernel_filter_regex_ = std::regex(strFilter, std::regex_constants::ECMAScript);
+                            has_kernel_filter_ = true;
+                        }
+                        catch (const std::regex_error& error)
+                        {
+                            std::cout << "ERROR: There is a problem with your kernel filter (\"" << strFilter << "\"):\n";
+                            std::cout << "\t" << error.what() << std::endl;
+                            abort();
+                        }
+                    }
                     for (auto agent : gpus)
                     {
                         /* If we're running Triton, the user needs to specify the location of the Triton
@@ -211,6 +230,13 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                             std::vector<std::string>files;
                             files.push_back(getExecutablePath());
                             KernelArgHelper::getSharedLibraries(files);
+                            /* Everything enumerated so far is a code object this process has
+                             * already mapped, so the application loads it into its own HSA
+                             * executable and we must not build a second copy — see
+                             * coCache::addFile(). Anything appended below is a
+                             * --library-filter include: a file the application does not load,
+                             * which is exactly the case that needs the private executable. */
+                            const size_t app_loaded_count = files.size();
                             // Add files from library filter include list
                             if (library_filter_.isActive()) {
                                 for (const auto& includePath : library_filter_.getIncludedFiles()) {
@@ -225,16 +251,18 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                             // (we'll add files manually after filtering)
                             kdbs_[agent] = std::make_unique<kernelDB::kernelDB>(agent);
 
-                            for (auto file : files)
+                            for (size_t file_idx = 0; file_idx < files.size(); file_idx++)
                             {
+                                const std::string& file = files[file_idx];
                                 // Apply exclusion filter
                                 if (library_filter_.isActive() && library_filter_.isExcluded(file)) {
                                     continue;  // Skip excluded files
                                 }
-                                std::cout << "Adding " << file << std::endl;
+                                const bool app_loads_object = file_idx < app_loaded_count;
+                                std::cout << (app_loads_object ? "Indexing " : "Adding ") << file << std::endl;
                                 try
                                 {
-                                    kernel_cache_.addFile(file, agent, strFilter);
+                                    kernel_cache_.addFile(file, agent, strFilter, app_loads_object);
                                 }
                                 catch (const std::runtime_error& e)
                                 {
@@ -787,7 +815,7 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                     // What's the kernarg buffer size for this new kernel?
                     uint32_t size = kernel_cache_.getArgSize(alt_kernel_object);
                     //uint8_t test_align = kernel_cache_.getArgumentAlignment(packet->kernel_object);
-                    if (run_instrumented_ && dispatcher_.canDispatch(alt_kernel_object))
+                    if (run_instrumented_ && runKernelInstrumented(it->second.name_) && dispatcher_.canDispatch(alt_kernel_object))
                     {
                         // Found an instrumented  kernel Vobject to use as an alternative
                         dispatch->kernel_object = alt_kernel_object;
@@ -938,6 +966,13 @@ hsa_status_t hsaInterceptor::hsa_queue_destroy(hsa_queue_t *queue)
     return result;
 }
 
+
+bool hsaInterceptor::runKernelInstrumented(const std::string& name) const
+{
+    if (!has_kernel_filter_)
+        return true;
+    return std::regex_search(name, kernel_filter_regex_);
+}
 
 void hsaInterceptor::addKernel(uint64_t kernelObject, std::string& name, hsa_executable_symbol_t symbol, hsa_agent_t agent, uint32_t kernarg_size)
 {

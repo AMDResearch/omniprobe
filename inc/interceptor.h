@@ -22,6 +22,7 @@ THE SOFTWARE.
 #pragma once
 
 #include <shared_mutex>
+#include <regex>
 #include <memory>
 #include <dlfcn.h>
 #include <cxxabi.h>
@@ -101,6 +102,11 @@ private:
     void addQueue(hsa_queue_t *queue, hsa_agent_t agent);
     void removeQueue(hsa_queue_t *queue);
     void addKernel(uint64_t kernelObject, std::string& name, hsa_executable_symbol_t symbol, hsa_agent_t agent, uint32_t kernarg_size);
+    /* Should this kernel run instrumented? True when no -k filter was given, or when the
+     * kernel's demangled name matches it. Kernels that do not match keep their original
+     * kernel object and run uninstrumented, which is what -k has always been documented
+     * to mean. */
+    bool runKernelInstrumented(const std::string& name) const;
     bool getPendingSignals(std::vector<hsa_signal_t>& outSigs);
     void signalCompleted(const hsa_signal_t sig);
     bool signalWait(hsa_signal_t sig, uint64_t timeout);
@@ -178,6 +184,8 @@ private:
     dispatchController dispatcher_;
     std::map<hsa_agent_t, std::unique_ptr<kernelDB::kernelDB>, hsa_cmp<hsa_agent_t>> kdbs_;
     LibraryFilter library_filter_;
+    std::regex kernel_filter_regex_;
+    bool has_kernel_filter_ = false;
     static std::mutex singleton_mutex_;
     static std::shared_mutex stop_mutex_;
     static hsaInterceptor *singleton_;

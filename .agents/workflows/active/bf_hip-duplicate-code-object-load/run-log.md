@@ -305,3 +305,75 @@ interrupted, this log is the only record of progress.
   this code object" from inside `addFile`. If that proves unreliable, fall back to (a) and accept
   that AC-8 and AC-9 need separate treatment. Unverified as yet — it is the first thing plan
   step 4 must establish.
+
+### 2026-09-08 (implementation — plan steps 4, 5, 6)
+
+- **Actor**: claude
+- **Planned step**: Steps 4–6: implement option (b), gate the clone swap on `-k` (AC-7), and
+  populate `kernel_co_map_` regardless of the filter (AC-8).
+- **Action taken**: First settled the question step 3 left open — **the runtime "has the
+  application already loaded this code object?" test is not viable**, and the evidence is in the
+  log we already had: all 46 `Adding` lines complete *before* `>>>>>>>> HSA intercept registered`,
+  so at `addFile` time the application has loaded nothing into HSA and
+  `iterate_loaded_code_objects` would have nothing to find. But the distinction turns out to be
+  available **statically**, which is better: `getExecutablePath()` + `getSharedLibraries()`
+  enumerate objects this process has already mapped, while `--library-filter` includes and the
+  Triton JIT cache name files the application never loads. The call site at
+  `src/interceptor.cc` already builds those two groups in one list; it now records the boundary
+  index and passes the distinction down.
+
+  Changes:
+  - `inc/utils.h` / `src/utils.cc`: `coCache::addFile` takes `app_loads_object`. When set, it
+    extracts the code objects and calls a new `coCache::indexCodeObjectFiles()`, which populates
+    `arg_map_` and `kernel_co_map_` from the files alone and **never creates an HSA executable**.
+    `KernelArgHelper::getKernelNames()` added so a file's kernels can be enumerated without one.
+  - `src/interceptor.cc`: the file loop passes `app_loads_object` for the process's own binary
+    and shared libraries, and `false` for `--library-filter` includes. Triton's `setLocation()`
+    path is untouched and still gets the private executable, which is the Non-Goal.
+  - `inc/interceptor.h` / `src/interceptor.cc`: the `-k` regex is compiled once at init and
+    `runKernelInstrumented()` gates the clone swap, so a non-matching kernel keeps its original
+    kernel object. `indexCodeObjectFiles()` deliberately does **not** apply the filter, so DWARF
+    survives filtering (AC-8).
+- **Result**: **success — the three-way tradeoff is gone.** Reproducer under `-a MemoryAnalysis`:
+
+  | `-k` | `__constant__` | instrumented? | kernelDB |
+  |---|---|---|---|
+  | *(none)* | **OK** | yes | `Found 8 kernels`, source location present |
+  | `probe_g` (matches) | **OK** | yes | `Found 8 kernels`, source location present |
+  | `NOSUCHKERNEL` (no match) | **OK** | **no** — runs its original | `Found 0 kernels` (nothing instrumented, so nothing to correlate) |
+
+  Compare the same table before the change: matching `-k` gave CORRUPT constants, non-matching
+  gave correct constants but an empty kernelDB, and nothing gave both. AC-2, AC-3, AC-7 and AC-8
+  all behave correctly on the reproducer now.
+
+  Private code-object loads for the reproducer fell **31 → 0** (`.untracked/bf_hip-dup-co/`
+  `adding-before.log` / `adding-after.log`).
+- **Files touched**: `src/utils.cc`, `inc/utils.h`, `src/interceptor.cc`, `inc/interceptor.h` —
+  all in declared scope. No test or doc yet.
+- **Verification**: builds clean in both trees (`build_gfx950` and `build`, exit 0). Full suite on
+  the `build/` tree with `TRITON_DIR` set, against the same tree and environment before the change:
+
+  | suite | before | after |
+  |---|---|---|
+  | Library filter chain | PASS | PASS |
+  | **Triton integration** | PASS | **PASS** |
+  | Handler tests | FAIL (pre-existing) | FAIL (pre-existing) |
+
+  **AC-5 is the one that matters here and it holds.** `coCache::addFile` exists for Triton and
+  this change alters when it is used, so Triton passing is the evidence that the Non-Goal was
+  respected. Note the Triton suite *fails* against `build_gfx950` for an unrelated reason — that
+  tree was configured without `-DTRITON_LLVM`, so `libAMDGCNSubmitAddressMessages-triton.so` was
+  never built there. Not a regression; checked before attributing it.
+- **Criteria impact**: AC-2, AC-3, AC-7, AC-8 demonstrated on the reproducer; AC-5 verified
+  unregressed; AC-1 builds clean. None of these are *met* until the regression tests of step 7
+  exist and `acceptance.sh` decides them — the evidence above is manual.
+- **Blocker / Risk**: **one honest weakness in AC-9's check, flagged for the human who rules on
+  it** — AC-9 is already a `[judgement]` criterion, which is the right place for this. The check
+  counts `^Adding ` lines, and this change makes the interceptor print `Indexing ` instead for
+  files it no longer privately loads. So the 31 → 0 drop would also be produced by renaming the
+  string and changing nothing else. The line is emitted from the same boolean that selects the
+  behaviour, so they cannot drift by accident, but the check is weaker than a check anchored at
+  the load site would be. Moving the emission inside `addFile` was considered and rejected: files
+  whose `extractCodeObjects()` returns empty would silently lose their `Adding` line, which the
+  library-filter tests read. The behavioural evidence for AC-9 is therefore the AC-2/AC-3/AC-8
+  table above, not the count alone.
