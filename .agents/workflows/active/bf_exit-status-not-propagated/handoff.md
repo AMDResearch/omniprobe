@@ -4,81 +4,99 @@
 
 ## Current Status
 
-**Active**, promoted 2026-09-08 after passing `workflow-readiness-check`. Base commit `821c89b`.
-Filed the same day from an incoming seed. No production code changed.
+**Active. The fix is implemented, committed and verified; AC-1 through AC-7 are met.**
+Base commit re-stamped to `24fcd82` (commit `cd62559`); fix in `c5aec00`.
 
-The readiness check repaired two defective checks in this packet's `acceptance.sh` before
-promotion. No acceptance criterion changed. If you edit those checks, read the dossier's
-Verification Strategy notes first — each is indirect on purpose and the obvious simplification
-reintroduces the defect it was written to avoid.
+**AC-8 is the only criterion outstanding, and it is blocked by hardware, not by the code.**
+See § Active Risks below — it needs a gfx90a node.
 
-**This packet will be executed in a fresh session by an agent with none of the filing context**,
-so the dossier is written to stand alone. Read it rather than the seed; the seed is preserved at
-`.agents/workflows/seeds/bf_exit-status-not-propagated.md` but the dossier supersedes it and
-records the verification.
+Step 0 (re-stamp the base commit) is **done**. `SCOPE` is `PASS` and will stay there.
 
 ## Last Verified
 
-2026-09-08, at `8de44b0`, by reading the source. Every claim in the seed was re-checked in this
-repository and all held:
+2026-09-08, on `k007-005-v2.hpcfund` (**gfx950** / MI350X), ROCm 7.2.0, against `build/`
+(a gfx90a tree — irrelevant here, since every target in this packet is a `/bin/sh` stub).
 
-- `omniprobe/omniprobe:169` — the comment `# Get process return code` is immediately followed by
-  `remaining = process.stdout.read()`. The status is never read.
-- `omniprobe/omniprobe:823` — `main()` discards the call's result, then finalizes JSON at `:825`,
-  then falls off the end.
-- `omniprobe/api/omniprobe.py:154` — the sole failure check is `if result.returncode != 0`.
-  `:164` returns `"[]"` when the output file is missing.
-- A second caller exists at `:225` (`rocminfo`, for ISA detection) and constrains the fix.
+Gate result after the fix: **7 passed, 0 weak, 0 judgement, 1 failed** — the failure is AC-8.
 
-The end-to-end measurement (exit 0 on a SIGSEGV target) was made by the filing agent on gfx950 at
-`44547f9` and is **not** re-measured here — Plan Of Record step 1 does that first.
+Measured by hand as well, exact numbers not "nonzero":
 
-## Step 0 — re-stamp the base commit before anything else
+| target | before | after |
+|---|---|---|
+| `/bin/sh -c 'exit 42'` | 0 | **42** |
+| `/bin/sh -c 'kill -SEGV $$'` | 0 | **139** |
+| `/bin/true` | 0 | 0 |
 
-Three packets were promoted together on 2026-09-08, and the promotion commit touched all three
-packet directories. A packet's own directory is allowlisted by `ac_check_write_scope`; its
-**siblings' are not**. So every one of the three currently reports the other two's files as
-out-of-scope writes:
+## What Was Decided
 
-    FAIL  SCOPE  writes outside declared scope: .agents/workflows/active/<another-packet>/...
+All three of the dossier's questions were taken as recommended; the reasoning is in `run-log.md`
+under *the three decisions*. In short: `128 + signal` via a named `shell_exit_status()` helper;
+finalize JSON then exit; and a warning that says what happened to *the application* without
+claiming the analysis failed.
 
-That is the check working correctly on the wrong subject. Nothing is actually out of scope, and
-chasing it by re-stamping all three in turn is circular — whichever is stamped last puts the
-others back in range.
+**Open Question 1 is closed.** The Triton target exits **0** — measured directly, with a wrapper
+that reports the target's own status, before any source change. `tests/triton/run_test.sh:89`
+does gate on omniprobe's status and so was the place this could have bitten; it does not. No
+report to the user was needed under the `stop` failure policy.
 
-**First action on picking this packet up:** set `- Base Commit:` in `dossier.md` to
-`git rev-parse HEAD`, commit that one-line change on its own, and re-run `acceptance.sh`. `SCOPE`
-returns to `PASS` and stays there, because from then on the only commits in range are this
-packet's own.
+## One finding worth carrying forward
+
+**AC-5 failed after the fix, and the cause was not ordering.** A `/bin/sh` target dispatches no
+kernel, so the handler never creates the JSON file — and a **successful** `/bin/true` target
+produced no file either. The gate was therefore observing "did any dispatch happen", not "was the
+exit ordered after finalization", and *no* ordering could have satisfied it on a no-GPU target.
+
+`finalize_json_output` now writes `[]` when JSON output to a file was requested and nothing was
+written. That makes AC-5 true as stated *and* makes the gate a real ordering observable: exiting
+before finalization would leave no file at all and still FAIL. The packet's no-GPU property,
+which the dossier's Constraints ask for explicitly, is preserved.
 
 ## Next Exact Step
 
-Plan Of Record step 1: reproduce. On any node, no GPU needed:
+**Run `tests/run_all_tests.sh` on a gfx90a node with `.untracked/test-env.sh` sourced, and
+confirm `Suites failed: 0` and `Suites skipped: 0`.** That is AC-8 and it is all that remains.
+Nothing else about the packet is open.
 
-    build/bin/omniprobe -i -a MemoryAnalysis -- /bin/sh -c 'kill -SEGV $$'; echo "got: $?"
+## What is already known about the gfx90a run
 
-Expect `0`; the defect is that it is not `139`. Then the same with `exit 42`.
+Do not assume the remaining step is a formality, but it is well-supported:
 
-Then step 2 — make the three decisions in the dossier's Background and **write them into
-`run-log.md` before implementing**, because each is observable behaviour and a later reader
-cannot tell a decision from an accident.
+- **The handler suite passes 25/25 with this fix live**, measured against the arch-matched
+  `build_gfx950/` tree on this node. Its failure in the gfx950 full run is the gfx90a-binary
+  artifact, not status propagation — worth stating because the *failure mode changed* with this
+  fix (`Kernel execution failed` is a `test_common.sh:run_test` branch that could never be taken
+  while omniprobe always exited 0).
+- Seven of eleven suites passed on this node with the fix live. Only the three gfx90a-only
+  library suites have never been exercised against it.
+
+**A correction that belongs in `current-focus.md`** (not written there — outside this packet's
+write scope): that file records a gfx90a binary on gfx950 as failing "silently, producing exit 0
+with no output". Measured: `build/tests/test_kernels/simple_heatmap_test` on gfx950 **dies of
+SIGSEGV and exits 139**. The exit 0 *was this bug*, seen through omniprobe. Two phantom "known
+defects" were already attributed to that misreading.
 
 ## Active Risks / Blockers
 
-- **Open Question 1 is unmeasured and could bite at step 3.** If the Triton path drives a target
-  that has always exited nonzero harmlessly, propagating the status turns a silent pass into a
-  loud failure there. Check before implementing. The failure policy says report it, not
-  special-case it back to silence.
-- **`tests/run_all_tests.sh` is shared with two other active packets.** Append only your own
-  `run_suite` line; do not reformat or reorder. See the dossier's § Dependencies.
-- The `SKIP` substring anywhere in the new test's output marks the whole suite skipped
-  (`tests/run_all_tests.sh:59`) and would make AC-8 misreport.
+- **AC-8 cannot be measured on a gfx950 node.** `INSTRUMENTED_ROCBLAS_LIB_DIR` and
+  `INSTRUMENTED_HIPBLASLT_LIB_DIR` are gfx90a-only, `.untracked/test-env.sh` deliberately
+  withholds them elsewhere, and the three instrumented-library suites then print their own skip
+  marker and are counted as skipped — so `Suites skipped: 0` is unreachable here. `acceptance.sh`
+  says so in its own comment at the AC-7/AC-8 block. The handler suites additionally run gfx90a
+  binaries, which on gfx950 do not error, they silently do not dispatch. **This is an environment
+  constraint, not a defect in the fix**, and it is the same effect that manufactured two
+  long-standing phantom "known defects" recorded in `current-focus.md`.
+- **`tests/run_all_tests.sh` is shared with two other active packets.** This packet appended
+  exactly one `run_suite` line (suite 11, "Exit status propagation") plus its comment and edited
+  no other line. Keep it that way.
+- The new suite prints nothing containing the whole-suite skip marker that
+  `tests/run_all_tests.sh:59` greps for; a comment in the test says so. Do not add it.
 
 ## Required Reads Before Resuming
 
-1. This file, then `dossier.md`.
-2. `.agents/pm/units/omniprobe-cli.md` — PM unit for the script being changed.
-3. The seed only if you want the filing agent's downstream framing; the dossier carries the facts.
+1. This file. `dossier.md` only if you need the contract text — the work is done and the
+   remaining step is a single command.
+2. `.agents/state/current-focus.md` § Project-Level Risks, for why the node's architecture
+   decides whether AC-8 is measurable.
 
 ## Proposed Spec Changes
 
@@ -86,4 +104,4 @@ None.
 
 ## Scope Amendments
 
-None.
+None. All four declared paths were written and nothing outside them was.
