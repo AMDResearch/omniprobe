@@ -57,15 +57,49 @@ amended.
 The measurements come from the 2026-09-01 PENNANT session and are reported here as that session
 recorded them. Plan step 1 exists to reproduce before changing anything.
 
-## Next Exact Step
+## Status
 
-**Plan steps 1 and 3 are DONE.** The defect is reproduced at HEAD, and the approach is chosen:
-**option (b)** — skip only the executable-loading half of `coCache::addFile` for code objects the
-application has already loaded, keep both halves for Triton. Open Question 1 is resolved in the
-dossier; the evidence is in the run-log entries of 2026-09-08 (reproduction) and (design
-decision).
+**The entire plan of record is DONE — steps 1 through 10.** The gate reads
+**8 passed, 1 weak, 0 judgement, 1 failed**, SCOPE clean. AC-4 is the only outstanding
+criterion, and it cannot be met on a gfx950 node.
 
-**Plan steps 4, 5 and 6 are DONE.** The fix is implemented and behaves correctly on the
+## Next Exact Step: resume on a gfx90a / MI210 node
+
+AC-4 requires `tests/run_all_tests.sh` with **no suite skipped**. Three suites skip here because
+the instrumented rocBLAS/hipBLASLt libraries are gfx90a-only and this is a gfx950 machine. That
+is an environment gap, not a code defect, and moving nodes is the intended resolution.
+
+1. `/session-init`, then `/workflow-resume bf_hip-duplicate-code-object-load`.
+2. `source .untracked/test-env.sh` — it detects the architecture and **will** export
+   `INSTRUMENTED_ROCBLAS_LIB_DIR` and `INSTRUMENTED_HIPBLASLT_LIB_DIR` on gfx90a, which it
+   deliberately withholds on gfx950. Use the `build/` tree (gfx90a); do **not** use
+   `build_gfx950/`, which also lacks the Triton plugin.
+3. `bash tests/run_all_tests.sh` and read the tally before anything else.
+4. Re-record `baseline-run_all_tests.txt` **on that node**. It is stale on three axes: it records
+   6 suites (there are now 10), with the environment variables unset, on a gfx950 node.
+   "Before the change" no longer exists in the tree, so reconstruct it the way AC-6's baseline
+   was — force `app_loads_object` false in `src/interceptor.cc`, rebuild, measure, revert,
+   rebuild — and say so in the file, as that file's own instructions require.
+5. Run `acceptance.sh`.
+
+**Expect the Handler suite to pass there, and do not be surprised.** Its failure is recorded in
+the baseline as a pre-existing defect. It is not one: it runs a gfx90a binary
+(`build/tests/test_kernels/simple_heatmap_test`) that silently fails to dispatch on gfx950.
+Recompiled for gfx950 it passes — see the run-log entry of 2026-09-08 (AC-4 forecast). On MI210
+the architecture matches natively.
+
+**The real risk is different from the one that blocks it here.** Making the three rocBLAS and
+hipBLASLt suites *run* is not the same as making them *pass*. A project-level risk on record says
+the rocBLAS integration test is broken with "instrumented sscal not found in current build".
+If they fail for that pre-existing reason, note that **AC-4's implemented check is stricter than
+AC-4's text**: the text says "no regression against the recorded baseline … and no suite is
+skipped", while the check requires `Suites failed: 0` outright. Aligning the check to the text
+would be a **loosening** and needs the user's approval before it is made — the same bar AC-9's
+amendment was held to. Do not relax it silently.
+
+## Completed earlier
+
+**Plan steps 4, 5 and 6.** The fix is implemented and behaves correctly on the
 reproducer; the runtime "already loaded?" test proved unnecessary because the distinction is
 available statically at the call site. See the run-log entry of 2026-09-08 (implementation).
 

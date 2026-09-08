@@ -546,3 +546,44 @@ interrupted, this log is the only record of progress.
 - **Blocker / Risk**: AC-4 remains the sole failure, unchanged and environmental. Worth filing
   separately from this packet: the `.intern.<hash>` clone-name defect now has a concrete
   reproducer (PENNANT `gpuMain3`/`gpuMain4`/`gpuMain5` at `cstop 1`).
+
+### 2026-09-08 (AC-4 forecast: the baseline's "pre-existing failure" is an architecture artefact)
+
+- **Actor**: claude
+- **Planned step**: Establish whether AC-4 is reachable on a gfx90a/MI210 node before spending a
+  reservation on moving there.
+- **Action taken**: The baseline records Handler tests failing on `Expected pattern not found:
+  'memory heatmap report'`, and this packet has treated that as a pre-existing code defect since
+  the packet was written. It is not. The suite runs
+  `build/tests/test_kernels/simple_heatmap_test`, a **gfx90a binary**, and `build/` is configured
+  for gfx90a while this node is gfx950. Recompiled the same source for gfx950 and re-ran it.
+- **Result**: it passes.
+
+      memory heatmap report(simple_kernel(int*, unsigned long) [clone .kd][1])
+
+  So the failure is an architecture mismatch, not a defect — the same silent non-dispatch that
+  made this packet's own tests compile for the architecture `rocminfo` reports rather than for
+  `CMAKE_HIP_ARCHITECTURES`. On an MI210 node, where `build/`'s gfx90a kernels match the GPU,
+  the Handler suite should pass natively.
+- **Consequence for AC-4.** On a gfx90a node, `.untracked/test-env.sh` sets
+  `INSTRUMENTED_ROCBLAS_LIB_DIR` and `INSTRUMENTED_HIPBLASLT_LIB_DIR` (it withholds them here
+  only because those libraries are gfx90a-only), so **the three skips become runs and 0-skipped
+  is essentially assured.** The open question is whether those three suites *pass*: a
+  project-level risk on record says the rocBLAS integration test is broken with "instrumented
+  sscal not found in current build". That is the one thing a move cannot be assumed to fix.
+- **Two things the next session must handle, neither of them optional.**
+  1. **`baseline-run_all_tests.txt` is stale on three axes** — it records 6 suites (there are now
+     10), measured with the environment variables unset, on a gfx950 node. It must be re-recorded
+     on the target node. "Before the change" no longer exists there, so reconstruct it the way
+     AC-6's baseline was: force `app_loads_object` false, rebuild, measure, revert. Say so in the
+     file, as that file's own instructions require.
+  2. **AC-4's implemented check is stricter than AC-4's text.** The text says "no regression
+     against the recorded baseline ... and no suite is skipped"; the check requires
+     `Suites failed: 0` outright. If the rocBLAS suites fail on MI210 for reasons that predate
+     this packet, the text would allow a pass and the check would not. **Do not quietly relax the
+     check** — that is a contract change and needs the user's approval, exactly as AC-9's
+     amendment did.
+- **Files touched**: this run-log.
+- **Verification**: the recompiled heatmap run above, on MI350X/gfx950.
+- **Criteria impact**: none changed. AC-4 remains the sole failure; its odds on a gfx90a node are
+  now materially better understood than "unknown".

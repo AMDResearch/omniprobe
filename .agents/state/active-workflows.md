@@ -20,7 +20,7 @@ Packet directories follow the pattern: `.agents/workflows/<state>/<workflow-id>/
 | rf_clang-format-consistency | refactor | suspended | unassigned | .clang-format, CMakeLists.txt, scripts/git-hooks/ | None | Team coordination needed | 2026-08-25 |
 | rf_test-organization | refactor | suspended | unassigned | tests/ | None | Design decisions needed | 2026-08-25 |
 | ft_whitepaper-omniprobe | feature | suspended | unassigned | ~/repos/whitepaper_omniprobe/ | None (outside omniprobe repo) | Awaiting user review | 2026-08-25 |
-| bf_hip-duplicate-code-object-load | bugfix | **active** | unassigned | src/utils.cc, inc/utils.h, src/interceptor.cc, tests/, docs/ | **Collides with rf_lazy-kerneldb-loading** — see note below. Also shares src/interceptor.cc with rf_rename-logduration | None blocking start. AC-4/AC-5 need TRITON_DIR + INSTRUMENTED_ROCBLAS_LIB_DIR before they can be satisfied | 2026-09-08 |
+| bf_hip-duplicate-code-object-load | bugfix | **active** | unassigned | src/utils.cc, inc/utils.h, src/interceptor.cc, inc/interceptor.h, tests/, docs/, .gitignore | **Collides with rf_lazy-kerneldb-loading** — see note below. Also shares src/interceptor.cc with rf_rename-logduration | Implementation complete; gate 8 passed / 1 weak / 1 failed. **AC-4 needs a gfx90a/MI210 node** — 3 suites skip on gfx90a-only instrumented libraries | 2026-09-08 |
 
 ### bf_hip-duplicate-code-object-load invalidates part of rf_lazy-kerneldb-loading's premise
 
@@ -39,8 +39,16 @@ This matters for coordination, not just as a new row. `rf_lazy-kerneldb-loading`
 kernelDB and that the only known workaround for this defect depends on — and its invariants
 declare *"No changes to coCache."* Both were written in April, before any of this was known.
 **Do not resume `rf_lazy-kerneldb-loading` without reading
-`draft/bf_hip-duplicate-code-object-load/dossier.md` first**; the two need to be sequenced, and
+`active/bf_hip-duplicate-code-object-load/dossier.md` first**; the two need to be sequenced, and
 the older packet's contract may need revisiting.
+
+**Update 2026-09-08:** the fix has landed, and it changes what that sequencing means. `-k` no
+longer gates what `coCache` records, and `kernel_co_map_` is populated for every kernel in an
+indexed code object — so the `scanCodeObject` block at `src/interceptor.cc` is no longer
+load-bearing for the *workaround* (there is no workaround any more). It is still load-bearing for
+DWARF correlation. `rf_lazy-kerneldb-loading`'s invariant "No changes to coCache" is now
+straightforwardly false of the tree it would be resumed against, so its contract needs revisiting
+before, not during, execution.
 
 `rf_exact-arch-bitcode` is adjacent but distinct: it covers the `gfx950` → CDNA2-bitcode
 misselection surfaced by the same session, and its non-goal *"No changes to dh_comms runtime

@@ -1,11 +1,14 @@
 # Current Focus
 
-## New defect filed 2026-09-08 — read before resuming any interceptor work
+## Defect found 2026-09-01, filed and FIXED 2026-09-08 — read before resuming any interceptor work
 
-**`bf_hip-duplicate-code-object-load` (active as of 2026-09-08, base commit `74c6ed2`).**
-Promoted from draft after `/workflow-readiness-check` returned READY. It is the **only** active
-workflow in this repository and it holds `src/interceptor.cc`, so the collision noted below is now
-a live write-scope conflict, not a warning about a hypothetical one. For a HIP fat binary, Omniprobe loads a second,
+**`bf_hip-duplicate-code-object-load` — FIXED 2026-09-08, implementation complete, one criterion
+outstanding.** Base commit `74c6ed2`. The whole plan of record (steps 1-10) is done; the gate reads
+8 passed / 1 weak / 1 failed. **Only AC-4 remains, and it needs a gfx90a/MI210 node** — three
+suites skip here because the instrumented rocBLAS/hipBLASLt libraries are gfx90a-only and this is
+a gfx950 machine. Resume with `/workflow-resume bf_hip-duplicate-code-object-load` there; the
+handoff carries a step-by-step plan. It is still the only active workflow and still holds
+`src/interceptor.cc`, so the collision below stays live. The defect was: for a HIP fat binary, Omniprobe loads a second,
 private copy of every code object the process already has mapped, and instrumented clones
 dispatched out of it read `__device__`/`__constant__` globals as **zero**. The run completes and
 produces empty-but-plausible analysis output — it fails silently. Found 2026-09-01 while
@@ -22,6 +25,20 @@ this was known. **Do not execute it without first reading**
 
 Also worth knowing before running any acceptance gate in this repository: see Project-Level
 Risks below on `.gitignore`.
+
+## Verified this session (2026-09-08)
+
+- **PENNANT `sedovsmall` runs correctly under `omniprobe -i` with no `-k` filter**, energies
+  identical to an uninstrumented run (2.467991e-01 -> 2.467954e-01). The `-k "setBoundary"`
+  sacrificial-kernel workaround is obsolete. Private code-object loads across PENNANT's 95
+  objects: 0.
+- **The "Handler tests fail on 'memory heatmap report'" result is an architecture artefact, not
+  a defect.** `build/` is gfx90a and its test kernels silently fail to dispatch on this gfx950
+  node — exit 0, no reports. The same source recompiled for gfx950 passes. This corrects a
+  project-level risk that has been carried as a code defect.
+- The `.intern.<hash>` clone-name defect (write-up section 3.2) now has a concrete reproducer:
+  PENNANT `gpuMain3`/`gpuMain4`/`gpuMain5` at `cstop 1` print `No instrumented alternative
+  found`. **Not yet filed as a packet.** Out of scope for the bugfix above by its own non-goals.
 
 ## Framework state (2026-08-25)
 
@@ -51,7 +68,8 @@ Risks below on `.gitignore`.
   to start"**; its premise is partly invalidated by `bf_hip-duplicate-code-object-load`, see top
   of this file).
 - Fix the HIP duplicate-code-object load that zeroes `__constant__` memory
-  (bf_hip-duplicate-code-object-load — **active**, unowned, ready to execute).
+  (bf_hip-duplicate-code-object-load — **implementation complete**; only AC-4 outstanding, and it
+  needs a gfx90a/MI210 node).
 - Complete exact-architecture bitcode selection (rf_exact-arch-bitcode — ready to start).
 - Purge logDuration naming from the codebase (rf_rename-logduration-to-omniprobe — needs open questions resolved).
 
@@ -61,11 +79,13 @@ Risks below on `.gitignore`.
 
 ## Immediate Next Recommended Actions
 
-1. **Execute `bf_hip-duplicate-code-object-load`** — active since 2026-09-08, readiness check
-   READY, unowned. Start at plan step 1: reproduce at HEAD with `argprobe_g.hip` before changing
-   anything. Run the gate with `AC_BUILD_DIR=$PWD/build_gfx950` — the default `build/` is the
-   gfx90a tree and the defect has only been observed on gfx950. Note AC-4 and AC-5 cannot be
-   satisfied until `TRITON_DIR` and `INSTRUMENTED_ROCBLAS_LIB_DIR` are set on this node.
+1. **Close out `bf_hip-duplicate-code-object-load` on a gfx90a/MI210 node.** Everything else is
+   done. `/workflow-resume bf_hip-duplicate-code-object-load` there, `source
+   .untracked/test-env.sh` (it exports the instrumented-library variables only when the arch
+   matches), use the `build/` tree, re-record the stale `baseline-run_all_tests.txt`, then run the
+   gate. The handoff has the full step-by-step, including the one judgement call it may need from
+   you: AC-4's implemented check demands `Suites failed: 0` while its text only demands no
+   regression against the baseline, and aligning them would be a loosening requiring approval.
 2. **Was: execute rf_lazy-kerneldb-loading.** Superseded as a next action on 2026-09-08 — read
    `bf_hip-duplicate-code-object-load`'s dossier first and sequence the two deliberately. Its
    plan step 4 removes the block the other packet's workaround depends on.
@@ -82,16 +102,16 @@ Risks below on `.gitignore`.
 
 ## Project-Level Risks
 
-- rocBLAS integration test broken (instrumented sscal not found in current build).
-- **`.gitignore` ignores `build` but not sibling build trees, so every acceptance gate in this
-  repo reports a useless 74 KB scope failure.** Measured 2026-09-08: `build_gfx950/` and
-  `build_v3.6.0_llvm/` are untracked, and `ac_check_write_scope` lists every file in them as out
-  of scope. This affects **every** packet, not one — a real out-of-scope write would be invisible
-  in that output. Fix is one line (`build*/`), deliberately not made as part of an unrelated
-  packet. *Corrected 2026-09-08: an earlier version of this entry said `.gitignore` "contains
-  `build` only". It does not — it also carries `*.pyc`, `.vscode/`, `*.sif`, `.claude`,
-  `.untracked` and several test-output paths. The bare pattern `build` simply does not match
-  `build_gfx950`.*
+- **rocBLAS integration test broken (instrumented sscal not found in current build).** Now
+  directly relevant: this is the main thing that could still block AC-4 on a gfx90a node, where
+  the three rocBLAS/hipBLASLt suites will *run* rather than skip. Making them run is not the same
+  as making them pass.
+- ~~`.gitignore` does not ignore sibling build trees, so every acceptance gate reports a useless
+  74 KB scope failure.~~ **FIXED 2026-09-08 in `fe66ff4`** by adding `build*/`. Kept here as a
+  record of what it cost: while it stood, a real out-of-scope write would have been invisible in
+  that output, and in fact two genuine ones (`inc/interceptor.h`, `.gitignore` itself) were only
+  spotted once the noise was gone. *An earlier version of this entry said `.gitignore` "contains
+  `build` only"; it never did — the bare pattern `build` simply does not match `build_gfx950`.*
 - **Test-environment variables are set, and one of them does not travel between nodes.**
   `TRITON_DIR` is architecture-independent — verified 2026-09-08, the
   Triton suite passes on gfx950 with a tree built on gfx90a. It is now in
