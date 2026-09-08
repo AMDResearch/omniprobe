@@ -493,3 +493,56 @@ interrupted, this log is the only record of progress.
   Three suites skip because the instrumented rocBLAS/hipBLASLt libraries are gfx90a-only and this
   is a gfx950 machine. Not a code problem and not fixable by configuration — it needs either an
   MI210 node or those libraries rebuilt for gfx950. Everything else in the packet is green.
+
+### 2026-09-08 (PENNANT end-to-end, plan step 9, plan step 10)
+
+- **Actor**: claude
+- **Planned step**: Step 9 — investigate the unexplained `-k "gpuMain5"` at 2 ranks exiting 1 with
+  no accesses; file it separately if it does not resolve. Step 10 — docs and PM.
+- **Action taken**: PENNANT turned out to be built in this workspace
+  (`/work1/amd/rvanoo/repos/pennant/build-omniprobe`), so the originating workload could be run
+  directly rather than reasoned about. Ran `sedovsmall` at `cstop 1`: plain, under
+  `omniprobe -i -a MemoryAnalysis` with **no filter**, and at 2 ranks with `-k "gpuMain5"`.
+- **Result**: **the fix is confirmed end-to-end on the workload the defect was found in.**
+
+  | run | energy (initial → final) | verdict |
+  |---|---|---|
+  | plain, uninstrumented | 2.467991e-01 → 2.467954e-01 | reference |
+  | `omniprobe -i`, **no `-k`** | 2.467991e-01 → 2.467954e-01 | **identical**, `Run complete`, 902 kernels |
+  | `mpirun -n 2`, `-k "gpuMain5"` | 2.467991e-01 → 2.467954e-01 | **identical**, exit **0** |
+
+  Before the fix this same no-filter configuration gave *"no usable data, wrong physics,
+  intermittent memory fault"*, and required sacrificing a dispatched kernel to `-k "setBoundary"`
+  to get anything at all. **The sacrificial-kernel workaround is no longer needed.** Private
+  code-object loads across the 95 objects PENNANT carries: **0**.
+
+- **Step 9 resolved, and the remainder has a name.** The **exit code 1 is gone** — the 2-rank
+  filtered run now exits 0 with correct physics. The "no accesses" half persists but is no longer
+  unexplained, and it is **not this packet's defect**:
+
+      No instrumented alternative found for gpuMain5(double, double const*, double const*)
+        [clone .intern] [clone .de1b0b8eba669612] [clone .kd]
+
+  That is the `.intern.<hash>` suffixing described in the originating write-up's §3.2, which
+  breaks clone-name reconstruction in `getInstrumentedName` (`src/utils.cc:117`). It is an
+  explicit **non-goal** of this packet and needs its own. `gpuMain3` and `gpuMain4` are hit by it
+  too; `gpuMain2` is not, and instruments normally. So the dossier's instruction — resolve it or
+  file it separately — is satisfied: half resolved, half attributed to a defect already on record.
+- **Step 10 — docs and PM.**
+  - `docs/usage.md`: the `-k` description **needed no correction**. It already said "Only
+    instrumented kernels whose names match will be dispatched; all others run their original" —
+    the documentation was right and the implementation was wrong, which is the reverse of what the
+    dossier's scope anticipated. Added instead the guarantee that was genuinely absent before:
+    filtering no longer costs source-line attribution.
+  - PM `interceptor`: data-flow steps 4 and 5 rewritten — the two registration paths and where the
+    `-k` filter is now applied.
+  - PM `sub-kerneldb`: `kernel_co_map_` is populated regardless of the filter.
+- **Files touched**: `docs/usage.md`, `.agents/pm/units/interceptor.md`,
+  `.agents/pm/units/sub-kerneldb.md`, this run-log. PM paths are allowlisted; `docs/` is declared.
+- **Verification**: the three PENNANT runs above, on MI350X/gfx950.
+- **Criteria impact**: none changed. This is the strongest evidence in the packet for AC-2 and
+  AC-9 but neither is measured on it — both are decided on the in-repo reproducer, which is what
+  keeps the gate runnable without PENNANT.
+- **Blocker / Risk**: AC-4 remains the sole failure, unchanged and environmental. Worth filing
+  separately from this packet: the `.intern.<hash>` clone-name defect now has a concrete
+  reproducer (PENNANT `gpuMain3`/`gpuMain4`/`gpuMain5` at `cstop 1`).

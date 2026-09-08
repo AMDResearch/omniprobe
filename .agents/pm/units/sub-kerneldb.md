@@ -63,3 +63,4 @@ None.
 ## Last Verified
 
 2026-04-27 (removed transient workflow reference per pm-reflect)
+2026-09-08 (kernel_co_map_ is now populated for every kernel in an indexed code object, regardless of the -k filter, so a filtered run keeps DWARF correlation; previously the filter gated it and a dispatched kernel had to be sacrificed to prime the database)

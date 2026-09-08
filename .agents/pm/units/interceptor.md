@@ -40,7 +40,20 @@ instrumented version with modified kernel arguments.
 2. `hsa_queue_create()` intercepted -- registers queue + agent.
 3. `hsa_executable_symbol_get_info()` intercepted -- captures kernel objects into `kernel_objects_` AND registers them in `kernel_cache_` (coCache) via `registerRuntimeKernel()`.
 4. Startup: code objects registered in `kernel_cache_` (coCache) but kernelDB scanning is deferred.
-5. `OnSubmitPackets()` intercepted -- `doPackets()` decides instrumented vs original.
+   **Two different registrations, and the difference matters.** For the process's own binary and
+   its shared libraries -- code the application loads itself -- `addFile()` is called with
+   `app_loads_object=true` and only *indexes* the extracted files: it fills `arg_map_` and
+   `kernel_co_map_` and creates **no HSA executable**. Symbols come from
+   `registerRuntimeKernel()` in step 3, off the executable the application loaded. For a Triton
+   JIT cache or a `--library-filter` include -- files the application never loads -- `addFile()`
+   still builds a private executable, because the instrumented kernels exist nowhere else.
+   Building one for code the application already had is what caused
+   `bf_hip-duplicate-code-object-load`: the private copy's `__constant__` segment is never
+   initialised, so clones dispatched from it read `__device__`/`__constant__` globals as zero.
+5. `OnSubmitPackets()` intercepted -- `doPackets()` decides instrumented vs original. The `-k`
+   kernel filter is applied **here**, by `runKernelInstrumented()`, against a regex compiled once
+   at init. It gates the clone swap only; it does not gate what gets indexed, so filtering never
+   costs source-line attribution for the kernels that are instrumented.
 6. `fixupPacket()`: on-demand scanning -- if kernel not in kernelDB, `scanCodeObject()` called.
 7. If instrumented: `fixupPacket()` + `fixupKernArgs()` add `dh_comms` descriptor; logs source library paths.
 8. Signal runner thread processes completed kernels, invokes handler reports.
@@ -72,3 +85,4 @@ None.
 ## Last Verified
 
 2026-03-24
+2026-09-08 (data flow steps 4-5 rewritten for bf_hip-duplicate-code-object-load: app-loaded code objects are indexed rather than loaded into a private executable, and the -k filter now gates the clone swap at dispatch)

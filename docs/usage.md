@@ -160,6 +160,12 @@ The filter is an [ECMAScript regular expression](https://en.cppreference.com/w/c
 matched against the kernel name. Only instrumented kernels whose names match will
 be dispatched; all others run their original (uninstrumented) version.
 
+Filtering does not cost you source-line attribution. Kernels are indexed for the kernel
+database regardless of the filter, so a filtered run reports source file, line and column
+for the kernels it does instrument. Earlier versions tied the two together, which meant a
+filter had to name a kernel that was actually dispatched — and that kernel's own data was
+sacrificed — before any other kernel could be correlated to source.
+
 Requires `-i`.
 
 ## Dispatch capture
