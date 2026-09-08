@@ -9,7 +9,7 @@
 - Intended Write Scope: see the `write-scope` block below (canonical)
 - Dependencies On Other Active Workflows: shares `tests/run_all_tests.sh` with
   `bf_intern-clone-name` and `bf_pyhandler-gil` — see § Dependencies for the coordination rule
-- Base Commit: 821c89b97cc13ae2509e3ceecff2790af014017a
+- Base Commit: 24fcd82085fa6b3d1e3788255548ac3752882bac
 
 ```write-scope
 omniprobe/omniprobe
