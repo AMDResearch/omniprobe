@@ -42,3 +42,25 @@ interrupted, this log is the only record of progress.
 - **Criteria impact**: none met.
 - **Blocker / Risk**: Open Questions 1–3 remain; 2 (how the Python module is named) is the one
   without which the feature is unusable.
+
+### 2026-09-08 10:40
+
+- **Actor**: claude
+- **Planned step**: Readiness check, then promote.
+- **Action taken**: Ran the checklist. All structural items passed. The step-3 pattern audit found
+  one defect of each direction. **AC-2 was a vacuous pass**: it matched
+  `/dispatches?[^0-9]*[2-9]/` anywhere in the output, which a run invoked with `-d 2` satisfies via
+  its own `LOGDUR_DISPATCHES=2` environment line while the Python side saw exactly one dispatch —
+  on the criterion whose entire purpose is catching the per-instance `Py_Finalize` regression.
+  **AC-3 was a false-FAIL risk**: a negative grep of the test script for `Function call to`, which
+  breaks the moment the test documents why it must not assert on that string. Replaced both with a
+  sentinel contract (`PYHANDLER_ADDR`, `PYHANDLER_DISPATCHES`, `TARGET_STATUS`) that the gate
+  compares numerically, and documented it in the dossier so the test author knows what to emit.
+- **Result**: READY. Promoted `draft` → `active`, base commit `821c89b`.
+- **Files touched**: `acceptance.sh`, `dossier.md`, `handoff.md`, packet directory moved
+- **Verification**: each repaired check run against a passing fixture and a decoy carrying
+  `LOGDUR_DISPATCHES=2`, the success print, and the prose "target exited 0". All four discriminate
+  correctly. Gate runs to completion; AC-6 passes at the base commit, which is correct — it is the
+  regression guard for the plugin-not-core scoping decision.
+- **Criteria impact**: none met; AC-6 passes as a guard, AC-5 is the judgement criterion.
+- **Blocker / Risk**: Open Question 2 — nothing supplies the `module_name` the constructor takes.

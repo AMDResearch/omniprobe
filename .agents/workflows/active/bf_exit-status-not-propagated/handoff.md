@@ -1,10 +1,16 @@
 # Handoff
 
-**Location**: `.agents/workflows/draft/bf_exit-status-not-propagated/handoff.md`
+**Location**: `.agents/workflows/active/bf_exit-status-not-propagated/handoff.md`
 
 ## Current Status
 
-Draft, filed 2026-09-08 from an incoming seed. No production code changed.
+**Active**, promoted 2026-09-08 after passing `workflow-readiness-check`. Base commit `821c89b`.
+Filed the same day from an incoming seed. No production code changed.
+
+The readiness check repaired two defective checks in this packet's `acceptance.sh` before
+promotion. No acceptance criterion changed. If you edit those checks, read the dossier's
+Verification Strategy notes first — each is indirect on purpose and the obvious simplification
+reintroduces the defect it was written to avoid.
 
 **This packet will be executed in a fresh session by an agent with none of the filing context**,
 so the dossier is written to stand alone. Read it rather than the seed; the seed is preserved at

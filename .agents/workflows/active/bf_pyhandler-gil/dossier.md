@@ -4,12 +4,12 @@
 
 - Workflow ID: bf_pyhandler-gil
 - Workflow Type: bugfix
-- Lifecycle State: draft
+- Lifecycle State: active
 - Owner / Current Executor: unassigned
 - Intended Write Scope: see the `write-scope` block below (canonical)
 - Dependencies On Other Active Workflows: shares `tests/run_all_tests.sh` with
   `bf_intern-clone-name` and `bf_exit-status-not-propagated` — see § Dependencies
-- Base Commit: (unstamped — set at promotion)
+- Base Commit: 821c89b97cc13ae2509e3ceecff2790af014017a
 
 ```write-scope
 src/pyHandler.cc
