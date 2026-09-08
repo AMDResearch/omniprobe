@@ -192,3 +192,46 @@ interrupted, this log is the only record of progress.
   node with the libraries that exist today. Either execute this packet on a gfx90a/MI210 node,
   or rebuild instrumented rocBLAS/hipBLASLt for gfx950 — real work, not configuration. AC-5, the
   criterion the dossier calls the change's largest regression risk, is unblocked either way.
+
+### 2026-09-08 (reproduction — plan step 1)
+
+- **Actor**: claude
+- **Planned step**: Plan step 1 — reproduce the defect at HEAD before changing anything.
+- **Action taken**: Built `build_gfx950` (exit 0). Copied the reproducer into the repository as
+  `tests/test_kernels/constant_memory_test.hip` — body unmodified, provenance header added —
+  because it existed in exactly one untracked copy outside this repo and the whole packet depends
+  on it. Also copied the PENNANT run log in as `pennant-rep1.log` for the AC-9 evidence trail.
+  Compiled with the same flags the repo's own test kernels use:
+
+      hipcc -fgpu-rdc -g --offload-arch=gfx950 \
+        -fpass-plugin=build_gfx950/lib/plugins/libAMDGCNSubmitAddressMessages-rocm.so \
+        tests/test_kernels/constant_memory_test.hip -o /tmp/constant_memory_test
+
+  Binary written to and run from `/tmp` (XFS): `/work1` and `/home1` are **fuseblk** on this node,
+  which does not support mmap. Ran plain, then under `omniprobe -i` with **no** `-k`.
+- **Result**: **success — the defect reproduces exactly as the dossier describes.**
+
+      plain run:          clone saw: cdata=0x7f3d69400000 cscalar=12345 scale=2.5
+                          → kernargs OK, __constant__ OK
+      omniprobe -i:       clone saw: cdata=0x0            cscalar=0     scale=2.5
+                          → kernargs OK, __constant__ CORRUPT
+
+  The clone is found and swapped in (`Found instrumented alternative for probe_g(...)`), the
+  kernargs arrive intact, and both `__constant__` globals read as zero. This is the first time
+  the behaviour has been observed at `74c6ed2` in this repository; every prior measurement came
+  from the 2026-09-01 PENNANT session and was reported as that session recorded it. That gap is
+  now closed.
+- **Files touched**: `tests/test_kernels/constant_memory_test.hip` (new, in declared scope),
+  this packet's `pennant-rep1.log`, `handoff.md`, `run-log.md`, and
+  `.untracked/bf_hip-dup-co/adding-before.log`. No change to `src/` or `inc/`.
+- **Verification**: the two runs above, on k007-005-v2 (MI350X/gfx950, ROCm 7.2.0), source tree
+  at base commit `74c6ed2` — the two commits since (`fe66ff4`, `ef50230`) touch only `.gitignore`
+  and `.agents/`, so no source moved under the reproduction.
+- **Criteria impact**: none met. **AC-2's failing case is now demonstrated**, which is what makes
+  AC-2 a real gate rather than an assertion — it is known to fail before the fix. Also captured
+  the AC-9 pre-change baseline: **31 `Adding` lines** for a single-kernel HIP binary, against
+  PENNANT's 95. Even a minimal program has 31 code objects duplicated into Omniprobe's private
+  executable.
+- **Blocker / Risk**: none new. Note the reproduction used `-fgpu-rdc`, matching the repo's own
+  test kernels; the write-up reports the defect is identical without it, which has not been
+  re-checked here.

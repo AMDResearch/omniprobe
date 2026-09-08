@@ -59,10 +59,18 @@ recorded them. Plan step 1 exists to reproduce before changing anything.
 
 ## Next Exact Step
 
-Plan step 1: build Omniprobe, compile `argprobe_g.hip` (currently at
-`../pennant-amp-sidecar/.untracked/omniprobe-2026-09-01/argprobe_g.hip`), and confirm the
-`__constant__` pointer and scalar read as zero inside the instrumented clone under
-`omniprobe -i`. Do not start on the fix before the reproducer fails at HEAD.
+**Plan step 1 is DONE — the defect is reproduced at HEAD.** See the run-log entry of
+2026-09-08 (reproduction) for the commands and output.
+
+Next is **plan step 3**: read `.agents/kt.archive/refactors/done/rf_unify-kernel-discovery.md`
+and choose between (a) reversing first-writer precedence so `registerRuntimeKernel` wins for HIP,
+(b) skipping the duplicate load when clones are already bound to the executable, or (c) the
+deferred `KernelRegistry`. This is the packet's first real design decision and Open Question 1
+is what settles it.
+
+Plan step 2 is partly done: the AC-9 `Adding`-count baseline is captured at
+`.untracked/bf_hip-dup-co/adding-before.log` (**31** loads for a single-kernel reproducer).
+Still missing for step 2: the AC-6 MemoryAnalysis baseline on an unaffected workload.
 
 ## Active Risks / Blockers
 

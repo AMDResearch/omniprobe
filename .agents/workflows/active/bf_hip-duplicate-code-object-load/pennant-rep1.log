@@ -1,0 +1,276 @@
+  ___                  _                 _          
+ / _ \ _ __ ___  _ __ (_)_ __  _ __ ___ | |__   ___ 
+| | | | '_ ` _ \| '_ \| | '_ \| '__/ _ \| '_ \ / _ \
+| |_| | | | | | | | | | | |_) | | | (_) | |_) |  __/
+ \___/|_| |_| |_|_| |_|_| .__/|_|  \___/|_.__/ \___|
+                        |_|                         
+
+
+Omniprobe is developed by Advanced Micro Devices, Research and Advanced Development
+Copyright (c) 2026 Advanced Micro Devices. All rights reserved.
+
+No Triton cache location provided; assuming HIP run.
+HANDLER: /home1/rvanoo/repos/omniprobe/build_gfx950/lib/libMemAnalysis64.so
+handlerManager: Opened/home1/rvanoo/repos/omniprobe/build_gfx950/lib/libMemAnalysis64.so
+Adding /work1/amd/rvanoo/repos/pennant/build-op-nordc/pennant
+Total Clang Offload Bundles found: 1
+Adding linux-vdso.so.1
+Adding /home1/rvanoo/repos/omniprobe/build_gfx950/lib/liblogDuration64.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/libmpi.so.40
+Adding /opt/rocm-7.2.0/lib/libamdhip64.so.7
+Adding /opt/ohpc/pub/compiler/gcc/12.2.0/lib64/libstdc++.so.6
+Adding /lib64/libm.so.6
+Adding /opt/ohpc/pub/compiler/gcc/12.2.0/lib64/libgcc_s.so.1
+Adding /lib64/libc.so.6
+Adding /opt/rocm-7.2.0/lib/libhsa-runtime64.so.1
+Adding /home1/rvanoo/repos/omniprobe/build_gfx950/lib/libdh_comms.so
+Adding /home1/rvanoo/repos/omniprobe/build_gfx950/lib/libkernelDB64.so
+Adding /opt/rocm-7.2.0/lib/libamd_comgr.so.3
+Adding /lib64/libelf.so.1
+Adding /opt/rocm-7.2.0/lib/librocprofiler-sdk.so.1
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/libopen-rte.so.40
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/libopen-pal.so.40
+Adding /lib64/libudev.so.1
+Adding /lib64/libpciaccess.so.0
+Adding /lib64/libz.so.1
+Adding /lib64/libdl.so.2
+Adding /opt/rocm-7.2.0/lib/librocprofiler-register.so.0
+Adding /lib64/librt.so.1
+Adding /lib64/libpthread.so.0
+Adding /lib64/ld-linux-x86-64.so.2
+Adding /opt/amdgpu/lib64/libdrm.so.2
+Adding /opt/amdgpu/lib64/libdrm_amdgpu.so.1
+Adding /lib64/libnuma.so.1
+Adding /lib64/libdwarf.so.0
+Adding /lib64/libzstd.so.1
+Adding /opt/ohpc/pub/compiler/gcc/12.2.0/lib64/libatomic.so.1
+Adding /opt/rocm-7.2.0/lib/libhsa-amd-aqlprofile64.so.1
+Adding /lib64/libdw.so.1
+Adding /lib64/liblzma.so.5
+Adding /lib64/libbz2.so.1
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_shmem_mmap.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_reachable_netlink.so
+Adding /lib64/libnl-3.so.200
+Adding /lib64/libnl-route-3.so.200
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_schizo_flux.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_schizo_jsm.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_schizo_ompi.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_schizo_orte.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_schizo_singularity.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_schizo_slurm.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_ess_singleton.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_pmix_pmix3x.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_psquash_flex128.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_psquash_native.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_bfrops_v12.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_bfrops_v20.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_bfrops_v21.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_bfrops_v3.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_pcompress_zlib.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_ptl_tcp.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_ptl_usock.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_psec_native.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_gds_ds12.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/libmca_common_dstore.so.1
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_gds_ds21.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_gds_hash.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_pshmem_mmap.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_preg_native.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_preg_compress.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_plog_default.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_plog_stdfd.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/pmix/mca_plog_syslog.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_state_app.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_errmgr_default_app.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_op_avx.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_allocator_basic.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_allocator_bucket.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_rcache_grdma.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_mpool_hugepage.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_bml_r2.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_btl_self.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_btl_sm.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_btl_tcp.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_pml_monitoring.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/libmca_common_monitoring.so.50
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_pml_ob1.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_pml_ucx.so
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/libmca_common_ucx.so.40
+Adding /opt/ohpc/pub/mpi/ucx-ohpc/1.18.1/lib/libucp.so.0
+Adding /opt/ohpc/pub/mpi/ucx-ohpc/1.18.1/lib/libuct.so.0
+Adding /opt/ohpc/pub/mpi/ucx-ohpc/1.18.1/lib/libucm.so.0
+Adding /opt/ohpc/pub/mpi/ucx-ohpc/1.18.1/lib/libucs.so.0
+Adding /opt/ohpc/pub/mpi/openmpi4-gnu12/4.1.8/lib/openmpi/mca_patcher_overwrite.so
+Adding /opt/ohpc/pub/mpi/ucx-ohpc/1.18.1/lib/ucx/libuct_ib.so.0
+Adding /lib64/libibverbs.so.1
+Adding /opt/ohpc/pub/mpi/ucx-ohpc/1.18.1/lib/ucx/libuct_ib_mlx5.so.0
+Adding /lib64/libmlx5.so.1
+Adding /opt/ohpc/pub/mpi/ucx-ohpc/1.18.1/lib/ucx/libuct_rocm.so.0
+Adding /opt/ohpc/pub/mpi/ucx-ohpc/1.18.1/lib/ucx/libuct_cma.so.0
+Adding /home1/rvanoo/repos/omniprobe/build_gfx950/lib/libMemAnalysis64.so
+********************
+Running PENNANT v0.9
+********************
+Running on 1 MPI PE(s)
+--- Mesh Information ---
+Points:  100
+Zones:  81
+Sides:  324
+Edges:  180
+Side chunks:  21
+Point chunks:  7
+Chunk size:  16
+------------------------
+>>>>>>>> HSA intercept registered.
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_fillBufferAligned.kd
+No instrumented alternative found for __amd_rocclr_fillBufferAligned.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+Found instrumented alternative for setBoundary(char*) [clone .kd]
+  kernel location: /work1/amd/rvanoo/repos/pennant/build-op-nordc/pennant
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+3328 bytes processed in 0.001009 seconds (3.3 MiB/s)
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+Running Hydro on device...
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+Found instrumented alternative for void thrust::THRUST_200805_400200_NS::hip_rocprim::__parallel_for::kernel<256u, thrust::THRUST_200805_400200_NS::hip_rocprim::__tabulate::functor<thrust::THRUST_200805_400200_NS::device_ptr<int>, thrust::THRUST_200805_400200_NS::system::detail::generic::detail::compute_sequence_value<int, void>, long>, long, 1u>(thrust::THRUST_200805_400200_NS::hip_rocprim::__tabulate::functor<thrust::THRUST_200805_400200_NS::device_ptr<int>, thrust::THRUST_200805_400200_NS::system::detail::generic::detail::compute_sequence_value<int, void>, long>, long, long) [clone .kd]
+24240 bytes processed in 0.000501 seconds (48.4 MiB/s)
+Found instrumented alternative for void rocprim::ROCPRIM_400200_NS::detail::trampoline_kernel<rocprim::ROCPRIM_400200_NS::detail::wrapped_radix_sort_block_sort_config<rocprim::ROCPRIM_400200_NS::kernel_config<256u, 4u, 4294967295u>, int, int>, (rocprim::ROCPRIM_400200_NS::detail::target_arch)950, rocprim::ROCPRIM_400200_NS::detail::radix_sort_block_sort<rocprim::ROCPRIM_400200_NS::kernel_config<256u, 4u, 4294967295u>, false, thrust::THRUST_200805_400200_NS::device_ptr<int>, thrust::THRUST_200805_400200_NS::device_ptr<int>, thrust::THRUST_200805_400200_NS::device_ptr<int>, thrust::THRUST_200805_400200_NS::device_ptr<int>, rocprim::ROCPRIM_400200_NS::identity_decomposer>(thrust::THRUST_200805_400200_NS::device_ptr<int>, thrust::THRUST_200805_400200_NS::device_ptr<int>, thrust::THRUST_200805_400200_NS::device_ptr<int>, thrust::THRUST_200805_400200_NS::device_ptr<int>, unsigned int, unsigned int&, rocprim::ROCPRIM_400200_NS::identity_decomposer, unsigned int, unsigned int, ihipStream_t*, bool)::{lambda(auto:1)#1}, rocprim::ROCPRIM_400200_NS::detail::radix_sort_config_selector>(rocprim::ROCPRIM_400200_NS::detail::radix_sort_block_sort<rocprim::ROCPRIM_400200_NS::kernel_config<256u, 4u, 4294967295u>, false, thrust::THRUST_200805_400200_NS::device_ptr<int>, thrust::THRUST_200805_400200_NS::device_ptr<int>, thrust::THRUST_200805_400200_NS::device_ptr<int>, thrust::THRUST_200805_400200_NS::device_ptr<int>, rocprim::ROCPRIM_400200_NS::identity_decomposer>(thrust::THRUST_200805_400200_NS::device_ptr<int>, thrust::THRUST_200805_400200_NS::device_ptr<int>, thrust::THRUST_200805_400200_NS::device_ptr<int>, thrust::THRUST_200805_400200_NS::device_ptr<int>, unsigned int, unsigned int&, rocprim::ROCPRIM_400200_NS::identity_decomposer, unsigned int, unsigned int, ihipStream_t*, bool)::{lambda(auto:1)#1}) [clone .kd]
+508364 bytes processed in 0.005881 seconds (86.4 MiB/s)
+Found instrumented alternative for gpuInvMap(int const*, int const*, int*, int*) [clone .kd]
+32196 bytes processed in 0.006509 seconds (4.9 MiB/s)
+Found instrumented alternative for calcCornersPerPoint(int*, int*) [clone .kd]
+Found instrumented alternative for void rocprim::ROCPRIM_400200_NS::detail::trampoline_kernel<rocprim::ROCPRIM_400200_NS::detail::wrapped_scan_config<rocprim::ROCPRIM_400200_NS::default_config, int>, (rocprim::ROCPRIM_400200_NS::detail::target_arch)950, rocprim::ROCPRIM_400200_NS::detail::scan_impl<(rocprim::ROCPRIM_400200_NS::detail::lookback_scan_determinism)0, true, true, rocprim::ROCPRIM_400200_NS::default_config, int*, int*, int, thrust::THRUST_200805_400200_NS::plus<void>, int>(void*, unsigned long&, int*, int*, int, unsigned long, thrust::THRUST_200805_400200_NS::plus<void>, ihipStream_t*, bool)::{lambda(auto:1, auto:2)#1}::operator()<std::integral_constant<bool, false>, std::integral_constant<bool, true> >(std::integral_constant<bool, false>, std::integral_constant<bool, true>) const::{lambda(auto:1)#2}, rocprim::ROCPRIM_400200_NS::detail::default_config_selector>(rocprim::ROCPRIM_400200_NS::detail::scan_impl<(rocprim::ROCPRIM_400200_NS::detail::lookback_scan_determinism)0, true, true, rocprim::ROCPRIM_400200_NS::default_config, int*, int*, int, thrust::THRUST_200805_400200_NS::plus<void>, int>(void*, unsigned long&, int*, int*, int, unsigned long, thrust::THRUST_200805_400200_NS::plus<void>, ihipStream_t*, bool)::{lambda(auto:1, auto:2)#1}::operator()<std::integral_constant<bool, false>, std::integral_constant<bool, true> >(std::integral_constant<bool, false>, std::integral_constant<bool, true>) const::{lambda(auto:1)#2}) [clone .kd]
+22624 bytes processed in 0.033559 seconds (0.7 MiB/s)
+233312 bytes processed in 0.010319 seconds (22.6 MiB/s)
+Found instrumented alternative for storeCornersByPoint(int*, int*, int*, HIP_vector_type<int, 2u>*) [clone .kd]
+Energy check:  total energy  =   2.467991e-01
+(internal =   2.467991e-01, kinetic =   0.000000e+00)
+32648 bytes processed in 0.000606 seconds (53.8 MiB/s)
+Found instrumented alternative for void gpuMain2<4>(double, double const*, HIP_vector_type<double, 2u> const*, HIP_vector_type<double, 2u> const*) [clone .kd]
+Found instrumented alternative for gpuMain3_interior(double, HIP_vector_type<double, 2u>*, HIP_vector_type<double, 2u>*, HIP_vector_type<double, 2u>*) [clone .kd]
+244224 bytes processed in 0.032438 seconds (7.5 MiB/s)
+41840 bytes processed in 0.009561 seconds (4.4 MiB/s)
+Found instrumented alternative for void gpuMain4<4>(double, double*, HIP_vector_type<double, 2u> const*, HIP_vector_type<double, 2u> const*) [clone .kd]
+Found instrumented alternative for gpuMain5(double, double const*, double const*) [clone .kd]
+99200 bytes processed in 0.039074 seconds (2.5 MiB/s)
+End cycle      1, time = 2.50000e-03, dt = 2.50000e-03, wall = 1.75537e-01
+dt limiter:
+282724 bytes processed in 0.008141 seconds (34.7 MiB/s)
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+No instrumented alternative found for __amd_rocclr_copyBuffer.kd
+Run complete
+Zones: 81
+cycle =      1,         cstop =      1
+time  =   2.500000e-03, tstop =   1.000000e+00
+*************************************
+hydro cycle run time =   1.876202e-01
+FOM =                    4.317233e+02
+*************************************
+Energy check:  total energy  =   2.467954e-01
+(internal =   2.450272e-01, kinetic =   1.768167e-03)
+Comms Runner shutting down
+signal_runner is shutting down
+Cache Watcher shutting down
+Ending kernelDB
+Found 902 kernels.
+hsaInterceptor Initialization failed - API table is NULL
+hsaInterceptor: Application elapsed usecs: 2978571us
+
+JSON results written to: rep1.json
