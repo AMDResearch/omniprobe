@@ -97,6 +97,10 @@ run_suite "Constant memory visibility (matching -k)" "${SCRIPT_DIR}/test_constan
 run_suite "Kernel filter semantics" "${SCRIPT_DIR}/test_kernel_filter_semantics.sh"
 run_suite "Kernel filter DWARF survival" "${SCRIPT_DIR}/test_kernel_filter_semantics.sh" --assert-dwarf
 
+# Suite 11: regression coverage for bf_exit-status-not-propagated. Needs no GPU —
+# every target is a /bin/sh stub — so this one suite runs on any node.
+run_suite "Exit status propagation" "${SCRIPT_DIR}/test_exit_status.sh"
+
 # Summary
 echo ""
 echo "================================================================================"
