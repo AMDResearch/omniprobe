@@ -1,0 +1,46 @@
+Baseline: tests/run_all_tests.sh at 74c6ed2, BEFORE any change from this packet.
+
+Measured 2026-09-08 on k007-005-v2.hpcfund (MI350X / gfx950, ROCm 7.2.0), against the
+pre-existing `build/` tree (gfx90a), with no INSTRUMENTED_ROCBLAS_LIB_DIR and no TRITON_DIR set.
+
+Command:
+    bash tests/run_all_tests.sh
+
+Result:
+    Suites run:     6
+    Suites passed:  1
+    Suites skipped: 4
+    Suites failed:  1
+
+    Failed suites:
+      - Handler tests
+
+Failure detail:
+    Suite 1: Handler tests → Basic Handler Tests
+      ✗ FAIL - Expected pattern not found: 'memory heatmap report'
+
+Skipped suites and why:
+    Suite 5: rocBLAS + hipBLASLt combined — INSTRUMENTED_ROCBLAS_LIB_DIR not set
+    Suite 6: Triton integration              — TRITON_DIR not set
+    (two further suites skipped for the same class of reason)
+
+Why this file exists
+--------------------
+The Handler-tests failure is PRE-EXISTING and unrelated to this packet. It was measured before
+any source was touched. Without this record, AC-4 would fail on the first gate run and read as
+a regression caused by this workflow, which is false.
+
+Two consequences for whoever executes this packet:
+
+1. Do not "fix" the Handler-tests failure as part of this workflow. It is out of scope. If it
+   is still failing when the fix lands, AC-4's check is what distinguishes "still the same
+   pre-existing failure" from "this change broke something", and that only works if this
+   baseline is trusted rather than edited.
+
+2. Four of six suites currently skip. That is the more serious gap: the environment variables
+   must be set before this gate means anything, and the Triton suite in particular is the main
+   regression risk of this change — `coCache::addFile` exists for Triton, and this packet
+   changes when it is used. Running with TRITON_DIR unset verifies nothing about it.
+
+Re-measure and replace this file only if the baseline is re-established at a new HEAD, and say
+so in run-log.md when you do.
