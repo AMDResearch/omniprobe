@@ -377,3 +377,56 @@ interrupted, this log is the only record of progress.
   whose `extractCodeObjects()` returns empty would silently lose their `Adding` line, which the
   library-filter tests read. The behavioural evidence for AC-9 is therefore the AC-2/AC-3/AC-8
   table above, not the count alone.
+
+### 2026-09-08 (AC-9 check integrity)
+
+- **Actor**: claude
+- **Planned step**: Close the AC-9 weakness flagged in the previous entry, with user approval to
+  amend the criterion's stated verification mechanism.
+- **Action taken**:
+  1. Added `Loading private code object <file>` to `coCache::addFile`, emitted **at the point an
+     HSA executable is actually created**. Additive — `tests/run_library_filter_tests.sh`
+     substring-matches `^Adding ` lines only, so nothing existing reads it.
+  2. Rewrote AC-9's check: on a pure-HIP workload the private-load count must be **zero** while
+     the indexed-file count is non-zero. Both are required — zero loads alone would also be true
+     of a run that processed nothing.
+  3. Amended AC-9 in the dossier and **dropped its `[judgement]` marker**. "Materially fewer"
+     needed a human because it depended on the workload's shared-library count; "zero" does not.
+- **Result**: success, and the exercise paid for itself twice over.
+
+  **Non-vacuity demonstrated, not assumed.** Flipped `app_loads_object` to `false` — restoring
+  the old behaviour with everything else identical — rebuilt, and ran the gate:
+
+      FAIL  AC-9   1 code object(s) still loaded into a private executable on a pure-HIP workload
+
+  Reverted, rebuilt, ran again:
+
+      PASS  AC-9   31 code objects indexed, 0 loaded into a private executable
+
+  A check that cannot fail is not a check; this one fails on the input it is supposed to fail on.
+
+  **Found a real bug in the check while proving it.** The first version used
+  `count=$(grep -c … || echo 0)` — the idiom inherited from the check being replaced. `grep -c`
+  prints `0` *and exits 1* when it matches nothing, so the fallback appends a second line and the
+  variable becomes `"0\n0"`, which is neither `-eq` nor `-ne` zero and derails every branch. It
+  surfaced as `FAIL AC-9 0` against a build that should have passed. **The old check had the same
+  idiom and would have misfired the moment its count reached zero — which is precisely the
+  outcome it existed to detect.** Fixed to `|| true`.
+- **Files touched**: `src/utils.cc`, this packet's `dossier.md`, `acceptance.sh`, `run-log.md`.
+- **Verification**: the gate run three times — broken build (FAIL), fixed build (PASS), and after
+  the counting fix (PASS). Tally now `3 passed, 0 weak, 0 judgement, 7 failed`.
+- **Criteria impact**: **AC-9 amended and now met.** The amendment is a tightening on both axes:
+  it cannot be satisfied by a rename, and it no longer needs a human ruling. Recorded here rather
+  than under `## Proposed Spec Changes` because it was approved before being made, not proposed
+  for later approval.
+- **Correction to the previous entry, and to the dossier.** That entry reported "private
+  code-object loads for the reproducer fell 31 → 0". **The 31 was files *considered*, not
+  executables loaded.** The private-executable count went **1 → 0** for this reproducer. Same for
+  the dossier's Background, which called PENNANT's 95 `Adding` lines "one per
+  `.hip_fatbin`-carrying object" — `Adding` was printed for every file scanned, including the
+  many with no fat binary. The defect is unaffected: one wrongly-initialised copy of the code
+  object carrying the dispatched kernel is all it takes, and that one is confirmed. But claims
+  about the *scale* of the duplication were overstated, and the new AC-9 counter is the number
+  that should be quoted from here on. This is the second time a count in this packet turned out
+  to measure files rather than loads.
+- **Blocker / Risk**: none new. The AC-9 weakness recorded in the previous entry is closed.

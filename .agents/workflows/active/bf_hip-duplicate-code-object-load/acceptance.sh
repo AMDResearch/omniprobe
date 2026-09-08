@@ -191,23 +191,40 @@ fi
 # AC-9: the duplicate load is avoided, not merely bypassed
 # ---------------------------------------------------------------------------
 #
-# Mechanical part: the post-change `Adding` count is strictly lower than the
-# pre-change baseline on the same workload. Whether the remainder is all
-# legitimately Triton-path is the judgement.
+# Amended 2026-09-08 with user approval. The previous check compared `Adding`
+# counts before and after, and the fix renames that caller-side line from
+# `Adding` to `Indexing` for files it no longer privately loads — so the count
+# would have dropped for a rename alone, with no behaviour change. A check that
+# something unrelated can satisfy is not a check.
+#
+# `Loading private code object` is emitted inside coCache::addFile at the point
+# an HSA executable is actually created. It cannot be produced without the load
+# happening, and it cannot be suppressed while the load still happens.
+#
+# Both conditions are required. Zero private loads alone would also be true of a
+# run that processed no files at all, so the indexed count guards against the
+# work having been skipped rather than avoided.
 
-AC_BEFORE_LOG="$AC_EVIDENCE_DIR/adding-before.log"
 AC_AFTER_LOG="$AC_EVIDENCE_DIR/adding-after.log"
 
-if [ ! -f "$AC_BEFORE_LOG" ] || [ ! -f "$AC_AFTER_LOG" ]; then
-  ac_fail "AC-9" "missing $AC_BEFORE_LOG or $AC_AFTER_LOG (plan step 2 captures the baseline)"
+if [ ! -f "$AC_AFTER_LOG" ]; then
+  ac_fail "AC-9" "missing $AC_AFTER_LOG — capture a pure-HIP run under 'omniprobe -i'"
 else
-  before=$(grep -c "^Adding " "$AC_BEFORE_LOG" 2>/dev/null || echo 0)
-  after=$(grep -c "^Adding " "$AC_AFTER_LOG" 2>/dev/null || echo 0)
-  if [ "$after" -lt "$before" ]; then
-    ac_judge "AC-9" "code-object loads fell from $before to $after on the same workload" \
-      "\"materially fewer\" depends on the workload's shared-library count, which is not fixed across machines or ROCm versions; a pinned number would be a false gate. Whether the remaining loads are all legitimately Triton-path is a human call"
+  # NOT `|| echo 0`: grep -c already prints 0 when it matches nothing, and it exits 1
+  # while doing so, so the fallback appends a second line and the variable becomes
+  # "0\n0" — which is neither -eq nor -ne 0 and silently derails every branch below.
+  # The check this one replaces had the same idiom, and it would have misfired the
+  # moment the count it was watching reached zero, which is exactly when it mattered.
+  private_loads=$(grep -c "^Loading private code object " "$AC_AFTER_LOG" 2>/dev/null || true)
+  indexed=$(grep -c "^Indexing " "$AC_AFTER_LOG" 2>/dev/null || true)
+  if [ "$private_loads" -ne 0 ]; then
+    ac_fail "AC-9" "$private_loads code object(s) still loaded into a private executable on a pure-HIP workload (see $AC_AFTER_LOG)"
+  elif [ "$indexed" -eq 0 ]; then
+    ac_fail "AC-9" "no files were indexed — the run processed nothing, so zero private loads proves nothing (see $AC_AFTER_LOG)"
+  elif [ "$private_loads" -eq 0 ]; then
+    ac_pass "AC-9" "$indexed code objects indexed, 0 loaded into a private executable"
   else
-    ac_fail "AC-9" "code-object loads did not fall ($before before, $after after) — the duplicate load is still happening"
+    ac_fail "AC-9" "$private_loads code object(s) still loaded into a private executable on a pure-HIP workload (see $AC_AFTER_LOG)"
   fi
 fi
 

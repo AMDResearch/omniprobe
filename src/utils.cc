@@ -593,6 +593,13 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
         else
             CHECK_STATUS("Error in loading executable object", status);
 
+        /* Emitted here, at the point a private HSA executable actually comes into
+         * existence, rather than by the caller deciding what it is about to do. This is the
+         * signal bf_hip-duplicate-code-object-load's AC-9 is measured on: for code the
+         * application loads itself this line must not appear at all, and a line printed
+         * anywhere else could be satisfied without the load having been skipped. */
+        std::cout << "Loading private code object " << co_file << std::endl;
+
         executables.push_back(executable);
         arg_helpers.push_back(new KernelArgHelper(co_file));
         loaded_co_files.push_back(co_file);

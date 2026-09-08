@@ -54,8 +54,17 @@ write-up was wrong and is corrected here (`findAlternative` is at `src/utils.cc:
   `src/utils.cc:511–556`). Byte-for-byte identical device code, but with its own `.data` /
   `__constant__` allocation that nothing ever initialises.
 
-Not limited to the main binary: the PENNANT run logged **95** `Adding` lines, one per
-`.hip_fatbin`-carrying object in the process.
+Not limited to the main binary: the PENNANT run logged **95** `Adding` lines.
+
+*Corrected 2026-09-08.* That count was described here as "one per `.hip_fatbin`-carrying object in
+the process". It is not — `Adding` was printed for **every file considered**, including the many
+with no fat binary at all, and only files that actually yield a code object go on to be loaded
+into a private executable. Measured on the minimal reproducer: **31 files considered, 1 private
+executable loaded.** So 95 overstates the number of duplicate loads in PENNANT by a wide and
+unknown margin. The defect is unaffected — one wrongly-initialised copy of the code object
+carrying the kernel under dispatch is all it takes, and that one is confirmed — but any statement
+about the *scale* of the duplication should use the private-load count, which is what AC-9 now
+measures.
 
 ### Why the wrong copy wins
 
@@ -175,12 +184,22 @@ kernels, so `coCache::addFile` is *necessary* there and must be preserved.
 - **AC-8**: A filtered run still gets DWARF source-line correlation for the kernels it does
   instrument — i.e. no sacrificial-kernel requirement remains.
 - **AC-9**: The duplicate load is not merely bypassed but avoided for HIP fat binaries whose
-  clones are already bound to the executable. Verified by counting `Adding` lines in a run log:
-  materially fewer than the 95 observed on PENNANT for an equivalent workload.
-  **[judgement]** — reason: "materially fewer" depends on the workload's shared-library count,
-  which is not fixed across machines or ROCm versions; a pinned number would be a false gate.
-  The mechanical part (the count is *lower* than an equivalent pre-change baseline) is checked;
-  whether the remaining loads are all legitimately Triton-path is a human call.
+  clones are already bound to the executable. Verified on a pure-HIP workload by the count of
+  `Loading private code object` lines — a line emitted inside `coCache::addFile` at the point an
+  HSA executable is actually created — which must be **zero**, while the count of files the run
+  indexed is non-zero. Both conditions are required: the first says no private copy was built,
+  the second says the files were still processed rather than silently dropped.
+
+  *Amended 2026-09-08, with user approval, from "counting `Adding` lines … materially fewer than
+  the 95 observed on PENNANT". Two reasons, and the amendment is a **tightening** in both.
+  (1) The old mechanism was satisfiable without the fix: the implementation renames the caller's
+  log line from `Adding` to `Indexing` for files it no longer privately loads, so the count would
+  have dropped for a rename alone. The new line is emitted by the code that does the loading, so
+  it cannot be satisfied that way. (2) "Materially fewer" was unpinnable — it depends on the
+  workload's shared-library count — which is why the criterion carried a `[judgement]` marker.
+  "Zero" is pinnable on a pure-HIP workload, so the marker is **dropped** and AC-9 is now decided
+  outright. Non-vacuity was demonstrated rather than assumed: see the run-log entry of 2026-09-08
+  (AC-9 check integrity).*
 
 ## Failure Policy
 
