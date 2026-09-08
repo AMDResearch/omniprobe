@@ -4,7 +4,7 @@
 
 - Workflow ID: bf_hip-duplicate-code-object-load
 - Workflow Type: bugfix
-- Lifecycle State: active
+- Lifecycle State: done
 - Owner / Current Executor: unassigned
 - Intended Write Scope: see the `write-scope` block below
 - Dependencies On Other Active Workflows: **overlaps `rf_lazy-kerneldb-loading`** (both write
@@ -247,15 +247,18 @@ stop
   arch-specific in it, but it has only been observed on one architecture.
 - The instrumented build is ~880× slower in PENNANT's own timed region, and Omniprobe startup
   (902 kernels scanned) dominates at small problem sizes. Keep reproducers small.
-- **The test suite is not green at HEAD and mostly does not run.** Measured 2026-09-08: 1 suite
-  passed, 4 skipped for unset environment variables, 1 failed (Handler tests). Recorded in
-  `baseline-run_all_tests.txt`. Set `TRITON_DIR` and `INSTRUMENTED_ROCBLAS_LIB_DIR` before
-  relying on AC-4 or AC-5.
-- **`.gitignore` contains `build` only, so sibling build trees are untracked and visible to the
-  scope check.** `build_gfx950/` and `build_v3.6.0_llvm/` are currently untracked in the working
-  tree, and `ac_check_write_scope` reports every file in them as out of scope — a 74 KB verdict
-  line that will drown any real finding, for this packet and every other one in this repository.
-  Out of scope here; worth a one-line `.gitignore` fix in a separate change.
+- ~~**The test suite is not green at HEAD and mostly does not run.**~~ **Both halves were an
+  artefact of the machine, corrected 2026-09-08.** The 1 passed / 4 skipped / 1 failed tally was
+  measured on a gfx950 node where the instrumented rocBLAS/hipBLASLt libraries and the `build/`
+  test binaries are the wrong architecture. On gfx90a with `.untracked/test-env.sh` sourced, the
+  suite is **6/6 green at the base commit and 10/10 green at HEAD**. `TRITON_DIR` and both
+  `INSTRUMENTED_*` variables are still required for AC-4 and AC-5 to mean anything; the script
+  exports them when the architecture matches.
+- ~~**`.gitignore` contains `build` only**~~ — it never did; the bare pattern `build` simply does
+  not match `build_gfx950`. **Fixed 2026-09-08 in `fe66ff4`** by adding `build*/`. Recorded here
+  because of what it cost while it stood: the 74 KB of untracked paths in every scope verdict hid
+  two genuine out-of-scope writes (`inc/interceptor.h`, `.gitignore` itself), which were spotted
+  only once the noise was gone and are declared under Scope Amendments in `handoff.md`.
 
 ## Dependencies
 
@@ -342,7 +345,14 @@ not absence of regression in general. Reported as `WEAK`.
    clone is still dispatched and `__constant__` reads **correctly**. See the run-log entry of
    2026-09-08 (plan step 3).
 2. `-k "gpuMain5"` at 2 ranks exits 1 with no accesses. Unexplained; may be a second defect.
-3. Does the bug reproduce on `gfx90a` / CDNA2? Only observed on `gfx950`. The mechanism looks
-   architecture-independent but that has not been tested.
+3. ~~Does the bug reproduce on `gfx90a` / CDNA2? Only observed on `gfx950`.~~ **PARTLY RESOLVED
+   2026-09-08 on `k005-005.hpcfund` (MI210 / gfx90a).** The *fixed* behaviour is identical on both
+   architectures — the reproducer emits 0 `Loading private code object` and 31 `Indexing` lines
+   here, matching gfx950 exactly, and `__constant__` reads correctly with and without a matching
+   `-k`. The unfixed behaviour was **not** re-measured on gfx90a: the base commit was built here
+   to re-record the suite baseline, but the `__constant__` reproducer was not run against it.
+   So "the mechanism is architecture-independent" is now evidenced rather than assumed on the fix
+   side, and still inferred on the defect side. Cheap to close if it ever matters — the base-commit
+   build recipe is in `baseline-run_all_tests.txt`.
 4. Should `arg_map_` (`src/utils.cc:626–634`) also move to the runtime path, or does it
    legitimately need the private copy's comgr metadata?

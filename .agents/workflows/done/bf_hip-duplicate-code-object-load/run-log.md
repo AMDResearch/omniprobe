@@ -587,3 +587,172 @@ interrupted, this log is the only record of progress.
 - **Verification**: the recompiled heatmap run above, on MI350X/gfx950.
 - **Criteria impact**: none changed. AC-4 remains the sole failure; its odds on a gfx90a node are
   now materially better understood than "unknown".
+
+### 2026-09-08 (session start on a gfx90a node — AC-4)
+
+- **Actor**: claude
+- **Execution mode**: autonomous. Checkpointing per `guardrails.md` § Checkpoint Protocol.
+- **Planned step**: Close out AC-4, the sole outstanding criterion, on the gfx90a/MI210 hardware
+  the previous session handed the packet off to.
+- **Action taken**: `/session-init` landed on `k005-005.hpcfund`, which `rocminfo` reports as
+  `gfx90a:sramecc+:xnack-` — the architecture the instrumented rocBLAS/hipBLASLt libraries were
+  built for, and the one `build/` is configured for (`CMAKE_HIP_ARCHITECTURES=gfx90a`). Two
+  environment facts checked before anything else: `/work1` and `/home1` are GPFS here
+  (`stat -f` magic `0x18031977`), not the fuseblk of the previous node, so the mmap workaround
+  the regression tests carry is unnecessary though harmless. Rebuilt `build/` at HEAD `44547f9`
+  — it had last been configured 2026-07-13 and so predated the entire fix.
+- **Result**: build clean. 27 targets, zero `error`/`failed` lines in the log, every handler
+  `.so` and `liblogDuration64.so` re-emitted at 07:24. `libkernelDB64.so` is untouched from
+  2026-07-13, correctly — no submodule source changed.
+- **Files touched**: `build/` (untracked), this run-log.
+- **Verification**: `cmake --build build -j 32`, exit 0; log at `/tmp/op-build-gfx90a.log`.
+- **Criteria impact**: none yet. AC-1's precondition (a build tree at HEAD for this
+  architecture) now exists on this node.
+- **Blocker / Risk**: unchanged and known — making the three rocBLAS/hipBLASLt suites *run* is
+  not the same as making them *pass*, and `baseline-run_all_tests.txt` is stale on three axes
+  and must be re-recorded here before AC-4 can be judged.
+
+### 2026-09-08 (AC-4 on gfx90a — a real regression, found where an environment gap was expected)
+
+- **Actor**: claude
+- **Planned step**: Run `tests/run_all_tests.sh` on the gfx90a node and read the tally.
+- **Action taken / Result**: 10 suites run, **0 skipped** — the environment gap the packet was
+  handed off for is closed. But **1 suite failed, and not the one the baseline predicted.**
+
+  | | baseline (gfx950) | here (gfx90a), first run |
+  |---|---|---|
+  | Handler tests | FAIL — `memory heatmap report` | **PASS** (architecture artefact, as forecast) |
+  | rocBLAS / hipBLASLt / combined | skipped ×3 | **PASS** ×3 |
+  | Triton | skipped | PASS |
+  | Handler tests → `libfilter_exclude_nonexistent` | not reached | **FAIL** |
+
+  The recorded project-level risk — "rocBLAS integration test broken, instrumented `sscal` not
+  found" — **did not materialise**: `Found instrumented alternative for sscal kernel` passes.
+
+- **The failure is this packet's own doing, and the shallow reading of it is wrong.** The test
+  greps `^Adding ` for `libm.so`. This packet's implementation prints `Indexing` instead of
+  `Adding` for files the application has already mapped (`src/interceptor.cc:262`), so no
+  `Adding` line exists for `libm.so` any more. Nothing about library filtering changed; the
+  string the assertion was written against did.
+- **The more serious half was invisible from the tally.** `tests/library_filter_chain/run_test.sh`
+  asserted the *absence* of `Adding <BUILD_DIR>/libstatic_head.so` to prove an exclusion worked.
+  `libstatic_head.so` is application-loaded, so post-rename a broken exclusion would print
+  `Indexing` and that check **could no longer fire at all** — it passed, and would have kept
+  passing however broken the filter got. Verified from the run's own logs: `test3_exclude_static.log`
+  has 0 `Adding` lines and 124 `Indexing` lines. The suite reported PASS.
+
+  Same failure mode this packet already caught once, on the other side: AC-9's original check
+  counted `Adding` lines and was satisfiable by the rename alone. A log-line rename silently
+  re-points every assertion written against it, in whichever direction the assertion runs.
+- **Fix**: match both wordings wherever the assertion is about an application-loaded library.
+  The filter runs *before* either line is printed (`src/interceptor.cc:258`), so both are equally
+  good evidence that a library survived it.
+  - `tests/run_library_filter_tests.sh` — the shared helper's extraction, `^Adding ` →
+    `^(Adding|Indexing) `.
+  - `tests/library_filter_chain/run_test.sh:209` — the static-exclusion check, likewise. This
+    makes a check that could not fail able to fail again.
+  - The `libdynamic_*` presence checks at 257/305/313/319 are **left as `Adding`** deliberately.
+    Those libraries arrive through a `--library-filter` include, are not mapped at startup, and
+    so still print `Adding`; matching `Indexing` too would only weaken them.
+- **Result**: **10 suites run, 10 passed, 0 skipped, 0 failed.**
+- **Non-vacuity checked rather than assumed**, since the repair was to an assertion: with
+  `{"exclude": ["/nonexistent/..."]}` the run emits 31 `Adding|Indexing` lines, one of them
+  `Indexing /lib64/libm.so.6`; with `{"exclude": ["/lib64/libm.so.6"]}` it emits 30 and no `libm`
+  line at all. The exclusion is genuinely exercised, not passing by absence of evidence.
+- **Files touched**: `tests/run_library_filter_tests.sh`,
+  `tests/library_filter_chain/run_test.sh`, this run-log. Both are inside the declared
+  `tests/` scope; no acceptance criterion, failure policy or non-goal was touched.
+- **Verification**: `source .untracked/test-env.sh && bash tests/run_all_tests.sh`, twice —
+  before the repair (`/tmp/op-suite-1.log`, 9 passed / 1 failed) and after
+  (`/tmp/op-suite-2.log`, 10 passed / 0 failed).
+- **Criteria impact**: AC-4's two conditions are now both satisfiable on this node —
+  `Suites skipped: 0` and `Suites failed: 0`. Not yet claimed: the baseline it must be compared
+  against is still the stale gfx950 one.
+- **Blocker / Risk**: none new. Next is re-recording `baseline-run_all_tests.txt` here.
+
+### 2026-09-08 (baseline re-recorded by building the base commit; gate passes)
+
+- **Actor**: claude
+- **Planned step**: Re-record `baseline-run_all_tests.txt` on the gfx90a node, then run the gate.
+- **Action taken**: **Not** the reconstruction the handoff proposed.** It suggested forcing
+  `app_loads_object` false in place, rebuilding and measuring. That reverts only half the change
+  and would still run the four suites *this packet adds*, which did not exist at `74c6ed2` — so
+  it could not produce a "before" tally comparable to the "after" one. Built the base commit
+  instead:
+
+      git worktree add /tmp/op-base 74c6ed2
+      git -c protocol.file.allow=always -C /tmp/op-base submodule update --init --recursive
+      cmake -B build … -DCMAKE_HIP_ARCHITECTURES=gfx90a && cmake --build build -j 48
+
+  Two environment notes worth keeping. The submodule clone fails over SSH from this node and
+  fails again against a local path until `protocol.file.allow=always` is passed; the submodule
+  commits are identical at `74c6ed2` and HEAD, so pointing them at the local clones is exact.
+  And the first suite run reported **3 suites failed** on `test_rocblas_scal not found` — the
+  rocBLAS/hipBLASLt fixtures are untracked pre-built host binaries with no Omniprobe code in
+  them, absent from a fresh worktree. `git diff 74c6ed2 HEAD -- tests/rocblas_filter
+  tests/hipblaslt` is empty, so they were copied in and that run discarded. **A missing fixture
+  reads exactly like a broken commit in the tally**, which is why it is recorded here rather
+  than quietly fixed.
+- **Result — the baseline is not what this packet has believed since it was written.**
+
+  | | recorded (gfx950) | measured at `74c6ed2` on gfx90a |
+  |---|---|---|
+  | Suites run | 6 | 6 |
+  | passed / skipped / failed | 1 / 4 / 1 | **6 / 0 / 0** |
+
+  **Two beliefs corrected, neither of them minor.**
+  1. The Handler-tests failure has been carried by this packet as a *pre-existing defect*, out
+     of scope, with `baseline-run_all_tests.txt` explicitly instructing the executor not to fix
+     it. It is not a defect and never was — the suite ran a gfx90a binary on a gfx950 GPU. It
+     passes at the base commit on matching hardware.
+  2. The project-level risk "rocBLAS integration test broken — instrumented `sscal` not found",
+     named in the handoff as *the* thing that could still block AC-4, does not exist either. The
+     suite passes at `74c6ed2` and at HEAD.
+
+  Neither was visible from the gfx950 measurement, because four of six suites never ran there.
+  A baseline taken where most of the suite skips records the environment, not the code.
+- **AC-9 re-measured on this architecture** rather than inherited from the gfx950 run: the
+  reproducer emits **0** `Loading private code object` and **31** `Indexing` lines here, matching
+  gfx950 exactly. Open Question 3 — "does the bug reproduce on gfx90a / CDNA2?" — is answered on
+  the fix side: the fixed behaviour is identical on both, so the mechanism is
+  architecture-independent as the dossier assumed. The gfx950 capture is preserved as
+  `adding-after-gfx950.log`; `adding-after.log` is now this node's, so the gate measures the tree
+  and machine it runs on.
+- **One edit to `acceptance.sh`, and it is not a contract change.** Its AC-4 pass message read
+  "(baseline had 1 pre-existing failure: Handler tests)" — now false — and the comment above the
+  check asserted the same. Both corrected to point at the baseline file. **No check, threshold or
+  criterion text was touched**; `Suites skipped: 0` and `Suites failed: 0` are exactly as before,
+  and the stricter-than-the-text discrepancy the previous session flagged for user judgement was
+  deliberately left standing, because with 0 failures it never comes into play and resolving it
+  would be a loosening. The gate was re-run after the edit rather than the earlier result being
+  carried over.
+- **Files touched**: `baseline-run_all_tests.txt`, `acceptance.sh`,
+  `.untracked/bf_hip-dup-co/adding-after*.log`, this run-log.
+- **Verification**: `bash tests/run_all_tests.sh` at `74c6ed2` (6/6, `/tmp/op-base-suite2.log`)
+  and at HEAD (10/10, `/tmp/op-suite-2.log`); `acceptance.sh` in full.
+- **Criteria impact**: **AC-4 PASSES.** With it, the gate reads 9 passed, 1 weak, 0 judgement,
+  0 failed — AC-6 weak by construction, which is its documented ceiling.
+- **Blocker / Risk**: none outstanding.
+
+### 2026-09-08 (workflow completion)
+
+- **Actor**: claude
+- **Planned step**: Workflow completion.
+- **Action taken**: All acceptance criteria verified. Workflow marked done and the packet moved
+  to `.agents/workflows/done/`.
+- **Result**: success. `acceptance.sh` exit **0** — 9 passed, 1 weak, 0 judgement, 0 failed,
+  SCOPE clean. Run three times across the closing session; AC-4 passed in all three, including
+  the run made *before* the cosmetic edit to the gate's AC-4 message, which is what shows that
+  edit did not manufacture the pass.
+- **Files touched**: `dossier.md` (lifecycle state → done; Open Question 3 partly resolved; two
+  now-false constraints corrected), `handoff.md`, `artifacts.md`, `baseline-run_all_tests.txt`,
+  `acceptance.sh`, `active-workflows.md`, `current-focus.md`, this run-log.
+- **Verification**: gate run in full on `k005-005.hpcfund` (MI210 / gfx90a, ROCm 7.2.0);
+  `tests/run_all_tests.sh` 10/10 at HEAD and 6/6 at `74c6ed2`; AC-9 re-measured on this
+  architecture at 0 private loads / 31 indexed.
+- **Criteria impact**: **All criteria met.** AC-6 stands at `WEAK`, its documented ceiling, and
+  is recorded with both disclosures in `artifacts.md` rather than signed off as strong.
+- **Blocker / Risk**: none. Three follow-on items are named in `handoff.md` and none of them
+  belongs to this packet: the `.intern.<hash>` clone-name defect (now with a concrete PENNANT
+  reproducer, **still unfiled**), `rf_lazy-kerneldb-loading`'s invalidated premise, and the
+  latent `SKIP`-anywhere suite classifier at `tests/run_all_tests.sh:59`.

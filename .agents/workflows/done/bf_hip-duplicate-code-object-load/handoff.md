@@ -4,152 +4,91 @@
 
 ## Current Status
 
-**Active as of 2026-09-08. No implementation work has started.** The packet was created on
-2026-09-08 from a finding made on 2026-09-01 while profiling PENNANT under Omniprobe. The
-diagnosis is complete and the mechanism is pinned to specific source lines; what is missing is
-the fix, the tests, and a decision on which of three approaches to take (plan step 3).
+**Done. All acceptance criteria met.** The gate exits 0 — **9 passed, 1 weak, 0 judgement,
+0 failed**, SCOPE clean. AC-4, the criterion the packet was handed off to a gfx90a node for,
+passes. AC-6 is `WEAK`, which is its documented ceiling and not an outstanding item; its two
+disclosures are recorded in `artifacts.md`.
 
-`acceptance.sh` currently fails, correctly — it describes what "done" will mean and nothing has
-been built yet. Last run 2026-09-08 at promotion: `1 passed, 0 weak, 0 judgement, 9 failed`.
+Base commit `74c6ed2dded669fe797dff5234dee4a7d1eef8ab`. Measured on `k005-005.hpcfund`
+(MI210 / gfx90a, ROCm 7.2.0), against the `build/` tree rebuilt at HEAD on that node.
 
-Promoted `draft/` → `active/` on user approval after `/workflow-readiness-check` returned READY.
-`- Base Commit:` is stamped at `74c6ed2dded669fe797dff5234dee4a7d1eef8ab`.
+## Next Exact Step
 
-**Run the gate against the right build tree.** `AC_BUILD_DIR` defaults to `build/`, which is the
-gfx90a tree; the defect has only been observed on gfx950. Use
-`AC_BUILD_DIR=$PWD/build_gfx950`.
+N/A — workflow complete. The three items below are follow-on work left deliberately outside this
+packet, not blockers on it.
 
-## Last Verified
+## What the closing session changed
 
-**2026-09-08** — every source anchor in the dossier re-checked against this repository at
-`74c6ed2` by reading the named lines. Confirmed present and as described:
+Two things, both inside the declared `tests/` scope.
 
-| Anchor | Verified content |
-|---|---|
-| `src/utils.cc:117` | `std::string getInstrumentedName(const std::string& func_decl)` |
-| `src/utils.cc:206` | `void coCache::registerRuntimeKernel(...)` |
-| `src/utils.cc:213–214` | `if (it->second.find(name) != it->second.end()) return;  // Already registered` |
-| `src/utils.cc:487` | `bool coCache::getCodeObjectRef(...)` |
-| `src/utils.cc:503` | `bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::string& strFilter)` |
-| `src/utils.cc:511` | `extractCodeObjects(agent, name)` |
-| `src/utils.cc:610–624` | the `-k` regex block, with a bare `continue` at 616 |
-| `src/utils.cc:626–634` | the `arg_map_` insert |
-| `src/utils.cc:640–644` | the `lookup_map_` insert — **after** the `continue`, hence filtered |
-| `src/utils.cc:645` | `kernel_co_map_[agent][strName] = {...}` — also filtered |
-| `src/utils.cc:706` | `uint64_t coCache::findAlternative(...)` |
-| `src/utils.cc:736` | `uint64_t coCache::findInstrumentedAlternative(...)` |
-| `src/utils.cc:1023` | the `getSharedLibraries` comment distinguishing Triton from HIP |
-| `inc/utils.h:184` | `lookup_map_` declaration |
-| `src/interceptor.cc:790` | `if (run_instrumented_ && dispatcher_.canDispatch(alt_kernel_object))` |
-| `src/interceptor.cc:802–808` | the on-demand `scanCodeObject` block |
-| `src/interceptor.cc:825–829` | the `else` branch restoring `packet->kernel_object` |
-| `src/interceptor.cc:964` | `kernel_cache_.registerRuntimeKernel(...)` |
-| `external/kerneldb/src/co_extract.cc:181` | `extractCodeObjects(hsa_agent_t, const std::string&)` |
-| `src/instrumentation/InstrumentationCommon.cpp:109` | `if (arch == "gfx940" \|\| arch == "gfx941" \|\| arch == "gfx942")` |
-| `external/dh_comms/include/message.h:44` | `gcnarch` enum — no `gfx950` entry |
+**1. A real regression, found where an environment gap was expected.** The first suite run on
+gfx90a gave 10 run / 0 skipped / **1 failed** — `libfilter_exclude_nonexistent`, in the Handler
+suite. The cause is this packet's own: `src/interceptor.cc:262` now prints `Indexing` rather than
+`Adding` for files the application has already mapped, and the test grepped `^Adding ` for
+`libm.so`. Library filtering itself is unchanged.
 
-**One correction to the originating write-up:** it cites `findAlternative` at `src/utils.cc:945`.
-That line is `KernelArgHelper::KernelArgHelper(const std::string file_name)`. The real location
-is `src/utils.cc:706`. The dossier carries the corrected anchor; the write-up has not been
-amended.
+The half that did not show up in the tally matters more. `tests/library_filter_chain/run_test.sh`
+proved an exclusion worked by asserting the *absence* of `Adding <BUILD_DIR>/libstatic_head.so`.
+That library is application-loaded, so after the rename a broken exclusion would print `Indexing`
+and the check **could no longer fire at all** — it passed, and would have kept passing however
+broken the filter got. This is the same failure mode the packet already caught once from the
+other side, when AC-9's original check counted `Adding` lines and was satisfiable by the rename
+alone. A log-line rename silently re-points every assertion written against it, in whichever
+direction that assertion runs.
 
-**Not verified:** the runtime behaviour has not been re-reproduced at `74c6ed2` in this session.
-The measurements come from the 2026-09-01 PENNANT session and are reported here as that session
-recorded them. Plan step 1 exists to reproduce before changing anything.
+Both now match `^(Adding|Indexing) `. The `libdynamic_*` presence checks are deliberately left
+matching `Adding` alone: those arrive through a `--library-filter` include, are not mapped at
+startup, and matching `Indexing` too would only weaken them. Non-vacuity was measured, not
+assumed — 31 `Adding|Indexing` lines with `libm` present, 30 and no `libm` line when it is
+excluded.
 
-## Status
+**2. The baseline was rebuilt, and it overturns two of this packet's standing beliefs.** Rather
+than the in-place `app_loads_object = false` reconstruction proposed earlier — which reverts half
+the change and would still run the four suites this packet *adds* — the base commit was built in
+a worktree and its suite run there. At `74c6ed2` on gfx90a: **6 run, 6 passed, 0 skipped,
+0 failed.**
 
-**The entire plan of record is DONE — steps 1 through 10.** The gate reads
-**8 passed, 1 weak, 0 judgement, 1 failed**, SCOPE clean. AC-4 is the only outstanding
-criterion, and it cannot be met on a gfx950 node.
+- The Handler-tests failure this packet carried as a pre-existing defect, out of scope, is **not
+  a defect**. It was a gfx90a binary failing to dispatch on a gfx950 GPU.
+- The project-level risk "rocBLAS integration test broken — instrumented `sscal` not found",
+  named as the one thing that could still block AC-4, **does not exist**. It passes at the base
+  commit and at HEAD.
 
-## Next Exact Step: resume on a gfx90a / MI210 node
+Neither was visible from the gfx950 baseline because four of six suites never ran there.
 
-AC-4 requires `tests/run_all_tests.sh` with **no suite skipped**. Three suites skip here because
-the instrumented rocBLAS/hipBLASLt libraries are gfx90a-only and this is a gfx950 machine. That
-is an environment gap, not a code defect, and moving nodes is the intended resolution.
+## Follow-on work this packet is deliberately not doing
 
-1. `/session-init`, then `/workflow-resume bf_hip-duplicate-code-object-load`.
-2. `source .untracked/test-env.sh` — it detects the architecture and **will** export
-   `INSTRUMENTED_ROCBLAS_LIB_DIR` and `INSTRUMENTED_HIPBLASLT_LIB_DIR` on gfx90a, which it
-   deliberately withholds on gfx950. Use the `build/` tree (gfx90a); do **not** use
-   `build_gfx950/`, which also lacks the Triton plugin.
-3. `bash tests/run_all_tests.sh` and read the tally before anything else.
-4. Re-record `baseline-run_all_tests.txt` **on that node**. It is stale on three axes: it records
-   6 suites (there are now 10), with the environment variables unset, on a gfx950 node.
-   "Before the change" no longer exists in the tree, so reconstruct it the way AC-6's baseline
-   was — force `app_loads_object` false in `src/interceptor.cc`, rebuild, measure, revert,
-   rebuild — and say so in the file, as that file's own instructions require.
-5. Run `acceptance.sh`.
-
-**Expect the Handler suite to pass there, and do not be surprised.** Its failure is recorded in
-the baseline as a pre-existing defect. It is not one: it runs a gfx90a binary
-(`build/tests/test_kernels/simple_heatmap_test`) that silently fails to dispatch on gfx950.
-Recompiled for gfx950 it passes — see the run-log entry of 2026-09-08 (AC-4 forecast). On MI210
-the architecture matches natively.
-
-**The real risk is different from the one that blocks it here.** Making the three rocBLAS and
-hipBLASLt suites *run* is not the same as making them *pass*. A project-level risk on record says
-the rocBLAS integration test is broken with "instrumented sscal not found in current build".
-If they fail for that pre-existing reason, note that **AC-4's implemented check is stricter than
-AC-4's text**: the text says "no regression against the recorded baseline … and no suite is
-skipped", while the check requires `Suites failed: 0` outright. Aligning the check to the text
-would be a **loosening** and needs the user's approval before it is made — the same bar AC-9's
-amendment was held to. Do not relax it silently.
-
-## Completed earlier
-
-**Plan steps 4, 5 and 6.** The fix is implemented and behaves correctly on the
-reproducer; the runtime "already loaded?" test proved unnecessary because the distinction is
-available statically at the call site. See the run-log entry of 2026-09-08 (implementation).
-
-**Next is plan step 7 — the regression tests.** Nothing is *met* until these exist, because the
-evidence so far is manual. Two scripts, both named by `acceptance.sh` and currently its reason
-for failing AC-2/AC-3/AC-7/AC-8:
-
-- `tests/test_constant_memory_visibility.sh` — takes `--no-filter` (AC-2) and
-  `--with-matching-filter` (AC-3). Builds `tests/test_kernels/constant_memory_test.hip` and
-  asserts the reproducer prints `__constant__ OK` in both modes.
-- `tests/test_kernel_filter_semantics.sh` — plain (AC-7): a kernel matching `-k` runs its clone
-  and a non-matching kernel runs its original. With `--assert-dwarf` (AC-8): a filtered run still
-  reports non-zero source-line attribution for the kernel it does instrument.
-
-The manual commands these should automate, and their expected output, are in the run-log entry of
-2026-09-08 (implementation) as a three-row table. Note the tests must compile the kernel to `/tmp`
-and run it from there — `/work1` and `/home1` are fuseblk on this node and do not support mmap.
-
-Then step 8 (full suite vs baselines), step 9 (the unexplained `-k "gpuMain5"` 2-rank exit 1),
-step 10 (docs + PM).
-
-Plan step 2 is partly done: the AC-9 `Adding`-count baseline is captured at
-`.untracked/bf_hip-dup-co/adding-before.log` (**31** loads for a single-kernel reproducer).
-Still missing for step 2: the AC-6 MemoryAnalysis baseline on an unaffected workload.
+1. **The `.intern.<hash>` clone-name defect** (originating write-up §3.2, `getInstrumentedName`
+   at `src/utils.cc:117`). An explicit non-goal here. It now has a concrete reproducer: PENNANT
+   `gpuMain3`/`gpuMain4`/`gpuMain5` at `cstop 1` print `No instrumented alternative found`.
+   **Not yet filed as a packet.**
+2. **`rf_lazy-kerneldb-loading` must not be resumed against its own premise.** Its plan step 4
+   removes `src/interceptor.cc:802–808` and its invariants say "No changes to coCache" — now
+   straightforwardly false of this tree. Revisit its contract *before* execution, not during.
+3. **`tests/run_all_tests.sh:59` classifies a whole suite as skipped if `SKIP` appears anywhere
+   in its output**, and `tests/rocblas_hipblaslt/run_test.sh:220` emits one mid-run. Latent — it
+   did not fire in any run here — but any future criterion demanding `Suites skipped: 0`
+   inherits it.
 
 ## Active Risks / Blockers
 
-- **`rf_lazy-kerneldb-loading` is one `/workflow-resume` away from being executed against a
-  premise this finding invalidates.** Its plan step 4 removes `src/interceptor.cc:802–808`, the
-  block that primes the kernelDB and that the `-k` workaround depends on; its invariants say
-  "No changes to coCache". Both were written before this defect was known. Sequence the two
-  deliberately. This is the single most important thing for the next agent to know.
-- `rf_rename-logduration-to-omniprobe` also writes `src/interceptor.cc` and has a scope broad
-  enough to collide with most packets. Check `active-workflows.md` before parallel execution.
-- Changing which executable clones come from is a change to how *every* application is
-  instrumented. Triton is the regression risk and its coverage (`tests/triton/run_test.sh`,
-  5 tests) is thin for a change of this reach.
-- The bug has only been observed on `gfx950` / ROCm 7.2.0. Architecture independence is assumed
-  from the mechanism, not measured.
+None outstanding for this packet.
 
-## Required Reads Before Resuming
+Standing, for whoever touches this area next: changing which executable clones are dispatched
+from is a change to how *every* application is instrumented, and Triton's coverage
+(`tests/triton/run_test.sh`, 5 tests) remains thin for a change of that reach. It passes here,
+run rather than skipped.
 
-1. This packet's `dossier.md` — §Background carries the full mechanism.
-2. `.agents/kt.archive/refactors/done/rf_unify-kernel-discovery.md` — introduced
-   `registerRuntimeKernel`; the deferred `KernelRegistry` may be the right fix.
-3. `.agents/workflows/suspended/rf_lazy-kerneldb-loading/dossier.md` — the collision.
-4. `../pennant-amp-sidecar/pennant_omniprobe.md` §3.3 — the originating write-up, including the
-   `-k` behaviour matrix and the two further `-fgpu-rdc` problems (§3.1, §3.2) that need their
-   own packets.
-5. PM units `interceptor`, `sub-kerneldb`, `handler-pipeline`.
+## Last Verified
+
+**2026-09-08**, on `k005-005.hpcfund` (gfx90a). Full gate run: 9 passed, 1 weak, 0 judgement,
+0 failed, SCOPE clean. Suite at HEAD: 10 run / 10 passed / 0 skipped / 0 failed. Suite at
+`74c6ed2`: 6 run / 6 passed / 0 skipped / 0 failed. AC-9 re-measured on this architecture —
+0 private code-object loads, 31 files indexed, identical to the gfx950 figures, so the mechanism
+is architecture-independent as the dossier assumed rather than merely on one machine.
+
+The source-anchor verification table from the previous session still holds; it was checked
+against `74c6ed2` and the anchors have since moved with this packet's own edits.
 
 ## Proposed Spec Changes
 
@@ -172,3 +111,7 @@ check only became readable enough to spot them once `fe66ff4` stopped `build_gfx
 
 Both are scope amendments under `policy/guardrails.md`: declared, logged, and reviewed after the
 fact. No acceptance criterion, failure policy, or non-goal was touched.
+
+No further amendments were needed on 2026-09-08. The closing session's edits
+(`tests/run_library_filter_tests.sh`, `tests/library_filter_chain/run_test.sh`) fall inside the
+already-declared `tests/` entry, and the packet's own files are allowlisted by the gate.

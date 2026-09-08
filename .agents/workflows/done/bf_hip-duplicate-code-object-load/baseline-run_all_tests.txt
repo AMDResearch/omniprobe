@@ -1,46 +1,78 @@
 Baseline: tests/run_all_tests.sh at 74c6ed2, BEFORE any change from this packet.
 
-Measured 2026-09-08 on k007-005-v2.hpcfund (MI350X / gfx950, ROCm 7.2.0), against the
-pre-existing `build/` tree (gfx90a), with no INSTRUMENTED_ROCBLAS_LIB_DIR and no TRITON_DIR set.
+Re-recorded 2026-09-08 on k005-005.hpcfund (MI210 / gfx90a, ROCm 7.2.0), replacing an earlier
+measurement taken on a gfx950 node. Both are given below; the gfx90a one is the baseline AC-4
+is judged against, because it is the only one taken where every suite can actually run.
 
-Command:
+How this was measured
+---------------------
+"Before the change" no longer exists in the working tree, so it was rebuilt rather than
+simulated:
+
+    git worktree add /tmp/op-base 74c6ed2
+    git -c protocol.file.allow=always -C /tmp/op-base submodule update --init --recursive
+    cmake -B build -DROCM_PATH=/opt/rocm-7.2.0 -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+      -DTRITON_LLVM=/home1/rvanoo/repos/triton/llvm-project/build \
+      -DINTERCEPTOR_BUILD_TESTING=ON -DCMAKE_INSTALL_PREFIX=/tmp/op-base/install
+    cmake --build build -j 48
+    source <repo>/.untracked/test-env.sh   # exports TRITON_DIR + both INSTRUMENTED_* vars here
     bash tests/run_all_tests.sh
 
-Result:
+The submodule commits are byte-identical at 74c6ed2 and at HEAD (0c8a3635, 5bec9466), and
+`git diff 74c6ed2 HEAD -- tests/rocblas_filter tests/hipblaslt` is empty, so the three
+pre-built rocBLAS/hipBLASLt fixture binaries — untracked host programs that call the BLAS
+libraries and contain no Omniprobe code — were copied into the worktree rather than rebuilt.
+Without them the first attempt reported 3 suites failed on `test_rocblas_scal not found`,
+which is a missing fixture and not a property of the commit. That run is discarded.
+
+This is deliberately NOT the reconstruction the handoff proposed (force `app_loads_object`
+false, rebuild in place). That would have reverted only half the change and would still have
+run the four suites this packet itself adds, which did not exist at 74c6ed2.
+
+Result at 74c6ed2 on gfx90a
+---------------------------
     Suites run:     6
-    Suites passed:  1
-    Suites skipped: 4
-    Suites failed:  1
+    Suites passed:  6
+    Suites skipped: 0
+    Suites failed:  0
 
-    Failed suites:
-      - Handler tests
+    1 Handler tests                      PASS
+    2 Library filter chain               PASS
+    3 hipBLASLt instrumentation          PASS
+    4 rocBLAS integration                PASS
+    5 rocBLAS + hipBLASLt combined       PASS
+    6 Triton integration                 PASS
 
-Failure detail:
-    Suite 1: Handler tests → Basic Handler Tests
-      ✗ FAIL - Expected pattern not found: 'memory heatmap report'
+Superseded: the same command at 74c6ed2 on k007-005-v2 (MI350X / gfx950), with no
+INSTRUMENTED_* and no TRITON_DIR set, against the pre-existing gfx90a `build/` tree:
 
-Skipped suites and why:
-    Suite 5: rocBLAS + hipBLASLt combined — INSTRUMENTED_ROCBLAS_LIB_DIR not set
-    Suite 6: Triton integration              — TRITON_DIR not set
-    (two further suites skipped for the same class of reason)
+    Suites run: 6 / passed: 1 / skipped: 4 / failed: 1
+    Failed: Handler tests — "Expected pattern not found: 'memory heatmap report'"
 
-Why this file exists
---------------------
-The Handler-tests failure is PRE-EXISTING and unrelated to this packet. It was measured before
-any source was touched. Without this record, AC-4 would fail on the first gate run and read as
-a regression caused by this workflow, which is false.
+Two beliefs that measurement produced, both now corrected
+---------------------------------------------------------
+1. The Handler-tests failure was recorded here as a PRE-EXISTING DEFECT, out of scope, and
+   this file instructed the executor not to fix it. It is not a defect. The suite ran a gfx90a
+   binary on a gfx950 GPU, where it silently fails to dispatch. On matching hardware it passes
+   at 74c6ed2, before any change.
+2. A project-level risk on record said the rocBLAS integration test was broken — "instrumented
+   sscal not found in current build" — and this packet treated it as the main thing that could
+   block AC-4 on a gfx90a node. It passes, at 74c6ed2 and at HEAD. `Found instrumented
+   alternative for sscal kernel`.
 
-Two consequences for whoever executes this packet:
+Neither correction was available from the gfx950 measurement, because on that node four of the
+six suites never ran. That is the lesson worth keeping: a baseline taken where most of the
+suite skips records the environment, not the code.
 
-1. Do not "fix" the Handler-tests failure as part of this workflow. It is out of scope. If it
-   is still failing when the fix lands, AC-4's check is what distinguishes "still the same
-   pre-existing failure" from "this change broke something", and that only works if this
-   baseline is trusted rather than edited.
+For comparison — HEAD (44547f9 plus this packet's two test repairs), same node, same command:
 
-2. Four of six suites currently skip. That is the more serious gap: the environment variables
-   must be set before this gate means anything, and the Triton suite in particular is the main
-   regression risk of this change — `coCache::addFile` exists for Triton, and this packet
-   changes when it is used. Running with TRITON_DIR unset verifies nothing about it.
+    Suites run:     10
+    Suites passed:  10
+    Suites skipped: 0
+    Suites failed:  0
+
+Suites 7-10 (constant-memory visibility ×2, kernel filter semantics, kernel filter DWARF
+survival) are added by this packet and have no counterpart in the baseline.
 
 Re-measure and replace this file only if the baseline is re-established at a new HEAD, and say
 so in run-log.md when you do.

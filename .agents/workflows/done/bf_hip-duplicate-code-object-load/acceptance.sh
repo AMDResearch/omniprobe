@@ -104,13 +104,16 @@ ac_run_regression_test "AC-3" "$AC_CONST_TEST" \
 # AC-4: no suite regresses against the recorded pre-change baseline
 # ---------------------------------------------------------------------------
 #
-# Measured at 74c6ed2 on 2026-09-08, before any change: 6 suites run, 1 passed,
-# 4 SKIPPED for unset environment variables, 1 FAILED — "Handler tests", on
-# `Expected pattern not found: 'memory heatmap report'`.
+# AC-4's wording was chosen against a gfx950 measurement in which 4 of 6 suites
+# skipped and Handler tests failed, so "the suite passes" looked unachievable for
+# reasons unrelated to this bug. Re-measured at 74c6ed2 on gfx90a, where every
+# suite can actually run, the pre-change tally is 6 run / 6 passed / 0 skipped /
+# 0 failed — see baseline-run_all_tests.txt, which records both and explains why
+# the earlier one was recording the environment rather than the code.
 #
-# So "the suite passes" is not achievable here and must not be the criterion; it
-# would block this packet forever for a reason that has nothing to do with this
-# bug. The criterion is instead: no suite that passed before fails after, and no
+# The criterion and this check are unchanged by that correction, and deliberately:
+# stated against the baseline it still means the right thing, and it now has a
+# baseline worth comparing to. The criterion is: no suite that passed before fails after, and no
 # suite that ran before is skipped after. A skipped suite is NOT a pass — the
 # environment variables must be set for this gate to mean anything, and the
 # check says so rather than counting a skip as success.
@@ -133,7 +136,7 @@ else
   elif [ "$ac4_skipped" != "0" ]; then
     ac_fail "AC-4" "$ac4_skipped suite(s) skipped — set INSTRUMENTED_ROCBLAS_LIB_DIR / TRITON_DIR etc; a skip is not a pass"
   elif [ "$ac4_failed" = "0" ]; then
-    ac_pass "AC-4" "all suites ran and passed (baseline had 1 pre-existing failure: Handler tests)"
+    ac_pass "AC-4" "all suites ran and passed; nothing can have regressed against $(basename "$AC_SUITE_BASELINE")"
   else
     ac_fail "AC-4" "$ac4_failed suite(s) failed — compare against $AC_SUITE_BASELINE before concluding this is a regression"
   fi
