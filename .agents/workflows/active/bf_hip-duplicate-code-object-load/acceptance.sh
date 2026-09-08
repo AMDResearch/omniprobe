@@ -67,22 +67,38 @@ fi
 
 AC_CONST_TEST="$AC_REPO_ROOT/tests/test_constant_memory_visibility.sh"
 
-if [ ! -f "$AC_CONST_TEST" ]; then
-  ac_fail "AC-2" "regression test $AC_CONST_TEST does not exist yet (plan step 7)"
-  ac_fail "AC-3" "regression test $AC_CONST_TEST does not exist yet (plan step 7)"
-else
-  if bash "$AC_CONST_TEST" --no-filter >"$AC_EVIDENCE_DIR/ac2.log" 2>&1; then
-    ac_pass "AC-2" "__constant__ values correct inside instrumented clone, no -k argument"
-  else
-    ac_fail "AC-2" "__constant__ still corrupt without -k — see $AC_EVIDENCE_DIR/ac2.log"
-  fi
+#
+# These tests SKIP (printing SKIP: and exiting 0) when hipcc or the instrumentation
+# plugin is unavailable, matching every other suite in this repository. Exit status
+# alone would therefore launder a skip into a pass — the same trap AC-5 was rewritten
+# for. Each check below tests for SKIP: explicitly.
 
-  if bash "$AC_CONST_TEST" --with-matching-filter >"$AC_EVIDENCE_DIR/ac3.log" 2>&1; then
-    ac_pass "AC-3" "__constant__ values correct when -k matches the kernel"
-  else
-    ac_fail "AC-3" "matching -k still selects a broken copy — see $AC_EVIDENCE_DIR/ac3.log"
+ac_run_regression_test() {  # <id> <script> <pass-msg> <fail-msg> [args...]
+  local id="$1" script="$2" pass_msg="$3" fail_msg="$4"; shift 4
+  local log="$AC_EVIDENCE_DIR/${id}.log"
+
+  if [ ! -f "$script" ]; then
+    ac_fail "$id" "regression test $script does not exist (plan step 7)"
+    return
   fi
-fi
+  if bash "$script" "$@" >"$log" 2>&1; then
+    if grep -qE "^SKIP:|SKIP: " "$log"; then
+      ac_fail "$id" "test SKIPPED (toolchain or plugin unavailable) — a skip is not a pass; see $log"
+    else
+      ac_pass "$id" "$pass_msg"
+    fi
+  else
+    ac_fail "$id" "$fail_msg — see $log"
+  fi
+}
+
+ac_run_regression_test "AC-2" "$AC_CONST_TEST" \
+  "__constant__ values correct inside instrumented clone, no -k argument" \
+  "__constant__ still corrupt without -k" --no-filter
+
+ac_run_regression_test "AC-3" "$AC_CONST_TEST" \
+  "__constant__ values correct when -k matches the kernel" \
+  "matching -k still selects a broken copy" --with-matching-filter
 
 # ---------------------------------------------------------------------------
 # AC-4: no suite regresses against the recorded pre-change baseline
@@ -152,12 +168,22 @@ fi
 # WEAK by construction: agreeing with a baseline on one workload establishes no
 # change on that workload, not absence of regression in general.
 
+# Timestamps are stripped before comparing. Every dispatch record carries a wall-clock
+# "timestamp" field, so two runs never agree on it and an unnormalised diff could not
+# pass however correct the code was — a gate that cannot pass is as useless as one that
+# cannot fail. The dossier's verification strategy already called for normalising this
+# output before diffing; this is that step, made explicit and narrow. Nothing else is
+# filtered: kernel names, dispatch ids, source files, lines, columns, memory spaces and
+# access counts are all compared verbatim.
+ac6_normalise() { sed 's/^ *"timestamp": ".*",\?$//' "$1"; }
+
 if [ ! -f "$AC_EVIDENCE_DIR/baseline-memanalysis.json" ]; then
   ac_fail "AC-6" "no pre-change baseline at $AC_EVIDENCE_DIR/baseline-memanalysis.json (plan step 2)"
 elif [ ! -f "$AC_EVIDENCE_DIR/after-memanalysis.json" ]; then
   ac_fail "AC-6" "no post-change output at $AC_EVIDENCE_DIR/after-memanalysis.json"
-elif diff -q "$AC_EVIDENCE_DIR/baseline-memanalysis.json" "$AC_EVIDENCE_DIR/after-memanalysis.json" >/dev/null 2>&1; then
-  ac_weak "AC-6" "MemoryAnalysis output matches baseline on the sampled workload only"
+elif diff -q <(ac6_normalise "$AC_EVIDENCE_DIR/baseline-memanalysis.json") \
+             <(ac6_normalise "$AC_EVIDENCE_DIR/after-memanalysis.json") >/dev/null 2>&1; then
+  ac_weak "AC-6" "MemoryAnalysis output matches baseline (timestamps aside) on the sampled workload only"
 else
   ac_fail "AC-6" "MemoryAnalysis output differs from baseline — see diff of $AC_EVIDENCE_DIR/*-memanalysis.json"
 fi
@@ -167,25 +193,18 @@ fi
 # ---------------------------------------------------------------------------
 
 AC_FILTER_TEST="$AC_REPO_ROOT/tests/test_kernel_filter_semantics.sh"
-if [ ! -f "$AC_FILTER_TEST" ]; then
-  ac_fail "AC-7" "filter-semantics test $AC_FILTER_TEST does not exist yet (plan step 7)"
-elif bash "$AC_FILTER_TEST" >"$AC_EVIDENCE_DIR/ac7.log" 2>&1; then
-  ac_pass "AC-7" "-k instruments matching kernels and leaves non-matching kernels on their originals"
-else
-  ac_fail "AC-7" "-k semantics still inverted or partial — see $AC_EVIDENCE_DIR/ac7.log"
-fi
+
+ac_run_regression_test "AC-7" "$AC_FILTER_TEST" \
+  "-k instruments matching kernels and leaves non-matching kernels on their originals" \
+  "-k semantics still inverted or partial"
 
 # ---------------------------------------------------------------------------
 # AC-8: a filtered run still gets DWARF correlation (no sacrificial kernel)
 # ---------------------------------------------------------------------------
 
-if [ ! -f "$AC_FILTER_TEST" ]; then
-  ac_fail "AC-8" "no test yet asserting DWARF line attribution under a filter (plan step 7)"
-elif bash "$AC_FILTER_TEST" --assert-dwarf >"$AC_EVIDENCE_DIR/ac8.log" 2>&1; then
-  ac_pass "AC-8" "filtered run reports non-zero source-line attribution; no sacrificial kernel needed"
-else
-  ac_fail "AC-8" "filtered run still lacks DWARF correlation — see $AC_EVIDENCE_DIR/ac8.log"
-fi
+ac_run_regression_test "AC-8" "$AC_FILTER_TEST" \
+  "filtered run reports non-zero source-line attribution; no sacrificial kernel needed" \
+  "filtered run still lacks DWARF correlation" --assert-dwarf
 
 # ---------------------------------------------------------------------------
 # AC-9: the duplicate load is avoided, not merely bypassed

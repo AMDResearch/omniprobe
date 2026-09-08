@@ -815,7 +815,13 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                     // What's the kernarg buffer size for this new kernel?
                     uint32_t size = kernel_cache_.getArgSize(alt_kernel_object);
                     //uint8_t test_align = kernel_cache_.getArgumentAlignment(packet->kernel_object);
-                    if (run_instrumented_ && runKernelInstrumented(it->second.name_) && dispatcher_.canDispatch(alt_kernel_object))
+                    /* Emitted at the decision point, naming the kernel, so that "-k restricts
+                     * which kernels run instrumented" is observable per kernel in a single run
+                     * rather than inferred from message volume. AC-7 is asserted on this. */
+                    const bool filter_allows = runKernelInstrumented(it->second.name_);
+                    if (!filter_allows)
+                        std::cerr << "Kernel filter excluded " << it->second.name_ << "; running uninstrumented" << std::endl;
+                    if (run_instrumented_ && filter_allows && dispatcher_.canDispatch(alt_kernel_object))
                     {
                         // Found an instrumented  kernel Vobject to use as an alternative
                         dispatch->kernel_object = alt_kernel_object;

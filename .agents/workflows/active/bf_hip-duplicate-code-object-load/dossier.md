@@ -16,9 +16,20 @@
 src/utils.cc
 inc/utils.h
 src/interceptor.cc
+inc/interceptor.h
 tests/
 docs/
+.gitignore
 ```
+
+*Two paths added 2026-09-08 as **scope amendments**, not contract changes — declared here,
+logged in `handoff.md` under `## Scope Amendments` and in `run-log.md`, and reviewed after the
+fact per `policy/guardrails.md`. `inc/interceptor.h` holds the declarations for the `-k` filter
+members and `runKernelInstrumented()`, whose implementation was always in the declared
+`src/interceptor.cc`; omitting the header was an oversight when the scope was written.
+`.gitignore` carries the `build*/` fix committed in `fe66ff4` — repository-wide rather than this
+packet's deliverable, but made inside this packet's commit range, so the gate correctly reports
+it and it is declared rather than argued away.*
 
 ## Objective
 

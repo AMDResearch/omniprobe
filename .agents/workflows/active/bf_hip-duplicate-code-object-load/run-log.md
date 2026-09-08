@@ -430,3 +430,66 @@ interrupted, this log is the only record of progress.
   that should be quoted from here on. This is the second time a count in this packet turned out
   to measure files rather than loads.
 - **Blocker / Risk**: none new. The AC-9 weakness recorded in the previous entry is closed.
+
+### 2026-09-08 (regression tests — plan steps 7 and 8)
+
+- **Actor**: claude
+- **Planned step**: Step 7 — regression tests for AC-2, AC-3, AC-7, AC-8. Step 8 — full suite
+  against the baselines.
+- **Action taken**:
+  - `tests/test_kernels/filter_semantics_test.hip` — two kernels, one strided (trips the L2
+    report, so it carries a source-line attribution) and one coalesced (the kernel a `-k` regex
+    does *not* match). Lets AC-7 and AC-8 be asserted **per kernel within one run** rather than
+    inferred by comparing message volume across runs.
+  - `tests/test_instrumented_kernel_common.sh` — shared helpers. Kernels are compiled for the
+    architecture `rocminfo` reports, **not** for `CMAKE_HIP_ARCHITECTURES`. This was not
+    hypothetical: the gfx90a `build/` tree's own test kernels dispatch nothing at all on this
+    gfx950 node, silently, exiting 0 with no reports. Binaries are built into `/tmp` because
+    `/work1` and `/home1` are fuseblk here and do not support mmap.
+  - `tests/test_constant_memory_visibility.sh` (AC-2, AC-3) and
+    `tests/test_kernel_filter_semantics.sh` (AC-7, AC-8).
+  - All four modes added to `tests/run_all_tests.sh` as suites 7–10, so they keep running after
+    this packet completes and its `acceptance.sh` is archived.
+  - `acceptance.sh`: AC-2/3/7/8 now go through one helper that **fails on `SKIP:`** rather than
+    trusting exit status — these tests skip like every other suite in the repo when hipcc or the
+    plugin is missing, which is precisely the laundering AC-5 was already rewritten for.
+- **Result**: success. Gate now reads **8 passed, 1 weak, 0 judgement, 1 failed**, and
+  `tests/run_all_tests.sh` reports 10 suites: 6 passed, 3 skipped, 1 failed.
+- **Verification**: **every test was run against a deliberately broken build, not just a working
+  one.** With `app_loads_object` forced false and the `-k` gate forced open — the pre-fix
+  behaviour, everything else identical:
+
+  | test | fixed build | pre-fix build |
+  |---|---|---|
+  | `--no-filter` (AC-2) | PASS | **FAIL** |
+  | `--with-matching-filter` (AC-3) | PASS | **FAIL** |
+  | filter semantics (AC-7) | PASS | **FAIL** |
+  | `--assert-dwarf` (AC-8) | PASS | **FAIL** |
+
+  **AC-8 initially passed against the broken build — it was vacuous, and the probe is the only
+  reason that was caught.** The source-line assertion holds pre-fix too, because the kernel the
+  filter matches is the one being reported on, and pre-fix that kernel *did* get a code-object
+  reference. The regression it was supposed to catch is that `kernel_co_map_` was populated
+  behind the `-k` regex, so kernels *not* matching lost their reference entirely — the
+  sacrificial-kernel problem. Added the discriminating check: with `-k kernel_strided`, pre-fix
+  emits **one** `kernel location:` line and post-fix **two**. Both assertions are kept; only the
+  new one distinguishes.
+
+  AC-2's test carries a guard of the same kind: it asserts the clone was actually dispatched
+  before checking `__constant__`. An uninstrumented run reads `__constant__` correctly by
+  construction, so the check alone would pass against a build that had quietly stopped
+  instrumenting anything.
+- **Criteria impact**: **AC-2, AC-3, AC-7, AC-8 now met and machine-checked.** AC-6 met as
+  `WEAK`, which is its documented ceiling. AC-1, AC-5, AC-9 still met. SCOPE passes.
+- **AC-6, with two disclosures.** (a) The pre-change baseline was **reconstructed by disabling
+  the fix**, not captured before the work began — plan step 2 was only partly done and the
+  opportunity had passed. The reconstruction is behaviourally equivalent and is stated here
+  rather than presented as an original measurement. (b) The check now strips the `timestamp`
+  field before diffing. Every dispatch record carries wall-clock time, so an unnormalised diff
+  **could never pass however correct the code was** — the dossier's verification strategy already
+  called for normalising this output, and this is that step made narrow and explicit. Nothing
+  else is filtered. Result: the two runs are otherwise byte-identical.
+- **Blocker / Risk**: **AC-4 is the only failing criterion and it cannot be met on this node.**
+  Three suites skip because the instrumented rocBLAS/hipBLASLt libraries are gfx90a-only and this
+  is a gfx950 machine. Not a code problem and not fixable by configuration — it needs either an
+  MI210 node or those libraries rebuilt for gfx950. Everything else in the packet is green.

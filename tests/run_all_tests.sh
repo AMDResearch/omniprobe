@@ -87,6 +87,16 @@ run_suite "rocBLAS + hipBLASLt combined" "${SCRIPT_DIR}/rocblas_hipblaslt/run_te
 # Suite 6: Triton integration (requires TRITON_DIR)
 run_suite "Triton integration" "${SCRIPT_DIR}/triton/run_test.sh"
 
+# Suites 7-10: regression coverage for bf_hip-duplicate-code-object-load. Each mode is
+# its own suite so that a mode silently ceasing to run is visible in the tally rather
+# than hidden inside a script that also does something else. These compile their own
+# kernels for the GPU actually present, so they do not depend on CMAKE_HIP_ARCHITECTURES
+# matching the machine.
+run_suite "Constant memory visibility (no filter)" "${SCRIPT_DIR}/test_constant_memory_visibility.sh" --no-filter
+run_suite "Constant memory visibility (matching -k)" "${SCRIPT_DIR}/test_constant_memory_visibility.sh" --with-matching-filter
+run_suite "Kernel filter semantics" "${SCRIPT_DIR}/test_kernel_filter_semantics.sh"
+run_suite "Kernel filter DWARF survival" "${SCRIPT_DIR}/test_kernel_filter_semantics.sh" --assert-dwarf
+
 # Summary
 echo ""
 echo "================================================================================"

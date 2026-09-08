@@ -123,4 +123,18 @@ None.
 
 ## Scope Amendments
 
-None.
+**2026-09-08 — `inc/interceptor.h` and `.gitignore` added to the `write-scope` block.**
+
+Reported by `ac_check_write_scope`, not noticed by hand — worth recording, because the scope
+check only became readable enough to spot them once `fe66ff4` stopped `build_gfx950/` and
+`build_v3.6.0_llvm/` from flooding it with 74 KB of untracked paths.
+
+- `inc/interceptor.h` — declares the compiled `-k` regex members and `runKernelInstrumented()`.
+  Its implementation lives in `src/interceptor.cc`, which was declared from the start; leaving
+  the header out was an oversight in the original scope, not a widening of intent.
+- `.gitignore` — the one-line `build*/` fix in `fe66ff4`. Repository-wide rather than this
+  packet's deliverable, and deliberately committed on its own, but it lands inside this packet's
+  commit range so the gate attributes it here. Declared rather than explained away.
+
+Both are scope amendments under `policy/guardrails.md`: declared, logged, and reviewed after the
+fact. No acceptance criterion, failure policy, or non-goal was touched.
