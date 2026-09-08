@@ -53,6 +53,14 @@ def finalize_json_output(location, handlers):
     # Check if JSON format is being used
     if os.environ.get("LOGDUR_LOG_FORMAT") == "json":
         try:
+            if not os.path.exists(location) or os.path.getsize(location) == 0:
+                # No dispatch ever reached the handler — because the target died
+                # before dispatching, or because it dispatched nothing. Write an
+                # empty array so that `-t json -o FILE` always leaves a parseable
+                # file behind rather than nothing at all.
+                with open(location, "w") as f:
+                    f.write("[]")
+                return
             # Check if the file exists and has content
             if os.path.exists(location) and os.path.getsize(location) > 0:
                 # Read the file to check if it starts with '[' (indicating it has JSON array content)
@@ -117,6 +125,13 @@ def console_warning(*argv):
 
 
 def capture_subprocess_output(subprocess_args, handler=None, new_env=None):
+    """Run subprocess_args to completion, echoing its output.
+
+    Returns the child's Popen return code — negative when the child was killed
+    by a signal — or None if the child could not be started. The status is
+    returned rather than acted on because get_local_isa() also calls this
+    function; exiting from here would kill the interpreter during ISA detection.
+    """
     console_debug("subprocess", subprocess_args)
     # Start subprocess
     # bufsize = 1 means output is line buffered
@@ -166,12 +181,15 @@ def capture_subprocess_output(subprocess_args, handler=None, new_env=None):
                 callback = key.data
                 callback(key.fileobj, mask)
 
-        # Get process return code
+        # Drain whatever the child wrote between the last poll and its exit
         remaining = process.stdout.read()
         if remaining:
             buf.write(remaining)
             for line in remaining.splitlines():
                 console_warning(line.strip())
+
+        # Get process return code
+        return process.returncode
     except KeyboardInterrupt:
         print("\nCtrl+C received, terminating subprocess...")
         # Send SIGTERM to the subprocess
@@ -186,6 +204,20 @@ def capture_subprocess_output(subprocess_args, handler=None, new_env=None):
             process.wait()  # Ensure it's fully terminated
         print("Subprocess terminated, exiting...")
         sys.exit(1)
+
+def shell_exit_status(returncode):
+    """Map a Popen return code onto the convention a shell reports.
+
+    Popen reports a signal death as a negative number (-11 for SIGSEGV); every
+    shell, and every CI system reading $?, reports it as 128 + signal (139).
+    The API interpolates this number into its RuntimeError, so it has to be one
+    a reader recognises.
+    """
+    if returncode is None:
+        return 0
+    if returncode < 0:
+        return 128 - returncode
+    return returncode
 
 def get_root_dir() -> str:
     """
@@ -820,16 +852,34 @@ def main():
             handlers.append(h)
     parms.handlers = handlers
     if len(parms.remaining) != 0 and not parms.dump_env == True:
-        capture_subprocess_output(parms.remaining[1:], new_env=setup_env(parms))
-        # Finalize JSON output if needed
+        returncode = capture_subprocess_output(parms.remaining[1:], new_env=setup_env(parms))
+        # Finalize JSON output if needed. This happens before exiting on a failed
+        # run, so that a target which died partway still leaves parseable output.
         log_location = parms.log_location if parms.log_location else "console"
         finalize_json_output(log_location, parms.handlers)
         if log_location != "console" and os.environ.get("LOGDUR_LOG_FORMAT") == "json":
             if os.path.exists(log_location) and os.path.getsize(log_location) > 0:
                 print(f"\nJSON results written to: {log_location}")
+
+        status = shell_exit_status(returncode)
+        if status != 0:
+            # The instrumented target failed; that does not by itself mean the
+            # measurement did. Report what happened to the target and let the
+            # caller decide — do not claim the analysis failed.
+            if returncode < 0:
+                what = f"was killed by signal {-returncode}"
+            else:
+                what = f"exited with status {returncode}"
+            print(
+                f"\nWarning: the instrumented application {what}. "
+                "Any analysis output above covers only the dispatches that "
+                "completed before that point and may be incomplete."
+            )
+        return status
     elif parms.dump_env == True:
         setup_env(parms)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
