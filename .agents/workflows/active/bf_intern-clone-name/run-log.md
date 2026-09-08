@@ -192,3 +192,19 @@ interrupted, this log is the only record of progress.
 - **Criteria impact**: none.
 - **Blocker / Risk**: if the regression test lands outside the two declared paths, the executing
   agent hits a scope FAIL and amends. That is the intended behaviour, not a defect.
+
+### 2026-09-08 10:35
+
+- **Actor**: claude
+- **Planned step**: Restore a meaningful `SCOPE` verdict after sibling packets landed.
+- **Action taken**: Re-stamped `Base Commit` from `e2aa500` to `5b9425f`.
+- **Result**: success. The old stamp predated `bf_exit-status-not-propagated` and
+  `bf_pyhandler-gil`, so the scope check was measuring *their* commits — correctly reporting
+  another workflow's packet directories as out-of-scope writes, but for this packet that is noise
+  rather than signal. The stamp now sits at the point where this packet's own work begins.
+- **Files touched**: `dossier.md`
+- **Verification**: `acceptance.sh` re-run — `SCOPE` back to `PASS`.
+- **Criteria impact**: none.
+- **Blocker / Risk**: none. Worth knowing generally: a base commit stamped early enough for other
+  work to land in between turns the scope check into a report on the repository rather than on the
+  packet.
