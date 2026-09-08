@@ -1,12 +1,19 @@
 # Handoff
 
-**Location**: `.agents/workflows/draft/bf_intern-clone-name/handoff.md`
+**Location**: `.agents/workflows/active/bf_intern-clone-name/handoff.md`
 
 ## Current Status
 
-Draft. The packet was filed 2026-09-08 after a pre-packet investigation that reproduced the
-defect end-to-end in-repo, identified the root cause as a coordinated pair of defects, and
-measured the mechanism that makes it intermittent. No production code has been changed.
+**Active**, promoted 2026-09-08 from `draft` after passing `workflow-readiness-check`. Base
+commit `e2aa500`. The packet was filed the same day after a pre-packet investigation that
+reproduced the defect end-to-end in-repo, identified the root cause as a coordinated pair of
+defects, and measured the mechanism that makes it intermittent. **No production code has been
+changed yet** — the gate reports 8 of 9 criteria unmet, which is the correct starting state.
+
+The readiness check repaired three defective checks in `acceptance.sh` before promotion (AC-4,
+AC-5, AC-6; one was a proven vacuous PASS). No acceptance criterion was changed. If you edit
+those checks, read the dossier's Verification Strategy notes first — each is indirect on purpose
+and the obvious simplification reintroduces the defect.
 
 The investigation went further than "confirm the framing" because the first measurement
 contradicted the expected result: a straightforward `static __global__` probe **passed**. Chasing
@@ -34,10 +41,18 @@ Evidence: `.untracked/scratch/intern-probe/`. Full account in `dossier.md` § Ba
 
 ## Next Exact Step
 
-Promote to `active` (stamping `Base Commit`), then Plan Of Record step 1: port
-`.untracked/scratch/intern-probe/probe.hip` into `tests/test_kernels/` as a committed fixture and
-re-confirm the failure from the in-tree copy. Do not start step 4 (the fix) before Open Question 2
-is answered — see below.
+Plan Of Record step 1: port `.untracked/scratch/intern-probe/probe.hip` into
+`tests/test_kernels/` as a committed fixture (name it to match `*intern*.hip`, which is what
+`acceptance.sh` globs for), wire it into `tests/test_kernels/CMakeLists.txt` following the
+`filter_semantics_test` entry, and re-confirm the failure from the in-tree copy on gfx90a.
+
+Then step 2, which is a real design decision and is Open Question 1: how the test forces both
+hash flavours deterministically. Note the test script must also honour `AC_FORCE_NO_INTERN=1` by
+failing (AC-5), must be globbed by `tests/*intern*.sh` or `tests/*intern*/run_test.sh`, and must
+not print `No instrumented alternative found` or `Found instrumented alternative` at column 0 in
+its own commentary (AC-4).
+
+**Do not start step 4 (the fix) before Open Question 2 is measured** — see below.
 
 ## Active Risks / Blockers
 

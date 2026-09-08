@@ -134,3 +134,46 @@ interrupted, this log is the only record of progress.
   to FAIL at draft, since no fix or fixture exists yet.
 - **Criteria impact**: none met. All criteria open by design at draft.
 - **Blocker / Risk**: Open Question 2 must be measured before Plan Of Record step 4.
+
+### 2026-09-08 09:25
+
+- **Actor**: claude
+- **Planned step**: Run `workflow-readiness-check` and, if it passes, promote to `active`.
+- **Action taken**: Ran the full checklist. Structural items all passed. Step 3's pattern-collision
+  audit — "could this pattern match text that exists *because of* the thing being tested for?" —
+  found three defects in `acceptance.sh` and one looseness, and each was repaired and then tested
+  against input that should pass and input that should fail.
+- **Result**: success, but only after repair. **AC-6 was a vacuous PASS**: it grepped
+  `run_all_tests.sh` for a pattern built from the new test's own path components, and both
+  plausible layouts match the *untouched* file (`tests` hits `run_handler_tests.sh`; `run_test.sh`
+  already appears 5 times). Proven by running the check against the unmodified runner — it
+  reported satisfied. Replaced with a behavioural check on the suite banner
+  (`run_all_tests.sh:40`); `intern` has 0 hits in that file today, so nothing predating
+  registration can satisfy it. **AC-5** grepped the test script's source for guard wording, which
+  a comment satisfies — replaced with a behavioural check requiring non-zero exit under
+  `AC_FORCE_NO_INTERN=1`. **AC-4** was the opposite direction, a false-FAIL risk: an unanchored
+  grep matches a test echoing its own commentary about the string; both patterns now anchor to
+  column 0. **AC-1**'s bare `namespace` grep matched `using namespace std;` and was anchored.
+- **Files touched**: `acceptance.sh`, `dossier.md` (Verification Strategy rows and the rationale
+  for each indirect check)
+- **Verification**: `bash -n` clean; gate runs to completion reporting 8 FAIL / 1 JUDGE / 1 PASS
+  (SCOPE) — the correct pre-work state. Each repaired pattern discriminated correctly in both
+  directions on synthetic inputs.
+- **Criteria impact**: none met. No acceptance criterion changed — verification got stricter, the
+  contract did not get looser.
+- **Blocker / Risk**: none new. Open Question 2 remains the live risk to step 4.
+
+### 2026-09-08 09:30
+
+- **Actor**: claude
+- **Planned step**: Promote `draft` → `active`.
+- **Action taken**: `git mv` of the packet directory, stamped `Base Commit: e2aa500`, set
+  `Lifecycle State: active`, updated the row in `.agents/state/active-workflows.md`, and rewrote
+  the handoff's Current Status and Next Exact Step.
+- **Result**: success.
+- **Files touched**: packet directory (moved), `dossier.md`, `handoff.md`,
+  `.agents/state/active-workflows.md`
+- **Verification**: `acceptance.sh` re-run from the new location — `SCOPE` still `PASS`, proving
+  the sibling-dossier lookup survives the move; tally unchanged at 8 FAIL / 1 JUDGE.
+- **Criteria impact**: none.
+- **Blocker / Risk**: none.

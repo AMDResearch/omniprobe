@@ -4,13 +4,13 @@
 
 - Workflow ID: bf_intern-clone-name
 - Workflow Type: bugfix
-- Lifecycle State: draft
+- Lifecycle State: active
 - Owner / Current Executor: unassigned
 - Intended Write Scope: see the `write-scope` block below (canonical)
 - Dependencies On Other Active Workflows: overlaps `rf_exact-arch-bitcode` on
   `src/instrumentation/InstrumentationCommon.cpp` (that packet is *suspended*, not active, so
   this is not a live collision — but the two must not be executed in parallel)
-- Base Commit: (unstamped — set at promotion)
+- Base Commit: e2aa5005b5c1d634399be1712c21a7dd8a63d112
 
 ```write-scope
 src/utils.cc
