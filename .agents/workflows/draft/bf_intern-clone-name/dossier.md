@@ -262,17 +262,31 @@ build under test — the two defects interact and a one-sided change regresses t
 | AC-1 | fixture source present; `llvm-nm` of the built code object greps `\.intern\.[0-9a-f]+` |
 | AC-2 | test output names the exercised hash; script asserts `^[a-f]` |
 | AC-3 | test output names a digit-leading hash exercised in the same run |
-| AC-4 | grep run output for `No instrumented alternative found` — must be absent; count of `Found instrumented alternative` must equal the fixture's kernel count |
-| AC-5 | negative check: assert the test's own guard fires when `.intern.` is absent |
-| AC-6 | `grep run_suite tests/run_all_tests.sh` names the new script — text presence only, report `WEAK` |
-| AC-7 | pre-existing suites in `run_all_tests.sh` pass |
-| AC-8 | `tests/run_all_tests.sh` exits 0; tally line shows 0 failed and 0 skipped |
+| AC-4 | grep run output for `^No instrumented alternative found` — must be absent; `^Found instrumented alternative` must be present. Both anchored to line start |
+| AC-5 | **behavioural**: run the test with `AC_FORCE_NO_INTERN=1` and require a non-zero exit |
+| AC-6 | **behavioural**: require a `Suite <n>: …intern…` banner in the `run_all_tests.sh` output |
+| AC-7 | pre-existing suites in `run_all_tests.sh` pass (exit 0) |
+| AC-8 | `tests/run_all_tests.sh` exits 0 **and** the tally line reads `Suites skipped: 0` |
 | AC-9 | `[judgement]` — human confirms the base-commit failure from `run-log.md` evidence |
 
-Note on AC-4: counting `Found instrumented alternative` lines is a presence check on a **log
-string**. This repository has twice been bitten by a log-line rename silently re-pointing
-assertions written against it (see `current-focus.md`, Project-Level Risks). If the fix changes
-that message, the test must be updated in the same commit.
+Three of these rows are the way they are because the obvious version of the check does not work.
+Recording why, since each will look needlessly indirect to whoever edits it next:
+
+- **AC-4 must anchor to line start.** The literals are log strings, and a test script that echoes
+  its own commentary (`checking for 'No instrumented alternative found'…`) would false-FAIL an
+  unanchored grep. Omniprobe emits both at column 0 (`src/interceptor.cc:792`, `:806`).
+  **Constraint on the test:** it must not print either literal at column 0 in its own output.
+  Separately, this repository has twice been bitten by a log-line rename silently re-pointing
+  assertions written against it (see `current-focus.md`, Project-Level Risks) — if the fix changes
+  either message, the test changes in the same commit.
+- **AC-5 cannot be a source grep.** Searching the test script for guard-ish wording is satisfied
+  by a comment, so it would pass against a test with no working guard. The test must therefore
+  honour `AC_FORCE_NO_INTERN=1` by simulating a build with no `.intern.` symbol and failing.
+- **AC-6 cannot grep `run_all_tests.sh`.** Verified 2026-09-08: the pattern built from the test's
+  own path components matches the **untouched** file — `tests` matches `run_handler_tests.sh`, and
+  `run_test.sh` already appears five times. That is a vacuous PASS, the silent direction. The
+  string `intern` appears zero times in the current file, and requiring the suite banner in a real
+  run cannot be satisfied by a file that never runs.
 
 ## References
 
