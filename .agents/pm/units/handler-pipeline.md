@@ -78,6 +78,30 @@ resources across kernel dispatches.
   `memory_analysis_wrapper_t` were removed. Handlers are now instantiated directly. Do not
   re-introduce wrapper indirection.
 
+## Negative Knowledge — `pythonMessageHandler` is broken *and* unreachable
+
+`src/pyHandler.cc` contains `Py_Initialize`, `Py_Finalize` and `PyDict_New` and **no `PyGILState_*`
+or `PyEval_*` call at all**. Messages arrive on a `dh_comms` worker thread, so the first
+`PyDict_New()` segfaults. The destructor additionally calls `Py_Finalize()` — per instance, and a
+handler is constructed per dispatch, so even with the GIL held it would tear down the process-wide
+interpreter after the first kernel.
+
+It has never run, because nothing can reach it. Verified 2026-09-08:
+
+- constructed nowhere — `grep -rn pythonMessageHandler src/ inc/ plugins/` returns only its own
+  definition and declaration;
+- `inc/pyHandler.h:29` declares `class pythonMessageHandler {` with **no base class**, so
+  `append_handler` cannot take it;
+- `src/CMakeLists.txt:51` finds Python and `:107` adds its include dirs, but **nothing links
+  `Python::Python`** — `liblogDuration64.so` carries 13 undefined `Py*` symbols and `ldd` shows no
+  libpython. It links and loads only because nothing calls into it.
+
+**Consequence for anyone testing it: the GIL fix cannot be verified in isolation.** There is no way
+to get a message to the handler without also supplying reachability.
+
+Tracked by `bf_pyhandler-gil`. The bridge ships as a **plugin**, not a core change — see
+`pm-decisions.md`.
+
 ## Open Questions
 
 None.
@@ -85,3 +109,4 @@ None.
 ## Last Verified
 
 2026-04-27 (merged from plugins + comms-mgr by pm-restructure)
+2026-09-08 (pyHandler GIL defects and unreachability; verified by grep, nm and ldd)

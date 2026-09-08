@@ -78,6 +78,26 @@ DWARF source location is encoded in messages for correlation with source code.
 - Default plugin is `libAMDGCNSubmitAddressMessages`. HIP mode requires manual compilation with `-fpass-plugin`; Triton mode sets `LLVM_PASS_PLUGIN_PATH` automatically.
 - `libAMDGCNSubmitBBInterval-triton.so` exists but no analyzer currently uses it.
 
+## Negative Knowledge — clone naming under internal linkage
+
+`InstrumentationCommon.cpp:211` builds the clone name as
+`"__amd_crk_" + OrigKernel->getName() + "Pv"`, appending `Pv` to the **end of the whole symbol**.
+For an ordinary kernel that is fine. For an internal-linkage kernel under `-fgpu-rdc`, whose
+symbol carries a compiler-generated `.intern.<hash>` suffix, it puts `Pv` *outside* the mangling
+and the result is not a well-formed mangled name — `__cxa_demangle` fails on it (measured
+2026-09-08). `Pv` would have to attach to the base mangling, before the suffix.
+
+Two consequences worth carrying:
+
+- **`.intern.<hash>` is per-translation-unit, not per-symbol**, and it changes with compile flags
+  — the same source produced `26db06f5c7a9cf0b` plain and `69c48a2e06e7f383` with the
+  instrumentation plugin. **No test may pin a literal hash.**
+- Renaming clone symbols is not a free change: instrumented rocBLAS and hipBLASLt libraries were
+  built under the current scheme, and `tests/rocblas_hipblaslt/run_test.sh:86` matches on
+  `__amd_crk_Cijk`.
+
+Tracked by `bf_intern-clone-name`.
+
 ## Open Questions
 
 None.
@@ -85,3 +105,4 @@ None.
 ## Last Verified
 
 2026-04-27 (trimmed by pm-restructure; build system section moved to build-system)
+2026-09-08 (clone-name construction under internal linkage; measured, not re-read)

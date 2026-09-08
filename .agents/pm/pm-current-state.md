@@ -25,6 +25,21 @@ No workflow is active. All six remaining packets are suspended; the seventh,
 5. **Test organization** — design decisions needed before restructuring tests/.
    See rf_test-organization.
 
+## Active Work Areas — three bugfix packets (2026-09-08)
+
+All promoted the same day, none with production code written. Ordered by the owner: the two filed
+from the **IntelliKit sidecar** come first, because that project is blocked on both.
+
+1. `bf_exit-status-not-propagated` — `omniprobe` always exits 0. **Needs no GPU** (`/bin/sh`
+   stubs), so it is the cheapest of the three to pick up.
+2. `bf_pyhandler-gil` — `pythonMessageHandler` has no GIL and is unreachable. Needs a GPU and an
+   architecture-matched build. Ships as a plugin, not a core change.
+3. `bf_intern-clone-name` — internal-linkage kernels under `-fgpu-rdc` fail instrumented-alternative
+   lookup ~37.5% of the time, decided by one character of a content hash.
+
+Each begins by re-stamping its own `Base Commit`: promoting three packets in one commit leaves
+every gate reporting its siblings' directories as out-of-scope writes.
+
 ## Current Risks
 
 - **Library filter chain tests**: Previously flaky (test 2 hung, tests 4-5 failed). As of

@@ -92,6 +92,24 @@ The Python API (`omniprobe/api/`) wraps this: `Omniprobe.analyze_memory()` and `
 - `libAMDGCNSubmitBBInterval-triton.so` exists but no analyzer currently uses it. Do not wire it up without a corresponding analyzer.
 - Requires `pyfiglet` for ASCII banner display. This is a runtime dependency of the script.
 
+## Negative Knowledge — the CLI cannot report a target failure
+
+`capture_subprocess_output` (`omniprobe/omniprobe:119`) never reads `process.returncode`. The
+comment at `:169` says `# Get process return code` and is followed by a read of *stdout*. `main()`
+discards the call's result at `:823`. **`omniprobe` therefore always exits 0**, including when the
+instrumented target dies of a signal. `KeyboardInterrupt` is the one exception and exits 1.
+
+This is load-bearing downstream: `omniprobe/api/omniprobe.py:154` has exactly one failure check
+(`if result.returncode != 0`) and `:164` returns `"[]"` when the output file is missing — so a
+crashed run yields no exception and an empty-but-well-formed result. The realistic failure is
+*partial*, not empty: a run that crashes after some dispatches produces non-empty output that
+passes non-emptiness assertions while being silently truncated.
+
+Constraint on any fix: `capture_subprocess_output` has a **second caller** at `:225` (`rocminfo`,
+ISA detection). Returning a status is safe; exiting from inside the function is not.
+
+Tracked by `bf_exit-status-not-propagated`. Verified in-repo 2026-09-08.
+
 ## Open Questions
 
 None.
@@ -99,3 +117,4 @@ None.
 ## Last Verified
 
 - 2026-07-20 (updated for Python API, JSON schema docs, corrected flag names)
+2026-09-08 (exit-status propagation; verified by reading and by running the CLI)

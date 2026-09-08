@@ -97,6 +97,26 @@ see Negative Knowledge.
   `libdynamic_*` presence checks deliberately still match `Adding` alone, because those libraries
   arrive through a `--library-filter` include and are not mapped at startup.
 
+## Acceptance-gate patterns that do not work here
+
+Three collisions found by running checks against input that should fail them (2026-09-08). All
+three read correctly in isolation; the defect is in the relationship between the pattern and the
+files searched.
+
+- **Never identify a new suite by grepping `tests/run_all_tests.sh` for the test's own path
+  components.** `tests` matches `run_handler_tests.sh` and `run_test.sh` already appears five
+  times, so the check passes against an **untouched** runner. Require the
+  `Suite <n>: <name>` banner (printed at `tests/run_all_tests.sh:40`) in a real run instead — a
+  file that never runs cannot produce one.
+- **Never assert a guard exists by grepping the test script's source.** A comment satisfies it.
+  Drive the guard — give the test a forcing environment variable and require a non-zero exit.
+- **Never assert a string is *absent* from a test script.** It false-FAILs the moment the test
+  documents why that string must not be asserted on, and the better-documented the test, the
+  likelier it fires. Assert the presence of the right thing.
+
+Also: `tests/run_all_tests.sh:59` marks a whole suite *skipped* if `SKIP` appears anywhere in its
+output — so any criterion demanding `Suites skipped: 0` is sensitive to a new test's wording.
+
 ## Open Questions
 
 - What refactoring is needed to enable true unit tests with GoogleTest?
@@ -116,3 +136,4 @@ see Negative Knowledge.
   binaries, skip-dominated tallies, the `SKIP`-anywhere classifier, and log-line renames breaking
   absence assertions. The two "pre-existing defects" this unit's environment had implied are
   retracted.
+2026-09-08 (acceptance-gate pattern collisions; each demonstrated against failing input)

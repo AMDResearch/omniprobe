@@ -78,6 +78,25 @@ instrumented version with modified kernel arguments.
 - **Scan-everything-at-startup:** Scanning all code objects at startup caused >10 min delays with large libraries like rocBLAS (~12,000 kernels). Replaced with on-demand per-code-object scanning at dispatch time.
 - **Library filter requires raw ELF:** `isValidElf()` checks for `0x7f` ELF magic bytes. Clang Offload Bundles are rejected. Must unbundle first.
 
+## Negative Knowledge — the lookup key is a demangler's output, and that is fragile
+
+`lookup_map_` (`src/utils.cc:690`) is keyed by `kernelDB::demangleName(<symbol>)` for originals and
+clones alike, and at dispatch `interceptor.cc:790` reconstructs the clone's key from the original's
+with `getInstrumentedName` (`src/utils.cc:117`). **The key's form therefore depends on whether the
+demangler happened to succeed**, and `getInstrumentedName` has two entirely different branches for
+the two cases.
+
+Measured 2026-09-08: libstdc++'s clone-suffix grammar accepts `.<identifier>` (letter- or
+underscore-leading) and `.<all-digits>`, but rejects a digit-leading token containing letters. So
+for an internal-linkage kernel a hash beginning `a`–`f` demangles and one beginning `0`–`9` does
+not — and the two defects (this one and the clone-naming one in `instrumentation`) **cancel
+exactly when both demangles fail together**. That is ~62.5% of translation units, which is why
+this went unnoticed.
+
+The deeper design point, recorded because it outlives the bug: a map keyed by a string whose form
+depends on a demangler's success is a latent hazard independent of `.intern.`. Re-keying on the
+raw symbol is a refactor, not a bug fix, and is a declared non-goal of `bf_intern-clone-name`.
+
 ## Open Questions
 
 None.
@@ -86,3 +105,4 @@ None.
 
 2026-03-24
 2026-09-08 (data flow steps 4-5 rewritten for bf_hip-duplicate-code-object-load: app-loaded code objects are indexed rather than loaded into a private executable, and the -k filter now gates the clone swap at dispatch)
+2026-09-08 (lookup-key scheme and its dependence on demangler success; measured)
