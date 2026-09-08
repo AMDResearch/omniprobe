@@ -124,7 +124,10 @@ PY
   rm -f "$CRASHER"
   if grep -q "RAISED_RUNTIMEERROR" "$API_OUT"; then
     ac_pass "AC-4" "API raises RuntimeError on a crashing target"
-  elif grep -qE 'RETURNED:.*(kernels=\[\]|\[\])' "$API_OUT"; then
+  elif grep -qE "RETURNED:.*(kernels=\[\]|^RETURNED: *'\[\]')" "$API_OUT"; then
+    # kernels=[] specifically, not a bare [] anywhere in the repr — a rich result
+    # object with a non-empty kernels list but an empty warnings list would match
+    # the looser pattern and mislabel a different failure.
     ac_fail "AC-4" "API returned an empty result on a crashing target — the empty-but-well-formed failure this packet exists to stop"
   elif grep -qE "IMPORT_FAILED" "$API_OUT"; then
     ac_fail "AC-4" "could not import omniprobe.api (see output) — fix the probe to the real API surface rather than relaxing this criterion"

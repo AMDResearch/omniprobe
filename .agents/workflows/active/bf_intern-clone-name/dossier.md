@@ -18,8 +18,16 @@ src/instrumentation/InstrumentationCommon.cpp
 src/instrumentation/include/InstrumentationCommon.h
 tests/test_kernels/
 tests/run_all_tests.sh
-tests/
+tests/test_intern_clone.sh    # narrowed 2026-09-08 — see below
+tests/intern_clone/           # narrowed 2026-09-08 — alternative layout
 ```
+
+**Narrowed 2026-09-08, after two sibling packets were filed.** This block originally ended with a
+bare `tests/`, which subsumed every path under it — including `tests/test_exit_status.sh` and
+`tests/test_python_handler.sh`, which belong to `bf_exit-status-not-propagated` and
+`bf_pyhandler-gil`. A scope that broad cannot detect a collision with either, which is most of
+what the check is for. The two entries above cover both layouts `acceptance.sh` globs for; if the
+test ends up somewhere else, widen this block and log the amendment as usual.
 
 ## Objective
 
@@ -237,6 +245,12 @@ build under test — the two defects interact and a one-sided change regresses t
 
 - None blocking. Sequencing note: `rf_exact-arch-bitcode` writes the same file
   (`src/instrumentation/InstrumentationCommon.cpp`) and must not run concurrently.
+
+**Shared-file coordination.** Three active packets append a `run_suite` line to
+`tests/run_all_tests.sh`: this one, `bf_exit-status-not-propagated`, and `bf_pyhandler-gil`. The
+file is declared in all three write scopes deliberately. The rule is: **each packet appends only
+its own `run_suite` line and edits no other line.** Executed in separate sessions as intended,
+that is append-only and conflict-free. Do not reformat or reorder the file.
 
 ## Plan Of Record
 

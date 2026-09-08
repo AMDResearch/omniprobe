@@ -47,45 +47,84 @@ if [ -x "$TEST_SCRIPT" ]; then
   TEST_RAN=1
 fi
 
+# ---------------------------------------------------------------------------
+# The sentinel contract
+# ---------------------------------------------------------------------------
+#
+# tests/test_python_handler.sh must emit these four literals, and nothing else
+# in the tree should. They exist because every looser pattern tried here was
+# either vacuous or false-FAILing:
+#
+#   PYHANDLER_ADDR=<hex>        one per address value the PYTHON side received
+#   PYHANDLER_DISPATCHES=<n>    distinct dispatches the Python side observed
+#   TARGET_STATUS=<n>           the instrumented target's OWN exit status
+#
+# Anchoring on literals the test emits, rather than on prose describing what it
+# did, is what keeps these checks from drifting away from the behaviour.
+
+sentinel() { grep -oE "^$1=[^ ]*" "$TEST_OUT" | head -1 | cut -d= -f2; }
+
 # --- AC-1: a Python module receives at least one address message ---
 if [ "$TEST_RAN" != 1 ]; then
   ac_fail "AC-1" "tests/test_python_handler.sh does not exist or is not executable"
-elif grep -qiE 'PYHANDLER_EVIDENCE|address message(s)? received' "$TEST_OUT"; then
-  ac_pass "AC-1" "the Python handler received at least one address message"
+elif [ -n "$(sentinel PYHANDLER_ADDR)" ]; then
+  ac_pass "AC-1" "the Python handler received address values ($(grep -cE '^PYHANDLER_ADDR=' "$TEST_OUT") reported)"
 else
-  ac_fail "AC-1" "no evidence that a Python handler received any message"
+  ac_fail "AC-1" "no PYHANDLER_ADDR= line — no evidence a Python handler received any message"
 fi
 
 # --- AC-2: messages from MORE THAN ONE dispatch ---
 # This is what catches the per-instance Py_Finalize regression. A single-kernel
 # test cannot see it: the interpreter is only torn down after the first handler
 # is destroyed, so the first kernel always looks fine.
+#
+# Compared numerically, not by pattern. An earlier version matched
+# /dispatches?[^0-9]*[2-9]/ anywhere in the output, which a run invoked with
+# `-d 2` satisfies via its own LOGDUR_DISPATCHES=2 env line while the Python
+# side saw exactly one dispatch.
 if [ "$TEST_RAN" != 1 ]; then
   ac_fail "AC-2" "no test script — cannot check the multi-dispatch arm"
-elif grep -qiE 'dispatches?[^0-9]*([2-9]|[1-9][0-9])\b|2 distinct (kernels|dispatches)' "$TEST_OUT"; then
-  ac_pass "AC-2" "the Python handler saw more than one dispatch"
 else
-  ac_fail "AC-2" "no evidence of more than one dispatch reaching the Python handler — the per-instance Py_Finalize regression would be invisible"
+  ND="$(sentinel PYHANDLER_DISPATCHES)"
+  if [ -n "$ND" ] && [ "$ND" -ge 2 ] 2>/dev/null; then
+    ac_pass "AC-2" "the Python handler saw $ND distinct dispatches"
+  elif [ -n "$ND" ]; then
+    ac_fail "AC-2" "the Python handler saw only $ND dispatch(es) — the per-instance Py_Finalize regression is invisible below 2"
+  else
+    ac_fail "AC-2" "no PYHANDLER_DISPATCHES= line — the multi-dispatch arm was not exercised"
+  fi
 fi
 
-# --- AC-3: evidence written by the Python side, not pyHandler.cc's print ---
+# --- AC-3: evidence is payload VALUES from the Python side ---
+# Deliberately NOT a negative grep of the test script for "Function call to".
+# That would false-FAIL the moment the test documents why it must not assert on
+# that print — and the better the test is commented, the likelier it fires.
+# Assert the presence of the right thing instead: real address values, which
+# pyHandler.cc's success print cannot produce because it fires for a Python
+# function that ignores its argument entirely.
 if [ "$TEST_RAN" != 1 ]; then
   ac_fail "AC-3" "no test script — cannot check for Python-authored evidence"
-elif grep -q "Function call to" "$TEST_SCRIPT" 2>/dev/null; then
-  ac_fail "AC-3" "the test asserts on pyHandler.cc's 'Function call to ... succeeded!' print, which fires for a Python function that ignores its argument"
-elif grep -qiE 'PYHANDLER_EVIDENCE' "$TEST_OUT"; then
-  ac_pass "AC-3" "the test asserts on payload values written by the Python handler"
 else
-  ac_fail "AC-3" "no Python-authored evidence found in the test output"
+  NA="$(grep -cE '^PYHANDLER_ADDR=0x[0-9a-fA-F]+$' "$TEST_OUT")"
+  if [ "$NA" -gt 0 ]; then
+    ac_pass "AC-3" "$NA address values were written by the Python side (not inferred from a success print)"
+  else
+    ac_fail "AC-3" "no PYHANDLER_ADDR=0x… values — a run can print 'Function call to … succeeded!' while the Python function ignores every message"
+  fi
 fi
 
 # --- AC-4: the TARGET's real exit status is 0 ---
 if [ "$TEST_RAN" != 1 ]; then
   ac_fail "AC-4" "no test script — cannot check the target's real exit status"
-elif grep -qiE 'target exit(ed)?[^0-9]*0\b|TARGET_STATUS=0' "$TEST_OUT"; then
-  ac_pass "AC-4" "the instrumented target's real exit status is 0"
 else
-  ac_fail "AC-4" "the test does not report the target's own exit status as 0 — do not substitute omniprobe's status here"
+  TS="$(sentinel TARGET_STATUS)"
+  if [ "$TS" = "0" ]; then
+    ac_pass "AC-4" "the instrumented target's own exit status is 0"
+  elif [ -n "$TS" ]; then
+    ac_fail "AC-4" "the instrumented target exited $TS"
+  else
+    ac_fail "AC-4" "no TARGET_STATUS= line — do not substitute omniprobe's status, which is unreliable until bf_exit-status-not-propagated lands"
+  fi
 fi
 
 # --- AC-5: GIL held on every C-API path, released on every exit path ---

@@ -86,4 +86,13 @@ None.
 
 ## Scope Amendments
 
-None.
+- **2026-09-08 — narrowing, not widening.** The `write-scope` block originally ended with a bare
+  `tests/`. Two sibling packets were filed the same day (`bf_exit-status-not-propagated`,
+  `bf_pyhandler-gil`) whose test files live under `tests/`, and a scope that broad cannot detect a
+  collision with either. Replaced with `tests/test_intern_clone.sh` and `tests/intern_clone/`,
+  covering both layouts `acceptance.sh` globs for. `tests/test_kernels/` and
+  `tests/run_all_tests.sh` are unchanged.
+
+  Recorded here although narrowing needs no permission — a later reader seeing a scope FAIL on a
+  path that used to be covered should be able to find out why. If the test lands elsewhere, widen
+  and log it as an ordinary amendment.

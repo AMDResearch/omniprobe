@@ -177,3 +177,18 @@ interrupted, this log is the only record of progress.
   the sibling-dossier lookup survives the move; tally unchanged at 8 FAIL / 1 JUDGE.
 - **Criteria impact**: none.
 - **Blocker / Risk**: none.
+
+### 2026-09-08 10:20
+
+- **Actor**: claude
+- **Planned step**: Resolve a write-scope overlap surfaced while filing two sibling packets.
+- **Action taken**: Narrowed this packet's `write-scope` block — replaced the bare `tests/` with
+  `tests/test_intern_clone.sh` and `tests/intern_clone/`. Added the shared-file coordination rule
+  for `tests/run_all_tests.sh`, which three active packets now append to.
+- **Result**: success. The only path shared with another active packet is now
+  `tests/run_all_tests.sh`, which is shared on purpose and append-only.
+- **Files touched**: `dossier.md`, `handoff.md`, `run-log.md`
+- **Verification**: `acceptance.sh` re-run — `SCOPE` still `PASS`; tally unchanged.
+- **Criteria impact**: none.
+- **Blocker / Risk**: if the regression test lands outside the two declared paths, the executing
+  agent hits a scope FAIL and amends. That is the intended behaviour, not a defect.

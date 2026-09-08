@@ -210,10 +210,33 @@ Executed in separate sessions, that is append-only and conflict-free. Do not ref
 | AC-7 | **behavioural**: require a `Suite <n>: …python…` banner in the `run_all_tests.sh` output |
 | AC-8 | `tests/run_all_tests.sh` exits 0 **and** the tally reads `Suites skipped: 0` |
 
-AC-3 is worded against a specific trap the filing agent hit: `pyHandler.cc` prints
+### The sentinel contract the test must satisfy
+
+`acceptance.sh` anchors on three literals that `tests/test_python_handler.sh` must emit, one per
+line, at column 0:
+
+    PYHANDLER_ADDR=<0xhex>       one per address value the PYTHON side received
+    PYHANDLER_DISPATCHES=<n>     distinct dispatches the Python side observed
+    TARGET_STATUS=<n>            the instrumented target's OWN exit status
+
+This is prescribed rather than left open because every looser formulation tried while writing the
+gate was either vacuous or false-FAILing:
+
+- **AC-2 must compare a number, not match a pattern.** A first version matched
+  `/dispatches?[^0-9]*[2-9]/` anywhere in the output — which a run invoked with `-d 2` satisfies
+  through its own `LOGDUR_DISPATCHES=2` environment line while the Python side saw exactly one
+  dispatch. Verified 2026-09-08 that a normal run prints `LOGDUR_DISPATCHES=all`, so the collision
+  needs only a test that passes a count.
+- **AC-3 must not be a negative grep.** The natural check — fail if the test script mentions
+  `Function call to` — would false-FAIL the moment the test *documents* why it must not assert on
+  that string, and the better the test is commented the likelier that is. Assert the presence of
+  real address values instead.
+
+AC-3 exists because of a specific trap the filing agent hit: `pyHandler.cc` prints
 `"Function call to … succeeded!"` whenever `PyObject_CallObject` returns non-NULL. A Python
 function with `def handleAddressMessage(d): pass` satisfies that print completely while doing
-nothing, so asserting on it would pass against a handler that ignores every message.
+nothing, so asserting on it would pass against a handler that ignores every message. Address
+values cannot be produced that way.
 
 AC-7 is behavioural for the same reason as in the companion packets: a grep of
 `run_all_tests.sh` built from the test's own path components matches the untouched file. Verified
