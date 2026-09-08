@@ -20,39 +20,32 @@ Packet directories follow the pattern: `.agents/workflows/<state>/<workflow-id>/
 | rf_clang-format-consistency | refactor | suspended | unassigned | .clang-format, CMakeLists.txt, scripts/git-hooks/ | None | Team coordination needed | 2026-08-25 |
 | rf_test-organization | refactor | suspended | unassigned | tests/ | None | Design decisions needed | 2026-08-25 |
 | ft_whitepaper-omniprobe | feature | suspended | unassigned | ~/repos/whitepaper_omniprobe/ | None (outside omniprobe repo) | Awaiting user review | 2026-08-25 |
-| bf_hip-duplicate-code-object-load | bugfix | **active** | unassigned | src/utils.cc, inc/utils.h, src/interceptor.cc, inc/interceptor.h, tests/, docs/, .gitignore | **Collides with rf_lazy-kerneldb-loading** — see note below. Also shares src/interceptor.cc with rf_rename-logduration | Implementation complete; gate 8 passed / 1 weak / 1 failed. **AC-4 needs a gfx90a/MI210 node** — 3 suites skip on gfx90a-only instrumented libraries | 2026-09-08 |
 
-### bf_hip-duplicate-code-object-load invalidates part of rf_lazy-kerneldb-loading's premise
+### rf_lazy-kerneldb-loading's premise is invalidated — read this before resuming it
 
-**Promoted `draft/` → `active/` on 2026-09-08** after `/workflow-readiness-check` returned READY
-with no structural failures. Base commit stamped at `74c6ed2`. It is now the only active workflow
-in this repository, and it holds `src/interceptor.cc` — which is what makes the collision below
-live rather than hypothetical.
+`bf_hip-duplicate-code-object-load` completed 2026-09-08 (packet in `done/`). Its fix stays live
+in the tree and it invalidates part of an older packet's contract, so the note outlives it.
 
-Filed 2026-09-08 from a defect found on 2026-09-01 while profiling PENNANT: for a HIP fat binary
-Omniprobe loads a **second, private copy** of every code object the process already has mapped,
-and clones dispatched out of it read `__device__`/`__constant__` globals as **zero**. The failure
-is silent — the run completes and produces empty-but-plausible analysis output.
+`rf_lazy-kerneldb-loading`'s plan step 4 is *"Remove scanCodeObject dispatch-time block (lines
+802-808)"* and its invariants declare *"No changes to coCache."* Both were written in April.
+Since then: `-k` no longer gates what `coCache` records, `kernel_co_map_` is populated for every
+kernel in an indexed code object, and application-loaded code objects are indexed rather than
+loaded into a private HSA executable. **"No changes to coCache" is now straightforwardly false of
+the tree that packet would be resumed against.** The `scanCodeObject` block is no longer
+load-bearing for the old `-k` workaround — there is no workaround any more — but it *is* still
+load-bearing for DWARF correlation, so deleting it is not the free win the plan assumed.
 
-This matters for coordination, not just as a new row. `rf_lazy-kerneldb-loading`'s plan step 4 is
-*"Remove scanCodeObject dispatch-time block (lines 802-808)"* — the exact block that primes the
-kernelDB and that the only known workaround for this defect depends on — and its invariants
-declare *"No changes to coCache."* Both were written in April, before any of this was known.
-**Do not resume `rf_lazy-kerneldb-loading` without reading
-`active/bf_hip-duplicate-code-object-load/dossier.md` first**; the two need to be sequenced, and
-the older packet's contract may need revisiting.
-
-**Update 2026-09-08:** the fix has landed, and it changes what that sequencing means. `-k` no
-longer gates what `coCache` records, and `kernel_co_map_` is populated for every kernel in an
-indexed code object — so the `scanCodeObject` block at `src/interceptor.cc` is no longer
-load-bearing for the *workaround* (there is no workaround any more). It is still load-bearing for
-DWARF correlation. `rf_lazy-kerneldb-loading`'s invariant "No changes to coCache" is now
-straightforwardly false of the tree it would be resumed against, so its contract needs revisiting
-before, not during, execution.
+**Revisit that contract before execution, not during.** Start from
+`done/bf_hip-duplicate-code-object-load/dossier.md`.
 
 `rf_exact-arch-bitcode` is adjacent but distinct: it covers the `gfx950` → CDNA2-bitcode
-misselection surfaced by the same session, and its non-goal *"No changes to dh_comms runtime
-library"* may not stretch to adding the missing `gfx950` enum.
+misselection surfaced by the same PENNANT session, and its non-goal *"No changes to dh_comms
+runtime library"* may not stretch to adding the missing `gfx950` enum.
+
+**Unfiled and worth a packet:** the `.intern.<hash>` clone-name defect that breaks
+`getInstrumentedName` (`src/utils.cc:117`). It now has a concrete reproducer — PENNANT
+`gpuMain3`/`gpuMain4`/`gpuMain5` at `cstop 1` print `No instrumented alternative found`. It was
+an explicit non-goal of the completed packet.
 
 **All six of the packets above were suspended on 2026-08-25, and none of them was progressing.** Every packet's newest
 file dated from 2026-04-27 or 2026-04-28 — four months dormant — while the table went on calling
@@ -77,6 +70,7 @@ Note that two overlaps recorded above are still live and still matter on resume:
 |----|------|-----------|
 | rf_triton-v3.7-bump | refactor | 2026-07-13 |
 | ft_omniprobe-python-api | feature | 2026-07-20 |
+| bf_hip-duplicate-code-object-load | bugfix | 2026-09-08 |
 
 ## Completed (migrated from KT)
 
