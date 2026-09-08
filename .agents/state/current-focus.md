@@ -44,6 +44,9 @@ quietly does nothing.
 
 ## Current Focus Areas
 
+- **Unblock IntelliKit** — `bf_exit-status-not-propagated` then `bf_pyhandler-gil`. Both were
+  filed from the IntelliKit sidecar and that project depends on both fixes. This is the priority.
+- Fix the `.intern.<hash>` clone-name defect (bf_intern-clone-name — active, queued third).
 - Review and finalize Omniprobe whitepaper (ft_whitepaper-omniprobe — awaiting user review).
 - Adopt lazy kernelDB loading in the interceptor (rf_lazy-kerneldb-loading — **contract needs
   revisiting first**, see above).
@@ -53,14 +56,28 @@ quietly does nothing.
 
 ## Active Workflows
 
-None active. Six suspended, plus **one draft**: `bf_intern-clone-name` (filed 2026-09-08, ready
-for promotion). See `.agents/state/active-workflows.md`.
+**Three active bugfixes**, all promoted 2026-09-08, none with any production code written yet.
+Six suspended. See `.agents/state/active-workflows.md`.
+
+| Packet | Needs a GPU? | Why it is queued where it is |
+|---|---|---|
+| `bf_exit-status-not-propagated` | **no** — `/bin/sh` stubs | IntelliKit depends on it; its only failure detection is the returncode this bug makes constant |
+| `bf_pyhandler-gil` | yes, arch-matched | IntelliKit depends on it; the Python handler path is unusable without it |
+| `bf_intern-clone-name` | yes, gfx90a | found in-house; no external consumer waiting |
+
+**Take the first two first.** Owner direction 2026-09-08: both were filed by an agent in the
+IntelliKit sidecar and that project is blocked on them. They are independent of each other.
+
+**Every one of the three starts with the same step 0** — re-stamp its `Base Commit` to `HEAD` and
+commit that alone. All three were promoted in one commit, so each currently reports the other
+two's packet directories as out-of-scope writes. The check is right; the subject is wrong. Each
+handoff explains it.
 
 ## Immediate Next Recommended Actions
 
 1. **~~File a packet for the `.intern.<hash>` clone-name defect.~~ FILED 2026-09-08 as
-   `bf_intern-clone-name`** (draft, in `.agents/workflows/draft/`). Next step is promotion to
-   `active` and Plan Of Record step 1. **The hypothesis below was confirmed — and the
+   `bf_intern-clone-name`** — now **active**, promoted the same day. Queued **third**, behind the
+   two IntelliKit-blocking packets; next step is its own Plan Of Record step 1. **The hypothesis below was confirmed — and the
    investigation then found it was only half the story.** Read the packet's `dossier.md`
    § Background before working on it; the corrections are summarised under *"What the probe
    actually found"* after the original framing.
@@ -142,7 +159,12 @@ for promotion). See `.agents/state/active-workflows.md`.
    Note the PENNANT tree (`branch mi300a` at `088a2a3`) has uncommitted build fixes in its working
    directory, so the original reproducer is **not** reproducible from a clean checkout. That is a
    second reason to prefer an in-repo one.
-2. Execute `rf_exact-arch-bitcode` — upstream dependency resolved, rewrite `getBitcodePath()`.
+2. **Execute `bf_exit-status-not-propagated`** — no GPU needed, IntelliKit is blocked on it.
+   The gate already reproduces the defect and its downstream consequence at the base commit.
+3. **Execute `bf_pyhandler-gil`** — GPU and arch-matched build required. Note its scope was
+   decided by the owner: the Python bridge ships as a **plugin** under `plugins/`, and the core
+   library must not acquire a libpython dependency. AC-6 enforces that.
+4. Execute `rf_exact-arch-bitcode` — upstream dependency resolved, rewrite `getBitcodePath()`.
    Note `gfx950` maps to the CDNA2 bitcode (`src/instrumentation/InstrumentationCommon.cpp:109`)
    and `gcnarch` (`external/dh_comms/include/message.h:44`) has no `gfx950` entry at all — the
    analysis currently produces correct numbers only because the CDNA2 header's hardcoded 128-byte
