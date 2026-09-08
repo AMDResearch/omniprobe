@@ -20,6 +20,7 @@ Packet directories follow the pattern: `.agents/workflows/<state>/<workflow-id>/
 | rf_clang-format-consistency | refactor | suspended | unassigned | .clang-format, CMakeLists.txt, scripts/git-hooks/ | None | Team coordination needed | 2026-08-25 |
 | rf_test-organization | refactor | suspended | unassigned | tests/ | None | Design decisions needed | 2026-08-25 |
 | ft_whitepaper-omniprobe | feature | suspended | unassigned | ~/repos/whitepaper_omniprobe/ | None (outside omniprobe repo) | Awaiting user review | 2026-08-25 |
+| bf_intern-clone-name | bugfix | draft | unassigned | src/utils.cc, src/instrumentation/InstrumentationCommon.cpp, src/instrumentation/include/InstrumentationCommon.h, tests/ | Overlaps rf_exact-arch-bitcode (same InstrumentationCommon.cpp) — that packet is suspended, so not a live collision; do not run both at once | None | 2026-09-08 |
 
 ### rf_lazy-kerneldb-loading's premise is invalidated — read this before resuming it
 
@@ -42,10 +43,13 @@ load-bearing for DWARF correlation, so deleting it is not the free win the plan 
 misselection surfaced by the same PENNANT session, and its non-goal *"No changes to dh_comms
 runtime library"* may not stretch to adding the missing `gfx950` enum.
 
-**Unfiled and worth a packet:** the `.intern.<hash>` clone-name defect that breaks
-`getInstrumentedName` (`src/utils.cc:117`). It now has a concrete reproducer — PENNANT
-`gpuMain3`/`gpuMain4`/`gpuMain5` at `cstop 1` print `No instrumented alternative found`. It was
-an explicit non-goal of the completed packet.
+**Filed 2026-09-08 as `bf_intern-clone-name`** (draft): the `.intern.<hash>` clone-name defect
+that breaks `getInstrumentedName` (`src/utils.cc:117`). It was an explicit non-goal of the
+completed packet. The pre-packet probe confirmed the framing and then went past it — the defect
+is **intermittent at ~37.5% per translation unit**, decided by whether the compiler's content
+hash begins with a hex letter, and the other ~62.5% work only because two independent defects
+cancel. PENNANT is *not* needed; a three-kernel in-repo fixture reproduces both arms. Read the
+packet's `dossier.md` § Background before touching either file.
 
 **All six of the packets above were suspended on 2026-08-25, and none of them was progressing.** Every packet's newest
 file dated from 2026-04-27 or 2026-04-28 — four months dormant — while the table went on calling

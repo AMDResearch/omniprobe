@@ -53,14 +53,21 @@ quietly does nothing.
 
 ## Active Workflows
 
-None. See `.agents/state/active-workflows.md` — six suspended, none active.
+None active. Six suspended, plus **one draft**: `bf_intern-clone-name` (filed 2026-09-08, ready
+for promotion). See `.agents/state/active-workflows.md`.
 
 ## Immediate Next Recommended Actions
 
-1. **File a packet for the `.intern.<hash>` clone-name defect.** Still unfiled. It was an explicit
-   non-goal of the completed bugfix, and it is the quieter cousin of it: partial, silent data loss
-   on a run that otherwise succeeds. Less dangerous than the `__constant__` bug, because it does
-   print a line saying it gave up.
+1. **~~File a packet for the `.intern.<hash>` clone-name defect.~~ FILED 2026-09-08 as
+   `bf_intern-clone-name`** (draft, in `.agents/workflows/draft/`). Next step is promotion to
+   `active` and Plan Of Record step 1. **The hypothesis below was confirmed — and the
+   investigation then found it was only half the story.** Read the packet's `dossier.md`
+   § Background before working on it; the corrections are summarised under *"What the probe
+   actually found"* after the original framing.
+
+   It was an explicit non-goal of the completed bugfix, and it is the quieter cousin of it:
+   partial data loss on a run that otherwise succeeds. Less dangerous than the `__constant__`
+   bug, because it does print a line saying it gave up.
 
    **Symptom** (PENNANT `sedovsmall`, `cstop 1`):
 
@@ -100,6 +107,37 @@ None. See `.agents/state/active-workflows.md` — six suspended, none active.
      2026-09-08), so the new test does not have to arrange the flag.
    - `tests/test_kernels/filter_semantics_test.hip` is the template — the completed packet added
      it as exactly this kind of two-kernel "this one is instrumented, that one is not" fixture.
+
+   ### What the probe actually found (2026-09-08, gfx90a, ROCm 7.2.0)
+
+   The cheap first move above was run. It worked, and the answer was more interesting than
+   expected. Everything here is measured; evidence in `.untracked/scratch/intern-probe/`.
+
+   - **Framing confirmed.** Internal linkage **and** `-fgpu-rdc` are both necessary; neither
+     alone produces `.intern.<hash>`. Anonymous-namespace behaves exactly like `static`. PENNANT
+     is redundant — a three-kernel in-repo fixture reproduces it.
+   - **The hash is per-translation-unit, not per-symbol**, so every internal-linkage kernel in a
+     TU shares one fate. It also changes with compile flags (same source: `26db06f5c7a9cf0b`
+     plain, `69c48a2e06e7f383` with the instrumentation plugin). **No test may pin a literal
+     hash.**
+   - **The instrumentation pass does emit clones for these kernels.** Nothing is missing from
+     the code object; this is purely a name-reconstruction and lookup-key defect.
+   - **The defect is intermittent at ~37.5%, and the deciding factor is one character.**
+     libstdc++'s clone-suffix grammar accepts `.<identifier>` and `.<all-digits>` but rejects a
+     digit-leading token containing letters. A hash beginning `a`–`f` demangles, so the original's
+     key carries `[clone …]` decorations and the lookup misses. A hash beginning `0`–`9` fails to
+     demangle, `getInstrumentedName` takes its mangled branch, and it **works by accident**.
+     Measured: 6 of 16 padding variants were letter-leading, matching the predicted 6/16, and
+     `omniprobe -i` fails on those and succeeds on the rest.
+   - **There are two defects and they cancel.** `InstrumentationCommon.cpp:211` appends `Pv` to
+     the end of the whole symbol, *after* the `.intern.<hash>` suffix, producing a name that is
+     not well-formed and never demangles. So the feature works precisely when both demangles fail
+     together. **Fixing either side alone regresses the other half of the cases — and the half
+     that currently works is the majority.**
+
+   The practical warning for anyone writing the regression test: a reproducer built the obvious
+   way passes ~62% of the time *while the defect is fully present*. This is the same shape as the
+   log-line-rename hazard under Project-Level Risks below — an assertion that cannot fire.
 
    Note the PENNANT tree (`branch mi300a` at `088a2a3`) has uncommitted build fixes in its working
    directory, so the original reproducer is **not** reproducible from a clean checkout. That is a
