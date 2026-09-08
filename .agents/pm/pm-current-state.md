@@ -8,8 +8,14 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
 
 ## Active Work Areas
 
-1. **Lazy kernelDB loading** — kerneldb PR #27 merged (2026-04-14). Ready to adopt
-   `addFile(lazy=true)` in interceptor to replace `scanCodeObject()`. See rf_lazy-kerneldb-loading.
+No workflow is active. All six remaining packets are suspended; the seventh,
+`bf_hip-duplicate-code-object-load`, completed 2026-09-08.
+
+1. **Lazy kernelDB loading** — kerneldb PR #27 merged (2026-04-14). **Its premise is partly
+   invalidated**: the packet declares "No changes to coCache" and plans to delete
+   `src/interceptor.cc:802-808`, both written in April and both now false of this tree. That block
+   is no longer load-bearing for the old `-k` workaround, but it still is for DWARF correlation.
+   Revisit the contract before executing. See rf_lazy-kerneldb-loading.
 2. **Exact-architecture bitcode** — dh_comms PR #18 merged (2026-04-15). Plugin needs
    `getBitcodePath()` rewrite for exact-arch selection. See rf_exact-arch-bitcode.
 3. **logDuration → omniprobe rename** — comprehensive rename of library, env vars, classes.
@@ -23,7 +29,17 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
 
 - **Library filter chain tests**: Previously flaky (test 2 hung, tests 4-5 failed). As of
   2026-07-13 all 5 tests pass.
-- **rocBLAS integration test broken**: Instrumented sscal not found in current build.
+- ~~**rocBLAS integration test broken**: Instrumented sscal not found in current build.~~
+  **RETRACTED 2026-09-08.** It is not broken. Measured on gfx90a hardware, it passes at
+  `74c6ed2` and at HEAD — `Found instrumented alternative for sscal kernel`. The risk was
+  recorded from a node where the suite could not run at all.
+- **Unfiled defect: `.intern.<hash>` clone names.** A `static` (internal-linkage) `__global__`
+  kernel under `-fgpu-rdc` gets a `.intern.<hash>` suffix that `getInstrumentedName`
+  (`src/utils.cc:117`) does not reconstruct, so the kernel runs uninstrumented and prints
+  `No instrumented alternative found`. Silent partial data loss. Correlation measured on PENNANT
+  (`static` kernels fail, the one non-`static` kernel does not); the `-fgpu-rdc`-plus-internal-
+  linkage mechanism is inferred, not tested. See `current-focus.md` for the proposed
+  20-line reproducer and the one-command check that would confirm or kill the hypothesis.
 
 ## Changed Assumptions
 
@@ -74,6 +90,12 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
   `INSTRUMENTED_ROCBLAS_LIB_DIR` and `INSTRUMENTED_HIPBLASLT_LIB_DIR` point at **gfx90a-only**
   Tensile libraries and fail with "not ISA compatible with this GPU" elsewhere, so the script
   exports them only when the detected arch matches.
+- **The test suite is green, and it takes matching hardware to see that.** On gfx90a with
+  `test-env.sh` sourced: 10 suites run, 10 passed, 0 skipped, 0 failed at HEAD, and 6/6 at
+  `74c6ed2`. The previously recorded "1 passed / 4 skipped / 1 failed" was measured where four
+  suites could not run and the fifth ran the wrong architecture's binaries. Two entries above and
+  in `units/testing.md` were retracted on that evidence. The general form is worth keeping: **a
+  tally measured where most suites skip records the environment, not the code.**
 
 ## Recommended Read Order
 

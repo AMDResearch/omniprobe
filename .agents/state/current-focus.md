@@ -57,11 +57,53 @@ None. See `.agents/state/active-workflows.md` — six suspended, none active.
 
 ## Immediate Next Recommended Actions
 
-1. **File a packet for the `.intern.<hash>` clone-name defect.** Still unfiled, and it now has a
-   concrete reproducer: PENNANT `gpuMain3`/`gpuMain4`/`gpuMain5` at `cstop 1` print `No
-   instrumented alternative found`. The mechanism is `.intern.<hash>` suffixing breaking clone-name
-   reconstruction in `getInstrumentedName` (`src/utils.cc:117`). It was an explicit non-goal of
-   the completed bugfix.
+1. **File a packet for the `.intern.<hash>` clone-name defect.** Still unfiled. It was an explicit
+   non-goal of the completed bugfix, and it is the quieter cousin of it: partial, silent data loss
+   on a run that otherwise succeeds. Less dangerous than the `__constant__` bug, because it does
+   print a line saying it gave up.
+
+   **Symptom** (PENNANT `sedovsmall`, `cstop 1`):
+
+       No instrumented alternative found for gpuMain5(double, double const*, double const*)
+         [clone .intern] [clone .de1b0b8eba669612] [clone .kd]
+
+   Those kernels run their originals and produce no analysis data. `getInstrumentedName`
+   (`src/utils.cc:117`) rebuilds the clone name by finding the last `)`, splicing in `, void*`, and
+   prepending `__amd_crk_`. It has no notion of `[clone …]` decorations — they sit outside the
+   signature and are carried through verbatim — so the name it builds matches no symbol in the
+   code object.
+
+   **A small reproducer should be enough; PENNANT is probably not needed.** Found 2026-09-08, and
+   the correlation is exact:
+
+   | kernel | declaration in `pennant/src/HydroGPU.cc` | instruments? |
+   |---|---|---|
+   | `gpuMain2` | `void gpuMain2(...)` — external linkage | **yes** |
+   | `gpuMain1`, `gpuMain3_*`, `gpuMain4`, `gpuMain5` | `static void …` | **no** |
+
+   This agrees with the mangled symbol recorded in the completed packet's dossier,
+   `_ZL8gpuMain5dPKdS0_` — the `L` in `_ZL` is Itanium ABI for **internal linkage**. The
+   hypothesis, therefore: *a `static` (or anonymous-namespace) `__global__` kernel under
+   `-fgpu-rdc`*. Device linking merges translation units, so a static kernel's symbol has to be
+   made globally unique, and clang appends `.intern.<hash>` to do it.
+
+   **Measured vs inferred, because the distinction decides the first step.** The `static` /
+   non-`static` correlation and the `_ZL` mangling are measured. That `-fgpu-rdc` plus internal
+   linkage is *sufficient* to produce `.intern.<hash>` is inferred from those two facts and has
+   **not** been tested.
+
+   **Cheapest first move:** write a file with one `static __global__` kernel and one ordinary one,
+   compile it, and `llvm-nm` for a `.intern.` symbol. If it is there, PENNANT is redundant except
+   as secondary confirmation. If it is not, the trigger is something else and this whole framing is
+   wrong — which is worth knowing before any packet is written around it.
+   - `tests/test_kernels/*` are **already compiled with `-fgpu-rdc`** (seen in the build log
+     2026-09-08), so the new test does not have to arrange the flag.
+   - `tests/test_kernels/filter_semantics_test.hip` is the template — the completed packet added
+     it as exactly this kind of two-kernel "this one is instrumented, that one is not" fixture.
+
+   Note the PENNANT tree (`branch mi300a` at `088a2a3`) has uncommitted build fixes in its working
+   directory, so the original reproducer is **not** reproducible from a clean checkout. That is a
+   second reason to prefer an in-repo one.
 2. Execute `rf_exact-arch-bitcode` — upstream dependency resolved, rewrite `getBitcodePath()`.
    Note `gfx950` maps to the CDNA2 bitcode (`src/instrumentation/InstrumentationCommon.cpp:109`)
    and `gcnarch` (`external/dh_comms/include/message.h:44`) has no `gfx950` entry at all — the
