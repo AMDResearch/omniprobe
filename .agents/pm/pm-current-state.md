@@ -51,6 +51,30 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
   mmap). Not yet a workflow; deep atomics/coherence chapter is a placeholder in
   `amd_gpu_memory_system.md`.
 
+- HIP duplicate code-object load fixed (2026-09-08, bf_hip-duplicate-code-object-load): for
+  code the application loads itself, `coCache::addFile` now *indexes* the extracted code objects
+  and builds **no private HSA executable**. The private copy's `__constant__` segment was never
+  initialised, so instrumented clones read `__device__`/`__constant__` globals as zero while
+  kernel arguments arrived intact — a silent failure producing empty-but-plausible analysis.
+  Triton and `--library-filter` includes still get the private executable, since their
+  instrumented kernels exist nowhere else. `-k` now gates the clone swap at dispatch instead of
+  gating what gets recorded, so it means what it has always been documented to mean, and it no
+  longer costs source-line attribution. PENNANT `sedovsmall` now runs under `omniprobe -i` with
+  **no filter** and matches uninstrumented energies exactly; the `-k "setBoundary"`
+  sacrificial-kernel workaround is obsolete.
+- **Test kernels must be compiled for the GPU actually present, not for
+  `CMAKE_HIP_ARCHITECTURES`.** Measured 2026-09-08: the gfx90a `build/` tree's test kernels
+  dispatch **nothing** on a gfx950 node — silently, exit 0, no reports. This is the true cause of
+  the long-standing "Handler tests fail on `memory heatmap report`" result on gfx950 nodes; the
+  same source recompiled for gfx950 passes. It is an architecture mismatch, not a code defect.
+  New tests (`tests/test_instrumented_kernel_common.sh`) detect the arch via `rocminfo` and
+  compile to `/tmp`, which is also the mmap-capable filesystem on fuseblk/virtiofs nodes.
+- Test environment variables are recorded in `.untracked/test-env.sh` (gitignored; this repo is
+  public). `TRITON_DIR` is architecture-independent and travels between nodes;
+  `INSTRUMENTED_ROCBLAS_LIB_DIR` and `INSTRUMENTED_HIPBLASLT_LIB_DIR` point at **gfx90a-only**
+  Tensile libraries and fail with "not ISA compatible with this GPU" elsewhere, so the script
+  exports them only when the detected arch matches.
+
 ## Recommended Read Order
 
 1. `architecture` — system overview and subsystem map
