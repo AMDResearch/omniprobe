@@ -205,6 +205,23 @@ std::vector<llvm::Function *> collectGPUKernels(llvm::Module &M) {
   return GpuKernels;
 }
 
+// The AMDGPU attributor marks functions with "amdgpu-no-*" attributes for
+// implicit inputs they do not use (workgroup ids, the implicit-argument
+// pointer, ...). When the pipeline has a target machine, it runs at
+// OptimizerLastEP ahead of this plugin, so the attributes describe the kernel
+// before instrumentation. The injected dh_comms calls read some of those
+// inputs, and a kernel that keeps such an attribute does not set them up, so
+// the reads return garbage. Drop the attributes from the instrumented clone;
+// the backend then provides all implicit inputs.
+static void removeInferredAMDGPUNoAttributes(llvm::Function &F) {
+  llvm::SmallVector<llvm::StringRef, 16> Kinds;
+  for (const llvm::Attribute &A : F.getAttributes().getFnAttrs())
+    if (A.isStringAttribute() && A.getKindAsString().starts_with("amdgpu-no-"))
+      Kinds.push_back(A.getKindAsString());
+  for (llvm::StringRef Kind : Kinds)
+    F.removeFnAttr(Kind);
+}
+
 llvm::Function *cloneKernelWithExtraArg(llvm::Function *OrigKernel,
                                         llvm::Module &M,
                                         llvm::ValueToValueMapTy &VMap) {
@@ -239,6 +256,8 @@ llvm::Function *cloneKernelWithExtraArg(llvm::Function *OrigKernel,
   SmallVector<ReturnInst *, 8> Returns; // Ignore returns cloned.
   CloneFunctionInto(F, OrigKernel, VMap, CloneFunctionChangeType::GlobalChanges,
                     Returns);
+  // After CloneFunctionInto, which copies the original's attributes again.
+  removeInferredAMDGPUNoAttributes(*F);
 
   return F;
 }
