@@ -46,6 +46,23 @@ jobs:
             echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
 
+      # Build the LLVM stage on its own first, purely to get its cache exported.
+      # BuildKit exports cache only when a solve succeeds, so without this a
+      # failure in the Triton stage discards a completed ~2h LLVM build and the
+      # retry starts from zero. That cost us a full rebuild on 2026-10-26.
+      # type=cacheonly: no image is produced or pushed, only the cache is written.
+      - name: Build LLVM stage (cache checkpoint)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: containers/toolchain.Dockerfile
+          target: llvm
+          build-args: |
+            ROCM_VERSION=${{ matrix.rocm-version }}
+          outputs: type=cacheonly
+          cache-from: type=gha,scope=toolchain-rocm${{ matrix.rocm-version }}
+          cache-to: type=gha,mode=max,scope=toolchain-rocm${{ matrix.rocm-version }}
+
       - name: Build and push toolchain image
         uses: docker/build-push-action@v6
         with:

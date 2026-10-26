@@ -4,10 +4,26 @@
 # Contains: ROCm, LLVM (shared libs), Triton, PyTorch ROCm wheel.
 # The omniprobe.Dockerfile layers on top of this image.
 
-ARG ROCM_VERSION=7.2
-FROM rocm/dev-ubuntu-24.04:${ROCM_VERSION}
+# Split into two stages so the expensive LLVM work can be cached independently of
+# the Triton build that follows it. BuildKit only exports its cache when a solve
+# SUCCEEDS, so a failure in the Triton stage used to discard a completed ~2h LLVM
+# build -- which is exactly what happened on 2026-10-26, when Triton's configure
+# step failed fetching CUDA CUPTI from NVIDIA's CDN. The workflow now builds
+# `--target llvm` first, so that cache is exported before the fragile stage runs.
+#
+# The Triton version is declared ONCE below, before the first FROM, and re-declared
+# bare in each stage that needs it. Do not give it a default in a stage as well, and
+# do not repeat the defaulted form in a comment: triton-staleness-check.yml extracts
+# the pinned version by grepping this file for that assignment and expects exactly
+# one match. A second occurrence -- even inside a comment -- makes the extracted
+# value two lines and silently fails the check. That is not hypothetical; the first
+# draft of this very comment did it.
 ARG ROCM_VERSION=7.2
 ARG TRITON_VERSION=v3.8.0
+
+FROM rocm/dev-ubuntu-24.04:${ROCM_VERSION} AS llvm
+ARG ROCM_VERSION
+ARG TRITON_VERSION
 LABEL Description="Omniprobe toolchain: ROCm + LLVM + Triton + PyTorch"
 WORKDIR /app
 
@@ -83,8 +99,15 @@ RUN git clone https://github.com/triton-lang/triton.git /app/triton && \
 # =========================
 # Triton Python env + build
 # =========================
-# Separate layer from LLVM. If this fails, the LLVM layer above is preserved.
+# Separate STAGE from LLVM, not merely a separate layer. The workflow builds
+# `--target llvm` first so that stage's cache is exported even if this one fails;
+# a retry then resumes here instead of rebuilding LLVM. This stage is the fragile
+# one: Triton v3.8.0 downloads the NVIDIA toolchain (CUPTI) during its CMake
+# configure, with COMMAND_ERROR_IS_FATAL ANY, so a CDN blip fails the build.
 # Uses triton_install.sh --skip-llvm to reuse the already-built LLVM.
+FROM llvm AS toolchain
+ARG ROCM_VERSION
+ARG TRITON_VERSION
 COPY containers/triton_install.sh /app/triton_install.sh
 RUN cd /app && /app/triton_install.sh --triton-version ${TRITON_VERSION} --skip-llvm
 
