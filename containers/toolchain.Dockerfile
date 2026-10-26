@@ -17,7 +17,7 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y software-properties-common && \
     apt-get upgrade -y && \
-    apt-get install -y git build-essential cmake ninja-build wget clang lld libzstd-dev libomp-dev ccache libdwarf-dev python3-dev python3-venv rocm-llvm-dev && \
+    apt-get install -y git build-essential cmake ninja-build wget clang lld libzstd-dev libomp-dev ccache libdwarf-dev python3-dev python3-venv rocm-llvm-dev jq && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV PATH=/opt/rocm/bin:${PATH}
@@ -43,6 +43,16 @@ RUN git clone https://github.com/triton-lang/triton.git /app/triton && \
     sed -i 's/^\([[:space:]]*\)assert len(names) == 1/\1# assert len(names) == 1  # patched for Omniprobe/' \
         python/triton/backends/amd/compiler.py 2>/dev/null || true && \
     export PATH=${ROCM_PATH}/llvm/bin:${PATH} && \
+    # Resolve the LLVM pin here and pass it in, rather than letting
+    # build-llvm-project.sh look it up. That script has no `set -e` and ends with
+    # ninja, so an unreadable pin leaves it building whatever commit the freshly
+    # cloned llvm-project landed on -- and still exiting 0, which would cache this
+    # ~3.5h layer as good. `jq -e` makes a missing/null key an error; the `&&` chain
+    # makes any failure fail the RUN. llvm-info.json is v3.8.0+, llvm-hash.txt v3.7.x.
+    LLVM_COMMIT_HASH=$(jq -re '.llvm_hash' cmake/llvm-info.json 2>/dev/null || cat cmake/llvm-hash.txt) && \
+    [ -n "${LLVM_COMMIT_HASH}" ] && \
+    export LLVM_COMMIT_HASH && \
+    echo "LLVM commit (pinned): ${LLVM_COMMIT_HASH}" && \
     scripts/build-llvm-project.sh \
         -G Ninja \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -60,7 +70,15 @@ RUN git clone https://github.com/triton-lang/triton.git /app/triton && \
         -DLLVM_ENABLE_PROJECTS="clang;mlir;llvm;lld" \
         -DCMAKE_INSTALL_PREFIX=/app/triton/llvm-project/install \
         -B/app/triton/llvm-project/build \
-        /app/triton/llvm-project/llvm
+        /app/triton/llvm-project/llvm && \
+    # Verify the outcome, not the exit status: a bad reset is silent in that script.
+    # A mismatch fails the RUN, so the wrong-LLVM layer is never cached as good.
+    ACTUAL_LLVM="$(git -C /app/triton/llvm-project rev-parse HEAD)" && \
+    if [ "${ACTUAL_LLVM}" != "${LLVM_COMMIT_HASH}" ]; then \
+        echo "ERROR: LLVM tree is at ${ACTUAL_LLVM}, expected ${LLVM_COMMIT_HASH}" >&2; \
+        exit 1; \
+    fi && \
+    echo "LLVM commit verified: ${ACTUAL_LLVM}"
 
 # =========================
 # Triton Python env + build

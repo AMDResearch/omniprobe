@@ -59,8 +59,8 @@ Options:
 
 Examples:
   ./triton_install.sh                           # auto-detect everything
-  ./triton_install.sh --triton-version v3.7.1   # specific Triton tag
-  ./triton_install.sh -g v3.7.1 --pytorch-rocm 7.1
+  ./triton_install.sh --triton-version v3.8.0   # specific Triton tag
+  ./triton_install.sh -g v3.8.0 --pytorch-rocm 7.1
   ./triton_install.sh --local-sources ~/repos/sandbox/triton
 HELP
 }
@@ -247,6 +247,17 @@ if [ -z "$ROCM_VERSION" ]; then
     exit 1
 fi
 
+# jq is required from Triton v3.8.0 onward: Triton's scripts/build-llvm-project.sh
+# reads the LLVM pin from cmake/llvm-info.json with jq. Checked here rather than
+# left to fail inside that script, because it fails there *silently* — see Step 4.
+if ! command -v jq &>/dev/null; then
+    log_error "jq not found in PATH"
+    log_error "jq is a single static binary; no root required:"
+    log_error "  curl -sSL -o ~/bin/jq https://github.com/jqlang/jq/releases/latest/download/jq-linux-amd64"
+    log_error "  chmod +x ~/bin/jq"
+    exit 1
+fi
+
 # Find a Python >= 3.10 (required for PyTorch ROCm wheels).
 # Try versioned names first (most specific), then fall back to python3.
 PYTHON=""
@@ -381,7 +392,51 @@ patch_triton_source
 log_step "Step 4: Building LLVM with shared libraries"
 
 log_info "This may take a while (30-90 minutes depending on hardware)..."
-log_info "LLVM commit hash: $(cat cmake/llvm-hash.txt 2>/dev/null || echo 'unknown')"
+
+# ---------------------------------------------------------------------------
+# Resolve the LLVM pin ourselves, and verify the outcome afterwards.
+#
+# Triton's scripts/build-llvm-project.sh does:
+#     LLVM_COMMIT_HASH=${LLVM_COMMIT_HASH:-$(jq -r '.llvm_hash' cmake/llvm-info.json)}
+#     ...
+#     git fetch origin "$LLVM_COMMIT_HASH"
+#     git reset --hard "$LLVM_COMMIT_HASH"
+#     cmake ... && ninja
+#
+# That script has no `set -e` and ends with ninja, so if the hash comes out empty
+# or "null", both git commands fail *non-fatally* and it builds whatever commit the
+# tree happens to be on — then exits 0. Our own `set -e` cannot catch that, because
+# the child succeeded. Measured 2026-10-26: jq missing => empty; jq present but key
+# absent => jq prints "null" and exits 0, which plain `set -e` would not catch either.
+#
+# So: resolve the hash here (jq -e, so a null/missing key is an error), export it so
+# the script's own lookup is never reached, and compare the tree against it afterwards.
+# Both layouts are handled -- llvm-info.json is v3.8.0+, llvm-hash.txt is v3.7.x.
+if [ -n "${LLVM_COMMIT_HASH:-}" ]; then
+    # Caller supplied their own pin (e.g. building against a custom LLVM). Respect it.
+    EXPECTED_LLVM="$LLVM_COMMIT_HASH"
+    log_info "LLVM commit (pinned): ${EXPECTED_LLVM} (from LLVM_COMMIT_HASH)"
+elif [ -f cmake/llvm-info.json ]; then
+    EXPECTED_LLVM=$(jq -re '.llvm_hash' cmake/llvm-info.json) || {
+        log_error "cmake/llvm-info.json has no usable .llvm_hash"
+        log_error "Triton's pin layout may have changed again — check cmake/ before proceeding"
+        exit 1
+    }
+    log_info "LLVM commit (pinned): ${EXPECTED_LLVM}"
+elif [ -f cmake/llvm-hash.txt ]; then
+    EXPECTED_LLVM=$(cat cmake/llvm-hash.txt)
+    log_info "LLVM commit (pinned): ${EXPECTED_LLVM} (pre-3.8 layout)"
+else
+    log_error "Cannot determine Triton's LLVM pin: neither cmake/llvm-info.json nor cmake/llvm-hash.txt exists"
+    exit 1
+fi
+
+if [ -z "$EXPECTED_LLVM" ]; then
+    log_error "Resolved an empty LLVM commit hash — refusing to build an unknown LLVM"
+    exit 1
+fi
+
+export LLVM_COMMIT_HASH="$EXPECTED_LLVM"
 
 # Put ROCm's clang on PATH so build-llvm-project.sh picks it up as the
 # default CMAKE_C_COMPILER=clang / CMAKE_CXX_COMPILER=clang++
@@ -426,6 +481,19 @@ scripts/build-llvm-project.sh \
 
 unset LLVM_PROJECT_URL 2>/dev/null
 log_info "LLVM built at: ${LLVM_BUILD_DIR}"
+
+# The build script cannot fail loudly on a bad reset (see the note above), so check
+# the outcome rather than trusting its exit status. This catches a missing/null pin,
+# a refused fetch, a stale mirror and a wrong remote alike — anything that leaves the
+# tree somewhere other than where we asked for.
+ACTUAL_LLVM=$(git -C "${TRITON_REPO}/llvm-project" rev-parse HEAD 2>/dev/null)
+if [ "$ACTUAL_LLVM" != "$EXPECTED_LLVM" ]; then
+    log_error "LLVM tree is at ${ACTUAL_LLVM:-<unknown>}, expected ${EXPECTED_LLVM}"
+    log_error "The LLVM build did not use the intended commit — refusing to continue."
+    log_error "Check that ${TRITON_REPO}/llvm-project can reach ${EXPECTED_LLVM}."
+    exit 1
+fi
+log_info "LLVM commit verified: ${ACTUAL_LLVM}"
 
 # Verify shared libraries were built
 if ls "${LLVM_BUILD_DIR}/lib/"libLLVM*.so &>/dev/null; then
@@ -504,7 +572,12 @@ python3 -m pip install . --no-build-isolation
 log_step "Installation complete"
 
 log_info "Triton version:     ${TRITON_VERSION}"
-log_info "LLVM hash:          $(cat cmake/llvm-hash.txt 2>/dev/null || echo 'unknown')"
+# Report what was actually built, not what was pinned. These can differ (see Step 4),
+# and reading the tree works in both the normal and --skip-llvm paths — the latter
+# matters because containers/toolchain.Dockerfile builds LLVM itself and then calls
+# this script with --skip-llvm, so EXPECTED_LLVM is not set there.
+BUILT_LLVM=$(git -C "${TRITON_REPO}/llvm-project" rev-parse HEAD 2>/dev/null || echo unknown)
+log_info "LLVM commit:        ${BUILT_LLVM}"
 log_info "PyTorch ROCm index: rocm${PYTORCH_ROCM_VERSION}"
 log_info "ROCm version:       ${ROCM_VERSION}"
 log_info ""
