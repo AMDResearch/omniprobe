@@ -130,6 +130,50 @@ cmake --install build
 - **GoogleTest is disabled by default** (`INTERCEPTOR_BUILD_TESTING=OFF`). Do not enable
   without handler refactoring for dependency injection.
 
+## CI container layering, and what it can and cannot prove (2026-10-26)
+
+Two workflows, deliberately split:
+
+- `.github/workflows/toolchain-image.yml` builds `omniprobe-toolchain:<VERSION>-rocm7.2` and
+  `:latest-rocm7.2` from `containers/toolchain.Dockerfile` (LLVM + Triton, ~4.5h). It triggers
+  **only** on changes to `toolchain.Dockerfile`, `containers/triton_install.sh`, `.dockerignore`
+  or `VERSION`, plus manual dispatch.
+- `.github/workflows/build.yml` pulls `:latest-rocm7.2` and builds omniprobe inside it
+  (~10 min, 25 min timeout).
+
+**`build.yml` runs `cmake --build build --target install` and stops.** No `ctest`, no
+`run_all_tests.sh`, and `runs-on: ubuntu-latest` — **no GPU**. So CI is a compile gate only.
+Anything whose failure mode is semantic rather than a compile error is invisible to it; see
+`instrumentation`'s note on `validateAMDGPUTarget`.
+
+**Bumping `TRITON_VERSION` is what triggers the 4.5h job.** The image is pushed only on success,
+so a failed rebuild leaves `main` pinning a version that `latest-rocm7.2` does not contain, and
+`build.yml` then silently builds against the stale image. Validate locally before bumping.
+
+**Fork PRs probably cannot pass CI at all** (hypothesis, untested as of 2026-10-26):
+`build.yml` references `secrets.DOCKERHUB_USERNAME` under a `pull_request` trigger, and GitHub
+does not expose secrets to PRs from forks — `IMAGE` would expand to `:latest-rocm7.2`, an invalid
+reference. That matches the observed failure on PR #44 ("likely failed because of a workflow file
+issue", after a 720-hour stuck runner) and would mean every external PR is structurally red.
+Related: open GitHub issue #20, "Update CI Runners to use new Docker containers".
+
+## Triton pin facts (checked 2026-10-26)
+
+`containers/toolchain.Dockerfile:10` pins `TRITON_VERSION=v3.7.1`. Upstream v3.8.0 released
+2026-08-28. Two things change across that boundary:
+
+- **`cmake/llvm-hash.txt` no longer exists in v3.8.0**, replaced by `cmake/llvm-info.json` and
+  `cmake/llvm-build-info.json`. `containers/triton_install.sh` reads `cmake/llvm-hash.txt` at
+  lines **384 and 507**, but only for log output and with an `|| echo 'unknown'` fallback — so it
+  degrades cosmetically rather than failing. Audit the script's other layout assumptions anyway.
+- **The LLVM pin jumps roughly six months**: `1f126a6d` (2026-02-07) → `5f07f818` (2026-08-17),
+  the latter a cherry-pick merge, i.e. a *patched* LLVM rather than clean mainline. The plugin's
+  LLVM surface is small (25 headers, 15 distinct `llvm::` symbols in `InstrumentationCommon.cpp`),
+  so compile risk is bounded and loud; semantic risk is the real exposure.
+
+The local LLVM mirror's remote must point at `https://github.com/triton-lang/llvm-project.git`
+(Triton's fork), not mainline LLVM — a past session lost time to this.
+
 ## Open Questions
 
 None.
@@ -137,3 +181,4 @@ None.
 ## Last Verified
 
 2026-04-27 (created by pm-restructure from architecture + instrumentation)
+2026-10-26 (CI container layering, Triton pin facts for the v3.8.0 bump)

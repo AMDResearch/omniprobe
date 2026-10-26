@@ -71,8 +71,15 @@ see Negative Knowledge.
 - **Do NOT attempt to use GoogleTest** until handler refactoring for dependency injection is complete.
 - Test kernels **MUST** be compiled with `-g` (debug info). Without it, DWARF source location info is missing, causing `MemoryAnalysis` handler to silently drop all messages.
 - Test kernels should read back results (`hipMemcpy` to host) to prevent dead-store elimination.
-- **A test binary built for the wrong GPU architecture does not error — it silently fails to
-  dispatch, exits 0, and produces no reports.** `build/` is a gfx90a tree. Running it on a gfx950
+- **A test binary built for the wrong GPU architecture does not error.** *(Mechanism corrected
+  2026-10-26 — this bullet used to say it "silently fails to dispatch, exits 0, and produces no
+  reports". The exit 0 was not the architecture mismatch; it was
+  `bf_exit-status-not-propagated`. Measured directly on gfx950,
+  `build/tests/test_kernels/simple_heatmap_test` **dies of SIGSEGV and exits 139**. The silence
+  only ever appeared when the binary was observed through `omniprobe`, which discarded the
+  child's status. That is fixed as of `c5aec00`, so this failure mode is now loud — but the
+  conclusions below are unaffected, since they were about the defects not existing.)*
+  `build/` is a gfx90a tree. Running it on a gfx950
   node made the Handler suite fail on `Expected pattern not found: 'memory heatmap report'`, and
   that failure was recorded as a pre-existing code defect for months. It is not one; the suite
   passes on matching hardware. The same artefact produced a second phantom defect, "rocBLAS
@@ -96,6 +103,21 @@ see Negative Knowledge.
   tests in both directions when changing a log string. Both now match `^(Adding|Indexing) `; the
   `libdynamic_*` presence checks deliberately still match `Adding` alone, because those libraries
   arrive through a `--library-filter` include and are not mapped at startup.
+
+- **`fuseblk` does not by itself mean "relocate the build to `/tmp`".** The machine-level
+  filesystem notes flag `virtiofs` and `fuseblk` as lacking mmap support, breaking
+  `hipModuleLoad` under ROCm 7.2, with building to `/tmp` as the workaround. Measured 2026-10-26
+  on `k006-004-v3.hpcfund`, a KVM VM whose `/work1` and `/home1` are both `fuseblk`: **all eleven
+  suites passed straight from the in-repo build tree**, GPU-dispatching ones included, with no
+  relocation. The hazard is real but not universal and which operations trip it is
+  uncharacterised. Treat the workaround as a response to an observed failure, not a
+  precondition — and do not read one green run as evidence the hazard is gone either.
+- **A full green run is 11 suites, and `Suites skipped: 0` requires gfx90a specifically.**
+  `INSTRUMENTED_ROCBLAS_LIB_DIR` and `INSTRUMENTED_HIPBLASLT_LIB_DIR` point at gfx90a-only
+  Tensile libraries; `.untracked/test-env.sh` withholds them on any other architecture and the
+  three dependent suites then skip. Confirm `source .untracked/test-env.sh` prints **both**
+  variables before trusting a tally. This constraint blocked `bf_exit-status-not-propagated`'s
+  AC-8 for seven weeks.
 
 ## Acceptance-gate patterns that do not work here
 
@@ -137,3 +159,4 @@ output — so any criterion demanding `Suites skipped: 0` is sensitive to a new 
   absence assertions. The two "pre-existing defects" this unit's environment had implied are
   retracted.
 2026-09-08 (acceptance-gate pattern collisions; each demonstrated against failing input)
+2026-10-26 (11-suite green run on gfx90a; fuseblk finding; wrong-arch bullet mechanism corrected)

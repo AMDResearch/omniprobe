@@ -98,6 +98,64 @@ Two consequences worth carrying:
 
 Tracked by `bf_intern-clone-name`.
 
+## The AMDGPU attributor runs before this plugin, and clones inherit its conclusions
+
+Measured 2026-10-26 on gfx90a / ROCm 7.2.0, prompted by GitHub issue #43 and PR #44.
+
+`AMDGPUTargetMachine::registerPassBuilderCallbacks` adds `AMDGPUAttributorPass` at
+`OptimizerLastEP`, registered in the `PassBuilder` constructor — i.e. **before** any plugin is
+loaded. So whenever the pipeline has a target machine, the attributor runs first and marks each
+kernel `amdgpu-no-*` for implicit inputs it does not use. `cloneKernelWithExtraArg` then copies
+those attributes onto the instrumented clone **twice** — `copyAttributesFrom` at `:228` and again
+inside `CloneFunctionInto` at `:240`. Any removal must therefore happen *after* the second call;
+removing earlier has no effect.
+
+The attributes describe the kernel *before* instrumentation, so they are stale for the clone: the
+injected dh_comms calls read inputs (`workgroup id y/z`, `workitem id y/z`, the implicit-argument
+pointer) that the original did not. Re-running the attributor does not help — it treats existing
+`amdgpu-no-*` attributes as known facts.
+
+**This is a HIP-path property, not only a Triton one.** ROCm's own device compile (including
+`-fgpu-rdc`) also runs the attributor ahead of `-fpass-plugin` passes. Measured on the in-repo
+heatmap test: the instrumented clone carries 17 `amdgpu-no-*` attributes and its final kernel
+descriptor has `.amdhsa_system_sgpr_workgroup_id_y 0` / `_z 0`, while `s_submit_message` reads
+those intrinsics.
+
+**Calibrate the impact carefully — a first analysis overstated it.** The backend does not emit a
+read of an unallocated register; it **constant-folds** the disabled intrinsics. Evidence: the
+clone body is 1181 instructions as-is versus 1980 with the attributes removed, the difference
+being the y/z-dependent computation eliminated outright. Consequences:
+
+- **1-D launches:** folding y/z to 0 is the *correct* answer, so no defect in practice. This
+  covers the entire in-repo suite, which is why it is green either way.
+- **2-D / 3-D launches of a kernel that does not itself read `blockIdx.y/z`:** dh_comms'
+  sub-buffer index is `(wg_x + wg_y*gx + wg_z*gx*gy) % N`, so folding **collapses the y and z
+  dimensions** — workgroups differing only in y/z share a sub-buffer. Wrong and deterministic,
+  not undefined.
+- **Unverified:** whether that collapse is observable in handler output. dh_comms sub-buffer
+  semantics were not traced.
+
+Fix proposed upstream as PR #44 (19 lines, `InstrumentationCommon.cpp`): drop all `amdgpu-no-*`
+from the clone after `CloneFunctionInto`. Blanket removal rather than a targeted list is
+deliberate — a list goes stale silently the next time dh_comms reads something new. Verified
+locally 2026-10-26: compiles `-Werror` against both ROCm's and Triton's LLVM, flips
+`workgroup_id_y/z` to 1, leaves uninstrumented originals untouched, full suite 11/11.
+
+**One change covers six plugins.** `cloneKernelWithExtraArg` is shared by all three passes
+(`AddressMessages`, `BBStart`, `BBInterval`) and `cmake_modules/add_instrumentation_plugins.cmake:92`
+builds each in both `-rocm` and `-triton` flavours from the same objects.
+
+## Negative Knowledge — `validateAMDGPUTarget` is an exact string match
+
+`InstrumentationCommon.cpp:150` tests `TripleStr == "amdgcn-amd-amdhsa"`. Newer LLVM (as carried
+by Triton `main` / v3.8.0) emits the normalized form `amdgpu9.50-amd-amdhsa`, which fails that
+test — so every pass **skips every kernel, silently and with exit 0**. It still compiles; nothing
+errors. `M.getTargetTriple().isAMDGCN()` is the suggested replacement.
+
+Reported as item 2 of GitHub issue #43 and **not** fixed by PR #44. This is the archetype of the
+risk in a Triton/LLVM bump: the dangerous breakage is semantic, not a compile error, and CI
+(`build.yml`, build-only, `ubuntu-latest`, no GPU, no test invocation) cannot see it at all.
+
 ## Open Questions
 
 None.
@@ -106,3 +164,4 @@ None.
 
 2026-04-27 (trimmed by pm-restructure; build system section moved to build-system)
 2026-09-08 (clone-name construction under internal linkage; measured, not re-read)
+2026-10-26 (AMDGPU attributor ordering and clone attribute inheritance, measured; validateAMDGPUTarget triple fragility)

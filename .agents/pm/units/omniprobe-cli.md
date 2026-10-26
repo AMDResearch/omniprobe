@@ -92,23 +92,34 @@ The Python API (`omniprobe/api/`) wraps this: `Omniprobe.analyze_memory()` and `
 - `libAMDGCNSubmitBBInterval-triton.so` exists but no analyzer currently uses it. Do not wire it up without a corresponding analyzer.
 - Requires `pyfiglet` for ASCII banner display. This is a runtime dependency of the script.
 
-## Negative Knowledge — the CLI cannot report a target failure
+## The CLI propagates the target's exit status (fixed 2026-09-08, verified 2026-10-26)
 
-`capture_subprocess_output` (`omniprobe/omniprobe:119`) never reads `process.returncode`. The
-comment at `:169` says `# Get process return code` and is followed by a read of *stdout*. `main()`
-discards the call's result at `:823`. **`omniprobe` therefore always exits 0**, including when the
-instrumented target dies of a signal. `KeyboardInterrupt` is the one exception and exits 1.
+**This section previously recorded the opposite** — that `omniprobe` always exits 0 — which was
+true until `c5aec00`. `bf_exit-status-not-propagated` is complete (packet in
+`.agents/workflows/done/`, GitHub issue #41 closed). Current behaviour:
 
-This is load-bearing downstream: `omniprobe/api/omniprobe.py:154` has exactly one failure check
-(`if result.returncode != 0`) and `:164` returns `"[]"` when the output file is missing — so a
-crashed run yields no exception and an empty-but-well-formed result. The realistic failure is
-*partial*, not empty: a run that crashes after some dispatches produces non-empty output that
-passes non-emptiness assertions while being silently truncated.
+- `capture_subprocess_output` returns `process.returncode` instead of discarding it, and
+  **returns rather than exiting** on failure. That constraint was load-bearing: the function has
+  a second caller (`rocminfo`, ISA detection) that must survive a non-zero status.
+- `main()` exits with the target's status.
+- Signal deaths surface as `128 + signo` via a named `shell_exit_status()` helper. A `SIGSEGV`
+  target reports **139**, a target exiting 42 reports **42**, success still reports **0**.
+- `omniprobe/api/omniprobe.py` raises `RuntimeError` on a crashing target rather than quietly
+  returning `"[]"`.
+- JSON output is finalized **before** the exit, so a failing run still leaves a parseable file.
+  `finalize_json_output` writes `[]` when file output was requested and nothing was produced —
+  without that, a no-GPU target produced no file at all and the ordering was unobservable.
 
-Constraint on any fix: `capture_subprocess_output` has a **second caller** at `:225` (`rocminfo`,
-ISA detection). Returning a status is safe; exiting from inside the function is not.
+Covered by `tests/test_exit_status.sh`, registered as **suite 11** in `run_all_tests.sh`. It
+needs no GPU — every target is a `/bin/sh` stub — so it runs on any node.
 
-Tracked by `bf_exit-status-not-propagated`. Verified in-repo 2026-09-08.
+### Why this matters beyond the CLI
+
+The constant `0` was not merely hiding crashes; it was being **misread as evidence about the
+hardware**. `current-focus.md` recorded that a gfx90a binary on a gfx950 GPU "fails to dispatch
+silently, producing exit 0 with no output". It does nothing of the kind — it dies of `SIGSEGV`
+and exits 139. The silence was this bug, observed through the CLI, and two phantom "known
+defects" were attributed to that misreading before it was caught. Both have been retracted.
 
 ## Open Questions
 
@@ -118,3 +129,4 @@ None.
 
 - 2026-07-20 (updated for Python API, JSON schema docs, corrected flag names)
 2026-09-08 (exit-status propagation; verified by reading and by running the CLI)
+2026-10-26 (exit-status propagation complete and verified on gfx90a; prior "always exits 0" section rewritten)

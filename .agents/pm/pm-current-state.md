@@ -8,8 +8,8 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
 
 ## Active Work Areas
 
-No workflow is active. All six remaining packets are suspended; the seventh,
-`bf_hip-duplicate-code-object-load`, completed 2026-09-08.
+Two bugfix packets are active (see the next section). The six packets listed below are
+**suspended**, not active — four of them need human input before they can move.
 
 1. **Lazy kernelDB loading** — kerneldb PR #27 merged (2026-04-14). **Its premise is partly
    invalidated**: the packet declares "No changes to coCache" and plans to delete
@@ -25,20 +25,38 @@ No workflow is active. All six remaining packets are suspended; the seventh,
 5. **Test organization** — design decisions needed before restructuring tests/.
    See rf_test-organization.
 
-## Active Work Areas — three bugfix packets (2026-09-08)
+## Active Work Areas — two bugfix packets (was three; updated 2026-10-26)
 
-All promoted the same day, none with production code written. Ordered by the owner: the two filed
-from the **IntelliKit sidecar** come first, because that project is blocked on both.
+Promoted 2026-09-08, neither with production code written. Ordered by the owner: the packets
+filed from the **IntelliKit sidecar** come first, because that project is blocked on them.
 
-1. `bf_exit-status-not-propagated` — `omniprobe` always exits 0. **Needs no GPU** (`/bin/sh`
-   stubs), so it is the cheapest of the three to pick up.
-2. `bf_pyhandler-gil` — `pythonMessageHandler` has no GIL and is unreachable. Needs a GPU and an
-   architecture-matched build. Ships as a plugin, not a core change.
-3. `bf_intern-clone-name` — internal-linkage kernels under `-fgpu-rdc` fail instrumented-alternative
+1. `bf_pyhandler-gil` — `pythonMessageHandler` has no GIL and is unreachable. Needs a GPU and an
+   architecture-matched build. Ships as a plugin, not a core change. **Now the only packet
+   blocking IntelliKit**, so it is the top recommended action. Its AC-4 can drop the workaround
+   it carried for the exit-status bug (it checked the target's own status because omniprobe's was
+   useless); the packet text is deliberately unamended, since that write belongs to the packet.
+2. `bf_intern-clone-name` — internal-linkage kernels under `-fgpu-rdc` fail instrumented-alternative
    lookup ~37.5% of the time, decided by one character of a content hash.
 
 Each begins by re-stamping its own `Base Commit`: promoting three packets in one commit leaves
 every gate reporting its siblings' directories as out-of-scope writes.
+
+**Completed 2026-10-26: `bf_exit-status-not-propagated`.** Packet in
+`.agents/workflows/done/`. `omniprobe` propagates the child's exit status (`128 + signal` for
+signal deaths, JSON finalized before exit). GitHub issue #41 closed. It had been code-complete
+since 2026-09-08 and blocked solely on AC-8's `Suites skipped: 0`, which is unreachable off
+gfx90a — met with no code change once a gfx90a node was available.
+
+## In flight, not yet a packet (2026-10-26)
+
+- **GitHub PR #44 / issue #43** (external contributor). PR #44 drops stale `amdgpu-no-*`
+  attributes from instrumented clones; verified locally on gfx90a (compiles `-Werror` against
+  both LLVMs, suite 11/11, uninstrumented originals untouched) but **not merged**. Note it says
+  `Fixes #43` while #43 is broader — item 2, the `validateAMDGPUTarget` exact-triple match, is
+  still open. Full analysis in `.untracked/pr44-issue43-investigation.md`.
+- **Triton v3.7.1 → v3.8.0 bump.** Not started, not yet a packet. Audit findings recorded in the
+  `build-system` unit. Validate on a GPU node before bumping the pin; CI cannot see the failure
+  class that matters.
 
 ## Current Risks
 
@@ -48,13 +66,21 @@ every gate reporting its siblings' directories as out-of-scope writes.
   **RETRACTED 2026-09-08.** It is not broken. Measured on gfx90a hardware, it passes at
   `74c6ed2` and at HEAD — `Found instrumented alternative for sscal kernel`. The risk was
   recorded from a node where the suite could not run at all.
-- **Unfiled defect: `.intern.<hash>` clone names.** A `static` (internal-linkage) `__global__`
-  kernel under `-fgpu-rdc` gets a `.intern.<hash>` suffix that `getInstrumentedName`
-  (`src/utils.cc:117`) does not reconstruct, so the kernel runs uninstrumented and prints
-  `No instrumented alternative found`. Silent partial data loss. Correlation measured on PENNANT
-  (`static` kernels fail, the one non-`static` kernel does not); the `-fgpu-rdc`-plus-internal-
-  linkage mechanism is inferred, not tested. See `current-focus.md` for the proposed
-  20-line reproducer and the one-command check that would confirm or kill the hypothesis.
+- ~~**Unfiled defect: `.intern.<hash>` clone names.**~~ **FILED 2026-09-08 as
+  `bf_intern-clone-name`** (active). The mechanism is no longer inferred: internal linkage *plus*
+  `-fgpu-rdc` is necessary and sufficient, measured with a three-kernel in-repo probe. The defect
+  is **intermittent at ~37.5% per translation unit**, decided by whether the content hash begins
+  with a hex letter, because two independent defects cancel in the other ~62.5%. Read the
+  packet's `dossier.md` § Background before touching `src/utils.cc` or
+  `src/instrumentation/InstrumentationCommon.cpp`.
+- **The AMDGPU attributor's conclusions leak onto instrumented clones.** Live on the HIP path
+  today, not only under Triton. Impact is bounded — 1-D launches are unaffected because folding
+  the workgroup y/z reads to zero is the correct answer there; 2-D/3-D launches of kernels that
+  do not themselves read `blockIdx.y/z` get a collapsed dh_comms sub-buffer index. Whether that
+  collapse is observable in handler output is **unverified**. Fix available as PR #44; see the
+  `instrumentation` unit.
+- **CI cannot catch semantic breakage.** `build.yml` is build-only, `ubuntu-latest`, no GPU, no
+  test invocation. A green CI run says the code compiles and nothing more. See `build-system`.
 
 ## Changed Assumptions
 
