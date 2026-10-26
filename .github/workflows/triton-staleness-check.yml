@@ -36,10 +36,31 @@ jobs:
           fi
           echo "Latest Triton release: ${LATEST}"
 
-          # Compare
+          # Compare.
+          #
+          # This check is ADVISORY and must not fail the run. Being behind the latest
+          # Triton release is a normal, intended state: the pin is deliberate, and moving
+          # it means rebuilding the toolchain image and revalidating the suite, which is a
+          # tracked piece of work rather than something to do on a cron's say-so.
+          #
+          # It used to `exit 1` here, which meant that from the moment v3.8.0 shipped the
+          # job failed every Monday and kept failing. Eight consecutive red runs taught
+          # everyone to ignore the job, which is worse than not having it: a real failure
+          # in it would have been invisible. Report, and stay green.
           if [ "$PINNED" != "$LATEST" ]; then
-            echo "::error::Pinned Triton version (${PINNED}) differs from latest release (${LATEST}). Consider updating."
-            exit 1
+            echo "::warning::Pinned Triton version (${PINNED}) differs from latest release (${LATEST}). Consider updating."
+            {
+              echo "### Triton pin is behind upstream"
+              echo ""
+              echo "| | version |"
+              echo "|---|---|"
+              echo "| Pinned (\`containers/toolchain.Dockerfile\`) | \`${PINNED}\` |"
+              echo "| Latest upstream release | \`${LATEST}\` |"
+              echo ""
+              echo "Advisory only. Bumping the pin requires a toolchain image rebuild and a"
+              echo "full suite revalidation — file a workflow packet rather than bumping in place."
+            } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "Triton version is up to date."
+            echo "Triton pin \`${PINNED}\` matches the latest upstream release." >> "$GITHUB_STEP_SUMMARY"
           fi
