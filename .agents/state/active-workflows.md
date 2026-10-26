@@ -21,7 +21,6 @@ Packet directories follow the pattern: `.agents/workflows/<state>/<workflow-id>/
 | rf_test-organization | refactor | suspended | unassigned | tests/ | None | Design decisions needed | 2026-08-25 |
 | ft_whitepaper-omniprobe | feature | suspended | unassigned | ~/repos/whitepaper_omniprobe/ | None (outside omniprobe repo) | Awaiting user review | 2026-08-25 |
 | bf_intern-clone-name | bugfix | active | unassigned | src/utils.cc, src/instrumentation/InstrumentationCommon.cpp, src/instrumentation/include/InstrumentationCommon.h, tests/ | Overlaps rf_exact-arch-bitcode (same InstrumentationCommon.cpp) — that packet is suspended, so not a live collision; do not run both at once | None | 2026-09-08 |
-| bf_exit-status-not-propagated | bugfix | active | unassigned | omniprobe/omniprobe, omniprobe/api/omniprobe.py, tests/ | Shares tests/run_all_tests.sh with bf_intern-clone-name and bf_pyhandler-gil — append-only, one run_suite line each | None | 2026-09-08 |
 | bf_pyhandler-gil | bugfix | active | unassigned | src/pyHandler.cc, inc/pyHandler.h, plugins/, omniprobe/config/analytics.py, tests/ | Shares tests/run_all_tests.sh with the two above — append-only. Needs a GPU and an arch-matched build | None | 2026-09-08 |
 
 ### rf_lazy-kerneldb-loading's premise is invalidated — read this before resuming it
@@ -53,26 +52,33 @@ hash begins with a hex letter, and the other ~62.5% work only because two indepe
 cancel. PENNANT is *not* needed; a three-kernel in-repo fixture reproduces both arms. Read the
 packet's `dossier.md` § Background before touching either file.
 
-### Three active bugfixes, and the order they should be taken in
+### Two active bugfixes, and the order they should be taken in
 
-All three were promoted 2026-09-08 and none has had any production code written for it.
+*Was three. `bf_exit-status-not-propagated` completed 2026-10-26 — packet in `done/`.*
 
-Two of them — `bf_exit-status-not-propagated` and `bf_pyhandler-gil` — arrived as seeds from an
-agent working in the **IntelliKit sidecar**, whose W5 extensibility spike found them against
-pinned git objects of this repository. **IntelliKit depends on both fixes**, so the owner's
-direction (2026-09-08) is to take them **before** `bf_intern-clone-name`, in fresh sessions.
+All three were promoted 2026-09-08. The two that remain still have no production code written
+for them.
 
-They are independent of each other and can be done in either order, with one asymmetry worth
-knowing: `bf_pyhandler-gil`'s AC-4 has to check the instrumented target's *own* exit status
-rather than omniprobe's, precisely because `bf_exit-status-not-propagated` is unfixed. Doing the
-exit-status packet first lets that check be simplified; doing it second costs nothing.
+Two of the original three — `bf_exit-status-not-propagated` and `bf_pyhandler-gil` — arrived as
+seeds from an agent working in the **IntelliKit sidecar**, whose W5 extensibility spike found
+them against pinned git objects of this repository. **IntelliKit depends on both fixes**, so the
+owner's direction (2026-09-08) is to take them **before** `bf_intern-clone-name`, in fresh
+sessions. With the exit-status half done, `bf_pyhandler-gil` is now the one thing standing
+between IntelliKit and an unblocked W5 — take it next.
 
-`bf_exit-status-not-propagated` needs **no GPU** — its targets are `/bin/sh` stubs — so it can run
-on any node. `bf_pyhandler-gil` needs a GPU and an architecture-matched build.
+**`bf_pyhandler-gil`'s AC-4 can now be simplified.** It was written to check the instrumented
+target's *own* exit status rather than omniprobe's, precisely because
+`bf_exit-status-not-propagated` was unfixed. That workaround is no longer necessary: omniprobe
+propagates the child's status as of `c5aec00`, so AC-4 may check omniprobe's status directly.
+The packet's text has **not** been amended — the write scope belongs to that packet, so make the
+edit when you pick it up.
+
+`bf_pyhandler-gil` needs a GPU and an architecture-matched build.
 
 **The one shared file is `tests/run_all_tests.sh`**, declared in all three write scopes on
-purpose. Each packet appends only its own `run_suite` line and edits no other. Executed in
-separate sessions as intended, that is append-only and conflict-free.
+purpose. Each packet appends only its own `run_suite` line and edits no other. The exit-status
+packet has taken suite 11; the next one appends suite 12. Executed in separate sessions as
+intended, that is append-only and conflict-free.
 
 **All six of the suspended packets above were suspended on 2026-08-25, and none of them was progressing.** Every packet's newest
 file dated from 2026-04-27 or 2026-04-28 — four months dormant — while the table went on calling
@@ -98,6 +104,7 @@ Note that two overlaps recorded above are still live and still matter on resume:
 | rf_triton-v3.7-bump | refactor | 2026-07-13 |
 | ft_omniprobe-python-api | feature | 2026-07-20 |
 | bf_hip-duplicate-code-object-load | bugfix | 2026-09-08 |
+| bf_exit-status-not-propagated | bugfix | 2026-10-26 |
 
 ## Completed (migrated from KT)
 

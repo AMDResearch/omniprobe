@@ -26,8 +26,17 @@ during. See `.agents/state/active-workflows.md`.
 
 ## Corrected 2026-09-08 — two long-standing "known defects" that do not exist
 
-Both were artefacts of running gfx90a binaries on a gfx950 GPU, where they fail to dispatch
-silently and produce exit 0 with no output. Measured on `k005-005.hpcfund` (MI210 / gfx90a):
+Both were artefacts of running gfx90a binaries on a gfx950 GPU. Measured on `k005-005.hpcfund`
+(MI210 / gfx90a):
+
+> **Amended 2026-10-26.** This section used to say such a binary "fails to dispatch silently and
+> produces exit 0 with no output". **The silence was not the architecture mismatch — it was
+> `bf_exit-status-not-propagated`.** Measured directly on gfx950,
+> `build/tests/test_kernels/simple_heatmap_test` **dies of SIGSEGV and exits 139**. The exit 0
+> only ever appeared when the binary was observed *through* omniprobe, which discarded the child's
+> status. That packet's fix (`c5aec00`) removes the instrument that manufactured the misreading,
+> so this failure mode is now loud. The two corrections below still stand — they were about the
+> defects not existing, which is unaffected — but the mechanism named here was wrong.
 
 - **The Handler-tests failure** (`Expected pattern not found: 'memory heatmap report'`) was
   carried in this file and in the bugfix packet as a pre-existing code defect for months. It is
@@ -44,8 +53,9 @@ quietly does nothing.
 
 ## Current Focus Areas
 
-- **Unblock IntelliKit** — `bf_exit-status-not-propagated` then `bf_pyhandler-gil`. Both were
-  filed from the IntelliKit sidecar and that project depends on both fixes. This is the priority.
+- **Unblock IntelliKit** — `bf_pyhandler-gil` is now the only packet standing in the way.
+  `bf_exit-status-not-propagated`, the other half, **completed 2026-10-26**. Both were filed from
+  the IntelliKit sidecar and that project depends on both fixes. This is the priority.
 - Fix the `.intern.<hash>` clone-name defect (bf_intern-clone-name — active, queued third).
 - Review and finalize Omniprobe whitepaper (ft_whitepaper-omniprobe — awaiting user review).
 - Adopt lazy kernelDB loading in the interceptor (rf_lazy-kerneldb-loading — **contract needs
@@ -56,22 +66,29 @@ quietly does nothing.
 
 ## Active Workflows
 
-**Three active bugfixes**, all promoted 2026-09-08, none with any production code written yet.
+**Two active bugfixes**, both promoted 2026-09-08, neither with any production code written yet.
 Six suspended. See `.agents/state/active-workflows.md`.
 
 | Packet | Needs a GPU? | Why it is queued where it is |
 |---|---|---|
-| `bf_exit-status-not-propagated` | **no** — `/bin/sh` stubs | IntelliKit depends on it; its only failure detection is the returncode this bug makes constant |
 | `bf_pyhandler-gil` | yes, arch-matched | IntelliKit depends on it; the Python handler path is unusable without it |
 | `bf_intern-clone-name` | yes, gfx90a | found in-house; no external consumer waiting |
 
-**Take the first two first.** Owner direction 2026-09-08: both were filed by an agent in the
-IntelliKit sidecar and that project is blocked on them. They are independent of each other.
+**Take `bf_pyhandler-gil` first.** Owner direction 2026-09-08 put the two IntelliKit-filed
+packets ahead of `bf_intern-clone-name`; one of those is now done, so this is the remaining one.
 
-**Every one of the three starts with the same step 0** — re-stamp its `Base Commit` to `HEAD` and
-commit that alone. All three were promoted in one commit, so each currently reports the other
-two's packet directories as out-of-scope writes. The check is right; the subject is wrong. Each
-handoff explains it.
+**Both start with the same step 0** — re-stamp the `Base Commit` to `HEAD` and commit that alone.
+All three were promoted in one commit, so each currently reports the others' packet directories
+as out-of-scope writes. The check is right; the subject is wrong. Each handoff explains it.
+
+**`bf_pyhandler-gil` also gets a simplification for free.** Its AC-4 was written to check the
+instrumented target's *own* exit status, as a workaround for
+`bf_exit-status-not-propagated` being unfixed. It is fixed; AC-4 may check omniprobe's status
+directly. The packet text was deliberately left unamended — that write belongs to the packet.
+
+**Completed 2026-10-26: `bf_exit-status-not-propagated`.** Packet in `done/`. `omniprobe` now
+propagates the child's exit status (`128 + signal` for signal deaths, JSON finalized before
+exit). Closed GitHub issue #41.
 
 ## Immediate Next Recommended Actions
 
@@ -159,9 +176,10 @@ handoff explains it.
    Note the PENNANT tree (`branch mi300a` at `088a2a3`) has uncommitted build fixes in its working
    directory, so the original reproducer is **not** reproducible from a clean checkout. That is a
    second reason to prefer an in-repo one.
-2. **Execute `bf_exit-status-not-propagated`** — no GPU needed, IntelliKit is blocked on it.
-   The gate already reproduces the defect and its downstream consequence at the base commit.
-3. **Execute `bf_pyhandler-gil`** — GPU and arch-matched build required. Note its scope was
+2. ~~**Execute `bf_exit-status-not-propagated`**~~ — **DONE 2026-10-26.** Packet in `done/`,
+   GitHub issue #41 closed.
+3. **Execute `bf_pyhandler-gil`** — GPU and arch-matched build required. **This is now the top
+   recommended action**: it is the last thing blocking IntelliKit. Note its scope was
    decided by the owner: the Python bridge ships as a **plugin** under `plugins/`, and the core
    library must not acquire a libpython dependency. AC-6 enforces that.
 4. Execute `rf_exact-arch-bitcode` — upstream dependency resolved, rewrite `getBitcodePath()`.
@@ -177,6 +195,14 @@ handoff explains it.
 
 ## Project-Level Risks
 
+- **`fuseblk` does not automatically mean "relocate the build to `/tmp`".** The machine-level
+  filesystem notes flag `virtiofs` and `fuseblk` as lacking mmap support, breaking
+  `hipModuleLoad` under ROCm 7.2, with building to `/tmp` recorded as the workaround. Measured
+  2026-10-26 on `k006-004-v3.hpcfund`, where `/work1` and `/home1` are both `fuseblk`: **all
+  eleven suites passed straight from the in-repo build tree**, GPU-dispatching ones included, with
+  no relocation. The hazard is real but not universal, and which operations actually trip it is
+  uncharacterised. Treat the workaround as a response to an observed failure, not a precondition
+  — and do not read a green run on `fuseblk` as evidence the hazard is gone either.
 - **Test-environment variables are set, and two of them do not travel between nodes.**
   `TRITON_DIR` is architecture-independent (verified 2026-09-08: the Triton suite passes on
   gfx950 using a tree built on gfx90a) and is in `.claude/settings.local.json`'s `env` block.

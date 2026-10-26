@@ -188,3 +188,35 @@ interrupted, this log is the only record of progress.
 - **Blocker / Risk**: AC-8 needs a **gfx90a** node with `.untracked/test-env.sh` sourced. No
   acceptance criterion was weakened, redefined or substituted; AC-8 stands exactly as written
   and is simply unmet.
+
+### 2026-10-26 03:17 CDT
+
+- **Actor**: Claude Opus 5 (interactive session)
+- **Planned step**: AC-8, then workflow completion
+- **Action taken**: Rebuilt `build/` (gfx90a, ROCm 7.2.0) on `k006-004-v3.hpcfund`, sourced
+  `.untracked/test-env.sh`, ran `tests/run_all_tests.sh`, then ran `acceptance.sh`. All
+  acceptance criteria verified; workflow marked done.
+- **Result**: success
+- **Files touched**: dossier.md, handoff.md, artifacts.md, run-log.md, active-workflows.md,
+  current-focus.md. **No production or test file was touched** — the code was unchanged from
+  `c5aec00`/`80bcf2e`; only the hardware differed.
+- **Verification**: `tests/run_all_tests.sh` → `Suites run 11, passed 11, skipped 0, failed 0`,
+  exit 0 (transcript: `.untracked/ac8-run-2026-10-26.log`). `acceptance.sh` →
+  **9 passed, 0 weak, 0 judgement, 0 failed — ACCEPTANCE PASSED**.
+- **Criteria impact**: **All criteria met.** AC-8 moved FAIL → PASS; AC-1..AC-7 and SCOPE
+  unchanged at PASS.
+- **Blocker / Risk**: none.
+
+**Two things this run settled that the 2026-09-08 entry could not.**
+
+1. **The gfx90a prediction held exactly.** The three instrumented-library suites — the only ones
+   never exercised against the fix — passed on first run, with no adjustment to the test
+   environment and no change to the fix. The packet sat seven weeks on a hardware constraint and
+   needed nothing but the hardware.
+2. **fuseblk did not bite.** `/work1` and `/home1` on this node are `fuseblk`, which the project's
+   filesystem notes flag as carrying the same mmap hazard as virtiofs — `hipModuleLoad` failing
+   under ROCm 7.2 — with "build to `/tmp` and run from there" recorded as the workaround. No
+   relocation was needed: all eleven suites, including the GPU-dispatching ones, ran green
+   straight from the in-repo build tree. **The hazard is real but not universal**, and the notes
+   should not be read as "fuseblk means relocate". Which operations actually trip it is still
+   uncharacterised; this run is one data point against the blanket reading, not a refutation.

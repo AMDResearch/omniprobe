@@ -4,20 +4,33 @@
 
 ## Current Status
 
-**Active. The fix is implemented, committed and verified; AC-1 through AC-7 are met.**
+**Done. All acceptance criteria met.**
 Base commit re-stamped to `24fcd82` (commit `cd62559`); fix in `c5aec00`.
 
-**AC-8 is the only criterion outstanding, and it is blocked by hardware, not by the code.**
-See § Active Risks below — it needs a gfx90a node.
-
-Step 0 (re-stamp the base commit) is **done**. `SCOPE` is `PASS` and will stay there.
+AC-8, the last outstanding criterion, was met on 2026-10-26 once a gfx90a node was available.
+No code changed between the 2026-09-08 gfx950 run and the closing run — the only difference was
+the hardware.
 
 ## Last Verified
 
-2026-09-08, on `k007-005-v2.hpcfund` (**gfx950** / MI350X), ROCm 7.2.0, against `build/`
-(a gfx90a tree — irrelevant here, since every target in this packet is a `/bin/sh` stub).
+**2026-10-26, on `k006-004-v3.hpcfund` (gfx90a / MI210), ROCm 7.2.0**, against a freshly rebuilt
+`build/` tree, with `.untracked/test-env.sh` sourced so both instrumented-library variables were
+exported.
 
-Gate result after the fix: **7 passed, 0 weak, 0 judgement, 1 failed** — the failure is AC-8.
+- `tests/run_all_tests.sh`: **Suites run 11, passed 11, skipped 0, failed 0**, exit 0.
+  Full transcript at `.untracked/ac8-run-2026-10-26.log`.
+- Gate result: **9 passed, 0 weak, 0 judgement, 0 failed — ACCEPTANCE PASSED.**
+
+Worth recording: `/work1` and `/home1` on that node are **fuseblk**, which carries the known
+mmap hazard that breaks `hipModuleLoad` under ROCm 7.2. It did not bite — the suite ran green
+from the in-repo build tree with no relocation to `/tmp`. So fuseblk is not by itself
+disqualifying for this suite, contrary to what the filesystem note would lead you to assume.
+
+### Superseded: the 2026-09-08 measurement
+
+2026-09-08, on `k007-005-v2.hpcfund` (**gfx950** / MI350X), against `build/` (a gfx90a tree —
+irrelevant there, since every target in this packet is a `/bin/sh` stub).
+Gate result after the fix: **7 passed, 0 weak, 0 judgement, 1 failed** — the failure was AC-8.
 
 Measured by hand as well, exact numbers not "nonzero":
 
@@ -53,13 +66,13 @@ which the dossier's Constraints ask for explicitly, is preserved.
 
 ## Next Exact Step
 
-**Run `tests/run_all_tests.sh` on a gfx90a node with `.untracked/test-env.sh` sourced, and
-confirm `Suites failed: 0` and `Suites skipped: 0`.** That is AC-8 and it is all that remains.
-Nothing else about the packet is open.
+**N/A — workflow complete.**
 
-## What is already known about the gfx90a run
+## What was predicted about the gfx90a run, and what happened
 
-Do not assume the remaining step is a formality, but it is well-supported:
+The prediction below was written on 2026-09-08. It held: the three gfx90a-only library suites
+passed on first run, and the handler suites passed 25/25 on matching hardware as expected.
+Recorded unchanged because a prediction that held is worth as much as one that did not.
 
 - **The handler suite passes 25/25 with this fix live**, measured against the arch-matched
   `build_gfx950/` tree on this node. Its failure in the gfx950 full run is the gfx90a-binary
@@ -77,7 +90,13 @@ defects" were already attributed to that misreading.
 
 ## Active Risks / Blockers
 
-- **AC-8 cannot be measured on a gfx950 node.** `INSTRUMENTED_ROCBLAS_LIB_DIR` and
+**None. The packet is complete.** The two notes below are retained because they outlive it:
+the first as a standing property of the test environment, the second as a constraint on the two
+sibling packets that still share `tests/run_all_tests.sh`.
+
+- **AC-8 cannot be measured on a gfx950 node.** *(Resolved for this packet on 2026-10-26 by
+  running on gfx90a; the constraint itself is unchanged and still applies to any future gate that
+  demands `Suites skipped: 0`.)* `INSTRUMENTED_ROCBLAS_LIB_DIR` and
   `INSTRUMENTED_HIPBLASLT_LIB_DIR` are gfx90a-only, `.untracked/test-env.sh` deliberately
   withholds them elsewhere, and the three instrumented-library suites then print their own skip
   marker and are counted as skipped — so `Suites skipped: 0` is unreachable here. `acceptance.sh`
@@ -93,10 +112,8 @@ defects" were already attributed to that misreading.
 
 ## Required Reads Before Resuming
 
-1. This file. `dossier.md` only if you need the contract text — the work is done and the
-   remaining step is a single command.
-2. `.agents/state/current-focus.md` § Project-Level Risks, for why the node's architecture
-   decides whether AC-8 is measurable.
+N/A — nothing to resume. For the record of what this packet established, read this file's
+§ One finding worth carrying forward and § Last Verified.
 
 ## Proposed Spec Changes
 

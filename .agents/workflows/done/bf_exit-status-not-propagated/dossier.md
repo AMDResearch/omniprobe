@@ -4,7 +4,7 @@
 
 - Workflow ID: bf_exit-status-not-propagated
 - Workflow Type: bugfix
-- Lifecycle State: active
+- Lifecycle State: done
 - Owner / Current Executor: unassigned
 - Intended Write Scope: see the `write-scope` block below (canonical)
 - Dependencies On Other Active Workflows: shares `tests/run_all_tests.sh` with
