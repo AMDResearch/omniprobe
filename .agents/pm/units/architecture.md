@@ -69,6 +69,10 @@ bank conflicts.
 | Instrumentation | `instrumentation.md` | `src/instrumentation/` | LLVM IR passes for kernel cloning and instrumentation |
 | CLI Orchestrator | `omniprobe-cli.md` | `omniprobe/omniprobe` | Python entry point, environment setup |
 
+Load the unit for the subsystem you are working in, not all of them. The `When To Load` column of
+`pm-index.md` maps paths to units; add `build-system` whenever a build or environment is involved, and
+`testing` whenever you run or change a suite.
+
 ## Sub-projects
 
 | Sub-project | Location | Purpose |
@@ -107,3 +111,4 @@ None.
 ## Last Verified
 
 2026-04-27 (trimmed by pm-restructure; build/env/path sections moved to build-system)
+2026-10-27 (mechanical re-check only: every file path and code symbol named in this unit exists in the tree; prose claims not re-read; added loading guidance after the subsystem table)

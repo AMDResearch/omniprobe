@@ -106,3 +106,4 @@ None.
 2026-03-24
 2026-09-08 (data flow steps 4-5 rewritten for bf_hip-duplicate-code-object-load: app-loaded code objects are indexed rather than loaded into a private executable, and the -k filter now gates the clone swap at dispatch)
 2026-09-08 (lookup-key scheme and its dependence on demangler success; measured)
+2026-10-27 (mechanical re-check only: every file path and code symbol named in this unit exists in the tree; prose claims not re-read; no corrections)

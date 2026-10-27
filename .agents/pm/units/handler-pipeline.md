@@ -50,7 +50,7 @@ resources across kernel dispatches.
 |--------|--------|---------|
 | libMemAnalysis64.so | `plugins/memory_analysis_plugin.cc` | `memory_analysis_handler_t` |
 | libLogMessages64.so | `plugins/logger_plugin.cc` | `message_logger` |
-| libBasicBlocks64.so | `plugins/basic_block_plugin.cc` | `basic_block_handler` |
+| libBasicBlocks64.so | `plugins/basic_block_plugin.cc` | `basic_block_analysis` (`inc/basic_block_analysis.h`) |
 
 ## Invariants
 
@@ -110,3 +110,4 @@ None.
 
 2026-04-27 (merged from plugins + comms-mgr by pm-restructure)
 2026-09-08 (pyHandler GIL defects and unreachability; verified by grep, nm and ldd)
+2026-10-27 (mechanical re-check only: every file path and code symbol named in this unit exists in the tree; prose claims not re-read; basic_block_plugin handler corrected to basic_block_analysis)

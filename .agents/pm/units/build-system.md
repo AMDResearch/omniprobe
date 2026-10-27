@@ -16,7 +16,7 @@ configuration, and external dependency management (submodules, ROCm, LLVM).
 | `tests/CMakeLists.txt` | Test kernel compilation |
 | `tests/test_kernels/CMakeLists.txt` | Test kernel targets with `-g` and `-fpass-plugin` |
 | `cmake_modules/add_instrumentation_plugins.cmake` | CMake function for building instrumentation plugins per LLVM variant |
-| `src/instrumentation/CMakeLists.txt` | Instrumentation plugin builds |
+| `src/instrumentation/*.cpp` | Instrumentation plugin sources — there is no `CMakeLists.txt` here; the plugins are built by `add_instrumentation_plugins.cmake`, called from the top-level `CMakeLists.txt` |
 
 ## Key Types and Classes
 

@@ -53,7 +53,8 @@ None (leaf submodule).
 
 ## Negative Knowledge
 
-- Sub-project KT at `external/dh_comms/.agents/kt/` may not be initialized yet. Do not assume it exists.
+- There is no `external/dh_comms/.agents/kt/`. The submodule has its own Agentic Meta Project tree
+  instead (`external/dh_comms/.agents/`, with PM under `.agents/pm/`) — read that, not a KT.
 - Use `git -C "$(git rev-parse --show-toplevel)/external/dh_comms"` for git operations in the submodule. Do not `cd` into the submodule directory and run `git` directly.
 
 ## Known Issues
@@ -77,3 +78,4 @@ None.
 ## Last Verified
 
 2026-04-27 (re-verified; core content accurate, minor omissions noted but non-blocking)
+2026-10-27 (mechanical re-check only: every file path and code symbol named in this unit exists in the tree; prose claims not re-read; hipHostMalloc* flag values re-checked against ROCm 7.2 headers and hold; KT note replaced — the submodule has its own .agents/ tree)

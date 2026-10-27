@@ -172,6 +172,21 @@ first draft, because the condition it checked was gated off.
 - What refactoring is needed to enable true unit tests with GoogleTest?
 - Should we create a test fixture library for handler testing?
 
+## Related Workflows
+
+Workflows whose write scope reaches into `tests/`. State (= directory under `.agents/workflows/`) in parentheses.
+
+- `bf_intern-clone-name` (active) — new suite + `tests/test_kernels/` fixture; appends to `run_all_tests.sh`.
+- `bf_pyhandler-gil` (active) — new suite `tests/test_python_handler.sh`; appends to `run_all_tests.sh`.
+- `bf_library-filter-chain-silent-pass` (draft) — `tests/library_filter_chain/run_test.sh` only.
+- `rf_test-organization` (suspended) — all of `tests/`; restructures suites, collides with everything above.
+- `rf_exact-arch-bitcode` (suspended) — `tests/test_kernels/CMakeLists.txt`.
+- `rf_rename-logduration-to-omniprobe` (suspended) — `tests/CMakeLists.txt`.
+- Done, for history: `bf_exit-status-not-propagated` (suite 11), `bf_hip-duplicate-code-object-load`
+  (suites 7–10), `ft_omniprobe-python-api`.
+
+`tests/run_all_tests.sh` is shared and append-only: each packet adds its own `run_suite` line and edits no other.
+
 ## Last Verified
 
 - 2026-04-27 (removed transient bug/workflow references per pm-reflect)

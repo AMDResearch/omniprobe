@@ -68,3 +68,4 @@ None.
 ## Last Verified
 
 2026-07-20 (updated JSON schema documentation for ft_omniprobe-python-api)
+2026-10-27 (mechanical re-check only: every file path and code symbol named in this unit exists in the tree; prose claims not re-read; no corrections)

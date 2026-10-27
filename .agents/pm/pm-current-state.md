@@ -64,8 +64,11 @@ gfx90a — met with no code change once a gfx90a node was available.
 ## Deliberately not a packet (2026-10-27)
 
 - **Upstream Triton report** about `scripts/build-llvm-project.sh` (no `set -e`, and `jq -r`
-  turning a missing key into `null` with exit 0). Measured against real jq. Parked by the owner,
-  who wants to discuss it with colleagues first. Do not file it unprompted.
+  turning a missing key into `null` with exit 0). **Reported 2026-10-27** as a comment on
+  triton-lang/triton#12413 (an existing `set -e` request whose PR #12415 was closed unmerged
+  without comment), scoped by the owner to the jq-missing case: wrong LLVM commit built, exit 0.
+  Asks ThomasRaoux why #12415 was closed and offers a PR (`set -e` + jq in the README). Wait for
+  a reply; do not open the PR unprompted. Our own jq prerequisite stays (`pm-decisions`).
 - **Fork-PR CI and the stale external PRs** (#20, #37–#40, #42): diagnosis in `build-system`.
   Needs owner decisions (approval policy, public toolchain image) before it can be a packet.
   #39 may be obsolete since `bf_hip-duplicate-code-object-load`; #38 overlaps

@@ -54,7 +54,8 @@ None (leaf submodule).
 
 ## Negative Knowledge
 
-- Sub-project KT at `external/kerneldb/.agents/kt/` may not be initialized yet.
+- There is no `external/kerneldb/.agents/kt/` (only a `kt.archive/`). The submodule has its own
+  Agentic Meta Project tree (`external/kerneldb/.agents/`, with PM under `.agents/pm/`) — read that.
 
 ## Open Questions
 
@@ -64,3 +65,4 @@ None.
 
 2026-04-27 (removed transient workflow reference per pm-reflect)
 2026-09-08 (kernel_co_map_ is now populated for every kernel in an indexed code object, regardless of the -k filter, so a filtered run keeps DWARF correlation; previously the filter gated it and a dispatched kernel had to be sacrificed to prime the database)
+2026-10-27 (mechanical re-check only: every file path and code symbol named in this unit exists in the tree; prose claims not re-read; KT note replaced — the submodule has its own .agents/ tree)
