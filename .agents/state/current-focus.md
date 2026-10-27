@@ -116,8 +116,13 @@ exit). Closed GitHub issue #41.
 *Updated 2026-10-27 — the list below this note predates the Triton bump and #43/#44, which are
 both done. In order now: (a) `bf_pyhandler-gil`; (b) `bf_intern-clone-name`, after re-finding its
 line references; (c) `bf_library-filter-chain-silent-pass`, promote and execute. Parked by the
-owner, do not act on unprompted: an upstream Triton report about `build-llvm-project.sh`'s silent
-`null`-pin failure (owner is consulting colleagues), and fork-PR CI / triage of external PRs
+owner, do not act on unprompted: the upstream Triton `build-llvm-project.sh` silent-pin failure —
+**reported 2026-10-27 as a comment on triton-lang/triton#12413** (an existing open issue asking for
+`set -e`; its PR #12415 was closed unmerged without comment by ThomasRaoux, whom the comment asks
+why). We offered a PR (`set -e` + jq as a README prerequisite) if the change is welcome — wait for
+a reply before opening one. Comment text in `.untracked/triton-issue/`. The linked
+triton-ascend#2568 / PR #2573 is the same `set -e` fix for Ascend's own (separate, pre-jq) copy of
+the script — open, unmerged, and no fix for upstream; it does not explain #12415's closure. And fork-PR CI / triage of external PRs
 #37–#40, #42 (needs owner decisions; see `build-system`). The original list follows.*
 
 1. **~~File a packet for the `.intern.<hash>` clone-name defect.~~ FILED 2026-09-08 as
