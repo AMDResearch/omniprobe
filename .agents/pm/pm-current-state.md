@@ -36,10 +36,16 @@ filed from the **IntelliKit sidecar** come first, because that project is blocke
    it carried for the exit-status bug (it checked the target's own status because omniprobe's was
    useless); the packet text is deliberately unamended, since that write belongs to the packet.
 2. `bf_intern-clone-name` — internal-linkage kernels under `-fgpu-rdc` fail instrumented-alternative
-   lookup ~37.5% of the time, decided by one character of a content hash.
+   lookup ~37.5% of the time, decided by one character of a content hash. **Its dossier's line
+   references into `InstrumentationCommon.cpp` (e.g. `:211`) are stale**: `e6db747` and `b12d7f0`
+   both edited that file after its Base Commit `5b9425f`. Re-find them, do not trust them.
 
 Each begins by re-stamping its own `Base Commit`: promoting three packets in one commit leaves
 every gate reporting its siblings' directories as out-of-scope writes.
+
+**Draft (2026-10-27): `bf_library-filter-chain-silent-pass`.** `tests/library_filter_chain/run_test.sh`
+can report PASSED having run none of Tests 2–5, or having instrumented with a different tree's
+plugin than the omniprobe under test. Diagnosed and reproduced by its `acceptance.sh`; not fixed.
 
 **Completed 2026-10-26: `bf_exit-status-not-propagated`.** Packet in
 `.agents/workflows/done/`. `omniprobe` propagates the child's exit status (`128 + signal` for
@@ -47,21 +53,31 @@ signal deaths, JSON finalized before exit). GitHub issue #41 closed. It had been
 since 2026-09-08 and blocked solely on AC-8's `Suites skipped: 0`, which is unreachable off
 gfx90a — met with no code change once a gfx90a node was available.
 
-## In flight, not yet a packet (2026-10-26)
+## Done 2026-10-26/27, without a packet
 
-- **GitHub PR #44 / issue #43** (external contributor). PR #44 drops stale `amdgpu-no-*`
-  attributes from instrumented clones; verified locally on gfx90a (compiles `-Werror` against
-  both LLVMs, suite 11/11, uninstrumented originals untouched) but **not merged**. Note it says
-  `Fixes #43` while #43 is broader — item 2, the `validateAMDGPUTarget` exact-triple match, is
-  still open. Full analysis in `.untracked/pr44-issue43-investigation.md`.
-- **Triton v3.7.1 → v3.8.0 bump.** Not started, not yet a packet. Audit findings recorded in the
-  `build-system` unit. Validate on a GPU node before bumping the pin; CI cannot see the failure
-  class that matters.
+- **Triton bumped v3.7.1 → v3.8.0** (`7f18d4b`), after a local GPU validation and with the LLVM
+  pin made verifiable (`e18e4bb`) and the toolchain image checkpointed (`913ae31`). Toolchain
+  image and `build.yml` both green against it. See `build-system`.
+- **Issue #43 closed; PR #44 merged** (`b12d7f0`, Lixun Zhang). Item 1 of #43 — the triple match —
+  fixed first in `e6db747`; item 2 (the assert patch) was already handled. See `instrumentation`.
+
+## Deliberately not a packet (2026-10-27)
+
+- **Upstream Triton report** about `scripts/build-llvm-project.sh` (no `set -e`, and `jq -r`
+  turning a missing key into `null` with exit 0). Measured against real jq. Parked by the owner,
+  who wants to discuss it with colleagues first. Do not file it unprompted.
+- **Fork-PR CI and the stale external PRs** (#20, #37–#40, #42): diagnosis in `build-system`.
+  Needs owner decisions (approval policy, public toolchain image) before it can be a packet.
+  #39 may be obsolete since `bf_hip-duplicate-code-object-load`; #38 overlaps
+  `rf_exact-arch-bitcode`.
+- **Log which `libLLVMCore` a plugin actually bound to** (from `/proc/self/maps`) — would turn the
+  soname-collision hazard loud. An idea, not a commitment.
 
 ## Current Risks
 
-- **Library filter chain tests**: Previously flaky (test 2 hung, tests 4-5 failed). As of
-  2026-07-13 all 5 tests pass.
+- **Library filter chain tests can pass without testing anything** (found 2026-10-27). Its green
+  is trustworthy only when run from a repo whose `build/` is the tree under test — then all 5
+  tests do run and pass. See `bf_library-filter-chain-silent-pass` and `testing`.
 - ~~**rocBLAS integration test broken**: Instrumented sscal not found in current build.~~
   **RETRACTED 2026-09-08.** It is not broken. Measured on gfx90a hardware, it passes at
   `74c6ed2` and at HEAD — `Found instrumented alternative for sscal kernel`. The risk was
@@ -73,12 +89,13 @@ gfx90a — met with no code change once a gfx90a node was available.
   with a hex letter, because two independent defects cancel in the other ~62.5%. Read the
   packet's `dossier.md` § Background before touching `src/utils.cc` or
   `src/instrumentation/InstrumentationCommon.cpp`.
-- **The AMDGPU attributor's conclusions leak onto instrumented clones.** Live on the HIP path
-  today, not only under Triton. Impact is bounded — 1-D launches are unaffected because folding
-  the workgroup y/z reads to zero is the correct answer there; 2-D/3-D launches of kernels that
-  do not themselves read `blockIdx.y/z` get a collapsed dh_comms sub-buffer index. Whether that
-  collapse is observable in handler output is **unverified**. Fix available as PR #44; see the
-  `instrumentation` unit.
+- ~~**The AMDGPU attributor's conclusions leak onto instrumented clones.**~~ **FIXED 2026-10-27**
+  by PR #44 (`b12d7f0`): clones now get `workgroup_id_y/z` enabled. It affected the HIP path
+  (2-D/3-D launches could collapse dh_comms sub-buffer indices); on Triton v3.8.0 it was latent,
+  and #44 becomes live there when triton-lang/triton#10849 lands. See `instrumentation`.
+- **The next Triton bump is not a repeat of this one.** v3.8.0 lacks both #10849 and #11532
+  (subarch triples, pre-handled by `e6db747`); expect the Triton path to change behaviour. Validate
+  on a GPU node, with the test environment's Triton matched to the pin.
 - **CI cannot catch semantic breakage.** `build.yml` is build-only, `ubuntu-latest`, no GPU, no
   test invocation. A green CI run says the code compiles and nothing more. See `build-system`.
 
@@ -92,8 +109,9 @@ gfx90a — met with no code change once a gfx90a node was available.
 - `cleanroom-test` is a project-local skill (not from the agentic meta project template).
 - PM restructured (2026-04-27): `plugins` + `comms-mgr` merged into `handler-pipeline`;
   new `build-system` unit created from `architecture` + `instrumentation` extracts.
-- Triton pinned at v3.7.1 (bumped from v3.6.0, 2026-07-13). LLVM `PassPlugin.h` moved to
-  `llvm/Plugins/PassPlugin.h`; instrumentation passes use `__has_include` for portability.
+- Triton pinned at **v3.8.0** (bumped 2026-10-26, `7f18d4b`; previously v3.7.1 from 2026-07-13).
+  jq is now a build prerequisite. LLVM `PassPlugin.h` lives at `llvm/Plugins/PassPlugin.h` in
+  Triton's fork; instrumentation passes use `__has_include` for portability.
 - JSON output restructured (2026-07-20, ft_omniprobe-python-api): MemoryAnalysis and
   BasicBlockAnalysis emit flat, machine-readable JSON schemas. Previous nested
   `kernel_analysis.cache_analysis` structure replaced. Python API at `omniprobe/api/`

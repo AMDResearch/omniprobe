@@ -76,12 +76,17 @@ directory.
 
 ```bash
 cmake -B build -DROCM_PATH=/opt/rocm-7.2.0 -DCMAKE_HIP_ARCHITECTURES=gfx90a \
-  -DTRITON_LLVM=/home1/rvanoo/repos/triton/llvm-project/build \
+  -DTRITON_LLVM=<triton-repo>/llvm-project/build \
   -DINTERCEPTOR_BUILD_TESTING=ON \
   -DCMAKE_INSTALL_PREFIX=$PWD/install
 cmake --build build
 cmake --install build
 ```
+
+`<triton-repo>` must be a Triton checkout at the version pinned in `containers/toolchain.Dockerfile`
+(v3.8.0 as of 2026-10-27), built with `containers/triton_install.sh`, and given as an absolute
+path. Keep the local test environment's `TRITON_DIR` on the same tree: a suite run against a
+Triton other than the pinned one passes green and proves the wrong thing.
 
 ## Environment Variables
 
@@ -150,29 +155,87 @@ Anything whose failure mode is semantic rather than a compile error is invisible
 so a failed rebuild leaves `main` pinning a version that `latest-rocm7.2` does not contain, and
 `build.yml` then silently builds against the stale image. Validate locally before bumping.
 
-**Fork PRs probably cannot pass CI at all** (hypothesis, untested as of 2026-10-26):
-`build.yml` references `secrets.DOCKERHUB_USERNAME` under a `pull_request` trigger, and GitHub
-does not expose secrets to PRs from forks — `IMAGE` would expand to `:latest-rocm7.2`, an invalid
-reference. That matches the observed failure on PR #44 ("likely failed because of a workflow file
-issue", after a 720-hour stuck runner) and would mean every external PR is structurally red.
-Related: open GitHub issue #20, "Update CI Runners to use new Docker containers".
+**A green `build.yml` right after a bump proves nothing until you check the digest.** A push
+that changes the Dockerfile triggers both workflows at once, so the first `build.yml` pulls the
+*old* image. To verify a build used the new one, compare the `Digest: sha256:…` on its
+`docker pull` line with the manifest list the toolchain run pushed
+(`pushing manifest for …:latest-rocm7.2@sha256:…`). Then `gh workflow run build.yml`.
 
-## Triton pin facts (checked 2026-10-26)
+**Two-stage toolchain image with a cache checkpoint (`913ae31`, 2026-10-27).** The Dockerfile
+has an `llvm` stage (apt + LLVM build) and a `toolchain` stage (`FROM llvm`; Triton wheel), and
+`toolchain-image.yml` builds `--target llvm` with `outputs: type=cacheonly` first. Reason:
+**BuildKit exports cache only when a solve succeeds** — a failure in the Triton step discarded a
+completed ~2h LLVM build (2026-10-26 run: imports, zero exports). Now each step exports its own
+cache. In logs the phrases are `preparing build cache for export` / `cache export … done` — **not**
+`exporting cache`; grepping for the latter returns 0 on a successful export and once nearly got the
+checkpoint reported broken. `TRITON_VERSION` is declared **once**, as a global `ARG` before the
+first `FROM`, re-declared bare per stage — `triton-staleness-check.yml` greps for the defaulted
+assignment and must find exactly one, and a comment quoting it counts too.
 
-`containers/toolchain.Dockerfile:10` pins `TRITON_VERSION=v3.7.1`. Upstream v3.8.0 released
-2026-08-28. Two things change across that boundary:
+**Why external PRs never get CI (measured 2026-10-26).** Two stacked blockers:
+1. `gh api repos/AMDResearch/omniprobe/actions/permissions/fork-pr-contributor-approval` →
+   `{"approval_policy":"all_external_contributors"}`. Fork-PR runs wait for a maintainer's
+   approval; five of the six open fork PRs (#37–#40, #42) have **no run at all**. #44's single
+   run had no jobs and no logs — it never started.
+2. Downstream of that: `build.yml` interpolates `secrets.DOCKERHUB_USERNAME` (login step and
+   `IMAGE`), and GitHub passes no secrets to fork `pull_request` runs, so even an approved run
+   would pull `/omniprobe-toolchain:latest-rocm7.2` (empty repo part) and fail. Inferred from the
+   workflow + GitHub docs, never observed. A public toolchain image with no login step would
+   remove it. Related: issue #20. Full write-up `.untracked/fork-pr-ci-findings-2026-10-26.md`.
 
-- **`cmake/llvm-hash.txt` no longer exists in v3.8.0**, replaced by `cmake/llvm-info.json` and
-  `cmake/llvm-build-info.json`. `containers/triton_install.sh` reads `cmake/llvm-hash.txt` at
-  lines **384 and 507**, but only for log output and with an `|| echo 'unknown'` fallback — so it
-  degrades cosmetically rather than failing. Audit the script's other layout assumptions anyway.
-- **The LLVM pin jumps roughly six months**: `1f126a6d` (2026-02-07) → `5f07f818` (2026-08-17),
-  the latter a cherry-pick merge, i.e. a *patched* LLVM rather than clean mainline. The plugin's
-  LLVM surface is small (25 headers, 15 distinct `llvm::` symbols in `InstrumentationCommon.cpp`),
-  so compile risk is bounded and loud; semantic risk is the real exposure.
+**`main` is branch-protected (since 2026-10-27):** force-pushes and deletion blocked,
+`enforce_admins` on (the maintainer account is an admin, so without it the protection would not
+apply to that account's pushes), no required reviews or status checks — direct pushes still work.
+
+## Triton pin: v3.8.0 (bumped 2026-10-26, `7f18d4b`)
+
+LLVM pin `5f07f818` (2026-08-17, a cherry-pick merge in triton-lang's fork — mainline
+`llvm/llvm-project` serves it too). Validated before the bump on gfx90a: omniprobe compiles
+`-Werror` against it in both plugin variants, full suite 11/11, **no source changes needed**.
+The image built in CI on the second attempt (run `40382090175`), and `build.yml` against it on
+2026-10-27. What changed across v3.7.1 → v3.8.0, and what we did:
+
+- **The pin moved from `cmake/llvm-hash.txt` to `cmake/llvm-info.json`, read with
+  `jq -r '.llvm_hash'`** in Triton's `scripts/build-llvm-project.sh:9`. That script has no
+  `set -e` and ends with `ninja`: an empty or `null` hash makes `git reset --hard` fail
+  non-fatally and it builds **whatever commit the tree is on, exiting 0**. A caller's `set -e`
+  cannot catch it. Two triggers, both measured: jq missing (empty), and jq present but key
+  absent — real jq 1.8.2 prints `null` and exits **0**; only `-e` makes it exit 1. **Fixed on
+  our side in `e18e4bb`**, without patching Triton's script: jq is a declared prerequisite
+  (preflight in `triton_install.sh`, `jq` in the Dockerfile apt layer); the pin is read with
+  `jq -re`, both layouts handled, exported as `LLVM_COMMIT_HASH` so Triton's lookup never runs
+  (a caller-supplied `LLVM_COMMIT_HASH` is respected — custom-LLVM builds stay supported); and
+  the tree's HEAD is **compared with the pin after the build** — verify the outcome, not the
+  exit status. Confirmed in CI: `LLVM commit (pinned)` and `LLVM commit verified` both `5f07f818`.
+  jq is a single static binary, user-installable in `~/bin` without root.
+- **The final report reads `git rev-parse HEAD` of the tree, not the pin file** — it reports
+  what was built rather than what was intended, and it works under `--skip-llvm`, which is the
+  path the container takes (`EXPECTED_LLVM` is not set there).
+- **Triton's CMake configure now downloads the NVIDIA toolchain** (CUPTI etc.) with
+  `COMMAND_ERROR_IS_FATAL ANY` (`CMakeLists.txt:146`); v3.7.1 did this from `setup.py`. A CDN TLS
+  blip (curl exit 35) failed the first CI run after ~2h — hence the checkpoint above.
+  `-DTRITON_OFFLINE_BUILD=ON` exists but is not a free skip: it raises unless every dependency
+  path is supplied.
+- **Not in v3.8.0, and both matter for the next bump:** triton-lang/triton#10849 (keep the target
+  machine with a plugin loaded — makes PR #44 live on the Triton path) and #11532 (subarch-aware
+  triples — handled in advance by `e6db747`; see `instrumentation`).
+- Things that did **not** need changing: the `assert len(names) == 1` patch (still matches, now
+  at `compiler.py:540`), the `LLVM_PROJECT_URL` override, and v3.8.0's new
+  `LLVM_DISTRIBUTION_COMPONENTS` / `*_UTILS` defaults — those govern only the `distribution` /
+  install targets, and nothing here installs LLVM; the build tree is consumed directly.
+  **Tripwire:** if anyone shrinks the image by consuming `llvm-project/install` instead of the
+  39 GB build tree, that list becomes load-bearing.
 
 The local LLVM mirror's remote must point at `https://github.com/triton-lang/llvm-project.git`
 (Triton's fork), not mainline LLVM — a past session lost time to this.
+
+**Two LLVM 23 builds share a soname.** Every LLVM development build of a major version is
+`libLLVM*.so.<major>.0git`, with no commit component — Feb- and Aug-2026 trees are both
+`.so.23.0git`. The omniprobe plugins carry no RPATH/RUNPATH and bind to whatever LLVM the host
+process mapped; `libtriton.so`'s RUNPATH points at its own tree, **but `LD_LIBRARY_PATH` is
+searched before `DT_RUNPATH`** — measured: pointing it at the other tree silently swaps the LLVM
+under a plugin compiled against a different one. `ldd`'s `=> not found` on a plugin is the bait:
+never "fix" it by putting an LLVM lib dir on `LD_LIBRARY_PATH`.
 
 ## Open Questions
 
@@ -182,3 +245,4 @@ None.
 
 2026-04-27 (created by pm-restructure from architecture + instrumentation)
 2026-10-26 (CI container layering, Triton pin facts for the v3.8.0 bump)
+2026-10-27 (pin now v3.8.0; LLVM pin verification; two-stage image + cache checkpoint; fork-PR CI measured; branch protection; soname collision)

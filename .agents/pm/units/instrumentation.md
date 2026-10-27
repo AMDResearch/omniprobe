@@ -135,26 +135,65 @@ being the y/z-dependent computation eliminated outright. Consequences:
 - **Unverified:** whether that collapse is observable in handler output. dh_comms sub-buffer
   semantics were not traced.
 
-Fix proposed upstream as PR #44 (19 lines, `InstrumentationCommon.cpp`): drop all `amdgpu-no-*`
-from the clone after `CloneFunctionInto`. Blanket removal rather than a targeted list is
-deliberate — a list goes stale silently the next time dh_comms reads something new. Verified
-locally 2026-10-26: compiles `-Werror` against both ROCm's and Triton's LLVM, flips
-`workgroup_id_y/z` to 1, leaves uninstrumented originals untouched, full suite 11/11.
+**Fixed by PR #44, merged 2026-10-27 as `b12d7f0`** (author Lixun Zhang; 19 lines in
+`InstrumentationCommon.cpp`): drop all `amdgpu-no-*` from the clone after `CloneFunctionInto`.
+Blanket removal rather than a targeted list is deliberate — a list goes stale silently the next
+time dh_comms reads something new. Verified on Triton v3.8.0 before merge: compiles `-Werror`
+against ROCm's and Triton's LLVM, full suite 11/11.
+
+Measured effect in the **real linked `-fgpu-rdc` build** (heatmap test, gfx90a, patched vs
+unpatched plugin side by side):
+
+| kernel | `workgroup_id_y/z` | `vgpr_workitem_id` | `kernarg_size` |
+|---|---|---|---|
+| instrumented clone, before | 0 / 0 | 2 | 280 |
+| instrumented clone, after | **1 / 1** | 2 | 280 |
+| original kernel, both | 0 / 0 | 0 | 272 |
+
+**`vgpr_workitem_id` is NOT changed by #44** — a `0 → 2` claim circulated for a day and was
+wrong. It came from running `llc` over *pre-link* single-TU IR, the configuration already
+withdrawn for the "uninitialised `s13`/`s14`" claim: there `v_submit_address` is an uninlined
+callee and the numbers differ. Measure descriptors from the final linked `.lto.s` (the stage
+carrying `__amd_crk_*`), never from pre-link IR. The only `0` in the real build is the
+*original* kernel's.
+
+**On the Triton path #44 is currently a no-op.** Triton v3.8.0 still drops the target machine
+whenever a pass plugin is loaded (`python/src/llvm.cc:751`, `!arch.empty() && pluginFile.empty()`),
+so the attributor never runs there. It starts mattering when triton-lang/triton#10849 (keep the
+target machine) lands — which is what #43 was filed about.
 
 **One change covers six plugins.** `cloneKernelWithExtraArg` is shared by all three passes
 (`AddressMessages`, `BBStart`, `BBInterval`) and `cmake_modules/add_instrumentation_plugins.cmake:92`
 builds each in both `-rocm` and `-triton` flavours from the same objects.
 
-## Negative Knowledge — `validateAMDGPUTarget` is an exact string match
+## `validateAMDGPUTarget` accepts subarch-aware triples (fixed 2026-10-27, `e6db747`)
 
-`InstrumentationCommon.cpp:150` tests `TripleStr == "amdgcn-amd-amdhsa"`. Newer LLVM (as carried
-by Triton `main` / v3.8.0) emits the normalized form `amdgpu9.50-amd-amdhsa`, which fails that
-test — so every pass **skips every kernel, silently and with exit 0**. It still compiles; nothing
-errors. `M.getTargetTriple().isAMDGCN()` is the suggested replacement.
+Was an exact string match, `TripleStr == "amdgcn-amd-amdhsa"`. Now
+`llvm::Triple(TripleStr).isAMDGCN()`. Reported as **item 1** of zhanglx13's 2026-09-26 comment
+on issue #43; #43 closed when #44 merged, after this fix landed.
 
-Reported as item 2 of GitHub issue #43 and **not** fixed by PR #44. This is the archetype of the
-risk in a Triton/LLVM bump: the dangerous breakage is semantic, not a compile error, and CI
-(`build.yml`, build-only, `ubuntu-latest`, no GPU, no test invocation) cannot see it at all.
+Why the old check would have broken, and when — the record of this was wrong for a day:
+
+- **Triton v3.8.0 is unaffected on every architecture.** It hardcodes
+  `const char *const amdTargetTriple = "amdgcn-amd-amdhsa";` (`third_party/amd/python/triton_amd.cc:45`)
+  and never consults the arch. Measured on gfx90a: `device function module found for amdgcn-amd-amdhsa`.
+- **triton-lang/triton#11532** ("[AMD] Use subarchitecture-aware target triples", on `main`
+  2026-09-01, after v3.8.0) builds `Triple(Triple::amdgpu, subArch, AMD, AMDHSA)` for **every**
+  arch — gfx950 → `amdgpu9.50-amd-amdhsa`, gfx90a its own subarch form. An exact match would skip
+  every Triton kernel on every GPU, silently, from the next Triton bump on.
+- **Why `isAMDGCN()` survives it:** LLVM renamed the enum `Triple::amdgcn` → `Triple::amdgpu`
+  (present at Triton `main`'s pin `18f9e623`, absent at v3.8.0's `5f07f818`) and updated
+  `isAMDGCN()` to test the new one; that LLVM also parses the spelling `"amdgcn"` as a legacy
+  name for `amdgpu`. Each plugin variant compiles against its own LLVM's headers, so the method
+  means "is an AMD GPU target" in both. The string is parsed rather than calling
+  `M.getTargetTriple().isAMDGCN()` to keep compatibility with LLVMs whose `getTargetTriple()`
+  returns `std::string` (none of the three we build against today do).
+- **The negative check matters as much as the positive one.** `-fpass-plugin` runs on the host
+  compile too; verified the x86_64 host module is still rejected.
+
+Not tested end to end against Triton `main` (needs a source build of it); zhanglx13 reports the
+same check working there. The general lesson stands: the dangerous breakage in a Triton/LLVM bump
+is semantic, not a compile error, and CI (`build.yml`, build-only, no GPU) cannot see it.
 
 ## Open Questions
 
@@ -165,3 +204,4 @@ None.
 2026-04-27 (trimmed by pm-restructure; build system section moved to build-system)
 2026-09-08 (clone-name construction under internal linkage; measured, not re-read)
 2026-10-26 (AMDGPU attributor ordering and clone attribute inheritance, measured; validateAMDGPUTarget triple fragility)
+2026-10-27 (#44 merged, descriptor table re-measured in the linked build — workitem_id claim corrected; validateAMDGPUTarget fixed, triple history corrected from Triton source)

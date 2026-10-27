@@ -139,6 +139,34 @@ files searched.
 Also: `tests/run_all_tests.sh:59` marks a whole suite *skipped* if `SKIP` appears anywhere in its
 output — so any criterion demanding `Suites skipped: 0` is sensitive to a new test's wording.
 
+## Testing a tree other than `<repo>/build` (2026-10-27)
+
+Needed whenever a change is tested from a worktree, or against a second build (another Triton,
+an install tree). Four traps, each hit in one session:
+
+- **Not every suite honours the overrides.** `tests/test_common.sh:10,14` honours `BUILD_DIR` and
+  `OMNIPROBE_ROOT`. `tests/triton/run_test.sh:18` hardcodes `BUILD_DIR` but honours
+  `OMNIPROBE_ROOT` — set both. `tests/library_filter_chain/run_test.sh` takes its instrumentation
+  plugin from `../../build` (line 91) and gates Tests 2–5 on `${REPO_ROOT}/build` existing
+  (line 155), ignoring both; if `build/` is missing it builds uninstrumented, skips four tests and
+  **still reports PASSED**. Packet: `bf_library-filter-chain-silent-pass`. Until fixed, a
+  worktree needs a `build -> <tree under test>` symlink.
+- **The rocBLAS/hipBLASLt driver binaries are pre-built and gitignored** (`tests/hipblaslt/
+  test_hipblaslt_transform`, `tests/rocblas_filter/test_rocblas_{scal,gemm}`). A fresh checkout
+  fails three suites with `not found`. They link only ROCm's libraries, no omniprobe code, so
+  copying them from the main checkout does not change what is tested.
+- **The local test-env script prepends the main repo's `build/` to `LD_LIBRARY_PATH`.** Every
+  omniprobe library has the same soname in every tree, so testing another tree with it left on
+  the path can load the main tree's libraries and pass. Strip it, and check the `Plugin:` line in
+  the output names the tree you meant.
+- **`LD_LIBRARY_PATH` beats `RUNPATH`, and LLVM dev builds share sonames** — see `build-system`.
+
+A test worth trusting checks that it ran, not only that it did not fail: grep for the
+degradation warnings (`not found at`, `skipping omniprobe tests`, `Building without
+instrumentation`) as well as the tally. And an acceptance check must be run against the
+*unfixed* code once — `bf_library-filter-chain-silent-pass`'s AC-4 passed before its fix in the
+first draft, because the condition it checked was gated off.
+
 ## Open Questions
 
 - What refactoring is needed to enable true unit tests with GoogleTest?
@@ -160,3 +188,4 @@ output — so any criterion demanding `Suites skipped: 0` is sensitive to a new 
   retracted.
 2026-09-08 (acceptance-gate pattern collisions; each demonstrated against failing input)
 2026-10-26 (11-suite green run on gfx90a; fuseblk finding; wrong-arch bullet mechanism corrected)
+2026-10-27 (11/11 on Triton v3.8.0, default env; testing-another-tree traps; library_filter_chain silent pass)

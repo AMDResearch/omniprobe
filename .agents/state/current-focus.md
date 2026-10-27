@@ -1,5 +1,22 @@
 # Current Focus
 
+## State after 2026-10-27 — read first
+
+- **Triton is now v3.8.0** (`7f18d4b`). Toolchain image and `build.yml` green against it; locally
+  11/11 on gfx90a. The **local default test environment now uses the v3.8.0 tree too** (`build/`
+  reconfigured, `TRITON_DIR` repointed in the two gitignored env files). The v3.7.1 tree is still on
+  disk but no longer default — delete it when convenient. Keep env and pin in step.
+- **Issue #43 closed, PR #44 merged** (`b12d7f0`). The triple match it raised was fixed first
+  (`e6db747`), ahead of the Triton bump that would have needed it.
+- **jq is now a build prerequisite** (`e18e4bb`): `triton_install.sh` checks for it, and verifies the
+  built LLVM commit against the pin.
+- **`main` is branch-protected** (no force-push/deletion, admins included). The agent may now push;
+  force/delete/mirror/`+refspec` pushes are denied in `.claude/settings.local.json`.
+- **Next: `bf_pyhandler-gil`** in a fresh session — still the last thing blocking IntelliKit.
+- New draft packet `bf_library-filter-chain-silent-pass` (a suite that can pass having tested nothing).
+- Detail lives in PM: `build-system` (pin, CI, image checkpoint, soname hazard), `instrumentation`
+  (#44, triple), `testing` (testing-another-tree traps), `pm-decisions`.
+
 ## Read this before touching kernel discovery or code-object loading
 
 **The HIP duplicate-code-object-load defect is FIXED** (`bf_hip-duplicate-code-object-load`,
@@ -56,7 +73,11 @@ quietly does nothing.
 - **Unblock IntelliKit** — `bf_pyhandler-gil` is now the only packet standing in the way.
   `bf_exit-status-not-propagated`, the other half, **completed 2026-10-26**. Both were filed from
   the IntelliKit sidecar and that project depends on both fixes. This is the priority.
-- Fix the `.intern.<hash>` clone-name defect (bf_intern-clone-name — active, queued third).
+- Fix the `.intern.<hash>` clone-name defect (bf_intern-clone-name — active, queued second).
+  **Its dossier's line references into `InstrumentationCommon.cpp` are stale** — `e6db747` and
+  `b12d7f0` edited that file after its Base Commit `5b9425f`. Re-find `:211` etc.; do not trust them.
+- Fix `tests/library_filter_chain/run_test.sh` silently passing (bf_library-filter-chain-silent-pass
+  — draft; diagnosed, reproduced by its `acceptance.sh`, not fixed).
 - Review and finalize Omniprobe whitepaper (ft_whitepaper-omniprobe — awaiting user review).
 - Adopt lazy kernelDB loading in the interceptor (rf_lazy-kerneldb-loading — **contract needs
   revisiting first**, see above).
@@ -91,6 +112,13 @@ propagates the child's exit status (`128 + signal` for signal deaths, JSON final
 exit). Closed GitHub issue #41.
 
 ## Immediate Next Recommended Actions
+
+*Updated 2026-10-27 — the list below this note predates the Triton bump and #43/#44, which are
+both done. In order now: (a) `bf_pyhandler-gil`; (b) `bf_intern-clone-name`, after re-finding its
+line references; (c) `bf_library-filter-chain-silent-pass`, promote and execute. Parked by the
+owner, do not act on unprompted: an upstream Triton report about `build-llvm-project.sh`'s silent
+`null`-pin failure (owner is consulting colleagues), and fork-PR CI / triage of external PRs
+#37–#40, #42 (needs owner decisions; see `build-system`). The original list follows.*
 
 1. **~~File a packet for the `.intern.<hash>` clone-name defect.~~ FILED 2026-09-08 as
    `bf_intern-clone-name`** — now **active**, promoted the same day. Queued **third**, behind the
@@ -212,10 +240,16 @@ exit). Closed GitHub issue #41.
   **The values live only in `.untracked/test-env.sh` and `.claude/settings.local.json`, both
   gitignored** — they are personal absolute paths and this repository is public. Do not copy them
   into a tracked file; refer to the variable names instead.
-- **`build/` is a gfx90a tree.** Running it on a gfx950 node produces silent non-dispatch, not an
-  error — which is what manufactured both corrected "defects" above. Build for the node you are on
-  (`build_gfx950/` exists but lacks the Triton plugin), and check `rocminfo` before believing a
-  test result.
+- **`build/` is a gfx90a tree, configured against Triton v3.8.0's LLVM (since 2026-10-27).**
+  Running it on a gfx950 node produces a crash (now loud, since exit-status propagation landed), not
+  results. Build for the node you are on (`build_gfx950/` exists but lacks the Triton plugin and
+  predates the bump), and check `rocminfo` before believing a test result. `build_t380/` is a
+  leftover from the bump validation, now redundant with `build/`.
+- **A green suite only counts if it tested the tree and Triton you meant.** Check the `Plugin:` and
+  `Triton venv:` lines and grep for the degradation warnings; see the `testing` unit's
+  "Testing a tree other than `<repo>/build`".
+- **`.claude/session_init_primes.json` is a dead pre-AMP leftover** with stale values (v3.7.1 paths,
+  a `lib/` that should be `lib64/`). Nothing live reads it. Do not use it as a source of truth.
 - **A latent suite-classifier bug.** `tests/run_all_tests.sh:59` marks a whole suite as *skipped*
   if the string `SKIP` appears anywhere in its output, and `tests/rocblas_hipblaslt/run_test.sh:220`
   emits one mid-run. It has not fired — the Tensile search at `run_test.sh:86` matches on filename
@@ -246,6 +280,10 @@ exit). Closed GitHub issue #41.
   the framework's FM-5..FM-13.
 
 ## Recent Decisions
+
+- **2026-10-26/27 — Triton v3.8.0 bump, #43/#44, branch protection.** Six decisions recorded in
+  `.agents/pm/pm-decisions.md` (jq + outcome verification; two-stage image; fix #43 item 1 before
+  merging #44; `isAMDGCN()` via parsed triple; branch protection + agent push; test env tracks pin).
 
 - **Skip the private code-object load for application-loaded HIP fat binaries** (2026-09-08,
   `bf_hip-duplicate-code-object-load`). Chosen over reversing the first-writer precedence or
