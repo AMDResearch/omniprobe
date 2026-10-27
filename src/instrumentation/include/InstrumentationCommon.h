@@ -45,7 +45,8 @@ std::string getBitcodePath(const llvm::Module &M);
 // Extract full file path from debug location information
 std::string getFullPath(const llvm::DILocation *DIL);
 
-// Validate that the module targets AMDGPU (amdgcn-amd-amdhsa)
+// Validate that the module targets AMDGPU (amdgcn-amd-amdhsa, or a
+// subarchitecture-aware form such as amdgpu9.50-amd-amdhsa)
 // Returns true if valid AMDGPU target, false otherwise
 bool validateAMDGPUTarget(const llvm::Module &M);
 

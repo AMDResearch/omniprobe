@@ -28,6 +28,7 @@ THE SOFTWARE.
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Linker/Linker.h"
+#include "llvm/TargetParser/Triple.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
@@ -147,7 +148,13 @@ bool validateAMDGPUTarget(const llvm::Module &M) {
     }
   }(TargetTriple);
 
-  if (TripleStr == "amdgcn-amd-amdhsa") {
+  // Not an exact string compare: Triton after v3.8.0 (triton-lang/triton#11532)
+  // emits subarchitecture-aware triples such as amdgpu9.50-amd-amdhsa, which a
+  // match on "amdgcn-amd-amdhsa" silently rejects -- skipping every kernel.
+  // Parsing and asking isAMDGCN() accepts both forms, and survives LLVM's rename
+  // of Triple::amdgcn to Triple::amdgpu: the method tests whichever enum the LLVM
+  // we are compiled against has.
+  if (llvm::Triple(TripleStr).isAMDGCN()) {
     llvm::errs() << "device function module found for " << TripleStr << "\n";
     return true;
   } else { // Not an AMDGPU target
