@@ -109,15 +109,24 @@ if [ -x "$MEMORY_ANALYSIS_TEST" ]; then
     # would actually use for this binary, regardless of distro layout.
     LIBM_PATH=$(ldd "$MEMORY_ANALYSIS_TEST" 2>/dev/null \
         | awk '$1 ~ /^libm\.so/{print $3; exit}')
-    if [ -z "$LIBM_PATH" ] || [ ! -e "$LIBM_PATH" ]; then
-        echo -e "${RED}ERROR: Could not resolve libm.so path from ${MEMORY_ANALYSIS_TEST}${NC}" >&2
-        echo "  ldd output:" >&2
-        ldd "$MEMORY_ANALYSIS_TEST" 2>&1 | sed 's/^/    /' >&2
-        exit 1
+    # This file is sourced by run_handler_tests.sh, so an unresolved path fails
+    # the test that needs it rather than exiting: exit would end the whole
+    # handler run, including the suites sourced after this one.
+    fail_unresolved() {                 # fail_unresolved <test name> <what>
+        TESTS_RUN=$((TESTS_RUN + 1))
+        echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $1"
+        echo -e "  ${RED}✗ FAIL${NC} - could not resolve $2 for ${MEMORY_ANALYSIS_TEST}"
+        ldd "$MEMORY_ANALYSIS_TEST" 2>&1 | sed 's/^/    /'
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    }
+    LIBCRYPT_PATH=""
+    if [ -n "$LIBM_PATH" ] && [ -e "$LIBM_PATH" ]; then
+        NATIVE_LIB_DIR=$(dirname "$LIBM_PATH")
+        LIBCRYPT_PATH=$(ls "${NATIVE_LIB_DIR}"/libcrypt.so.* 2>/dev/null \
+            | head -1)
+    else
+        LIBM_PATH=""
     fi
-    NATIVE_LIB_DIR=$(dirname "$LIBM_PATH")
-    LIBCRYPT_PATH=$(ls "${NATIVE_LIB_DIR}"/libcrypt.so.* 2>/dev/null \
-        | head -1)
 
     # Test: Baseline - exclude non-existent library (should PASS, no behavior change)
     run_library_filter_test "libfilter_exclude_nonexistent" \
@@ -127,18 +136,26 @@ if [ -x "$MEMORY_ANALYSIS_TEST" ]; then
         "libm.so"
 
     # Test: Exclude libm (should NOT appear in "Adding" output)
-    run_library_filter_test "libfilter_exclude_libm" \
-        "$MEMORY_ANALYSIS_TEST" \
-        "{\"exclude\": [\"${LIBM_PATH}\"]}" \
-        "absent" \
-        "libm.so"
+    if [ -n "$LIBM_PATH" ]; then
+        run_library_filter_test "libfilter_exclude_libm" \
+            "$MEMORY_ANALYSIS_TEST" \
+            "{\"exclude\": [\"${LIBM_PATH}\"]}" \
+            "absent" \
+            "libm.so"
+    else
+        fail_unresolved "libfilter_exclude_libm" "libm.so"
+    fi
 
     # Test: Include a file that wouldn't normally be scanned
-    run_library_filter_test "libfilter_include_extra" \
-        "$MEMORY_ANALYSIS_TEST" \
-        "{\"include\": [\"${LIBCRYPT_PATH}\"]}" \
-        "present" \
-        "libcrypt.so"
+    if [ -n "$LIBCRYPT_PATH" ]; then
+        run_library_filter_test "libfilter_include_extra" \
+            "$MEMORY_ANALYSIS_TEST" \
+            "{\"include\": [\"${LIBCRYPT_PATH}\"]}" \
+            "present" \
+            "libcrypt.so"
+    else
+        fail_unresolved "libfilter_include_extra" "libcrypt.so.* beside libm"
+    fi
 
 else
     echo -e "\n${YELLOW}SKIP: Library filter tests (simple_memory_analysis_test not built)${NC}"
