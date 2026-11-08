@@ -46,8 +46,9 @@ omniprobe -i -a /path/to/libMyHandler.so -- ./my_app
 | `MemoryAnalysis` | Detects uncoalesced global memory accesses and LDS bank conflicts | `libAMDGCNSubmitAddressMessages` | Yes |
 | `Heatmap` | Per-dispatch memory access heatmap by page | `libAMDGCNSubmitAddressMessages` | Yes |
 | `AddressLogger` | Raw memory address trace logging | `libAMDGCNSubmitAddressMessages` | Yes |
-| `BasicBlockAnalysis` | Basic block execution timing with percentile breakdown | `libAMDGCNSubmitBBStart` | Yes |
+| `BasicBlockAnalysis` | Wave entries and active lanes per basic block, at source level (no timing) | `libAMDGCNSubmitBBStart` | Yes |
 | `BasicBlockLogger` | Raw basic block timestamp logging | `libAMDGCNSubmitBBStart` | Yes |
+| `PythonHandler` | Passes every address and timing message to your own Python module | `libAMDGCNSubmitAddressMessages` | Yes |
 
 Each plugin has `-rocm` and `-triton` variants (e.g.,
 `libAMDGCNSubmitAddressMessages-rocm.so`). For HIP applications, use the
@@ -134,6 +135,36 @@ are `WAVE_MESSAGE,...`.
 > **Note**: `BasicBlockLogger` and `BasicBlockAnalysis` require the
 > `libAMDGCNSubmitBBStart` plugin (use `-rocm.so` for HIP, `-triton.so` for
 > Triton).
+
+#### PythonHandler
+
+Runs an analysis written in Python, without writing a C++ handler plugin. Name
+the module in `OMNIPROBE_PYTHON_HANDLER`, either as a path to a `.py` file or
+as a module name importable through `PYTHONPATH`:
+
+```bash
+OMNIPROBE_PYTHON_HANDLER=./my_analysis.py omniprobe -i -a PythonHandler -- ./my_app
+```
+
+The module must define two functions and may define a third. Each receives one
+`dict`; every dict has `kernel` (str) and `dispatch_id` (int):
+
+| Function | Called | Extra keys |
+|----------|--------|------------|
+| `handleAddressMessage(msg)` | once per active lane of each instrumented memory instruction | `address` (int) |
+| `handleTimeMessage(msg)` | once per time-interval message | `elapsed_time` (int, `stop - start`) |
+| `handleReport(msg)` (optional) | once per dispatch, after its last message | none |
+
+There is one interpreter per process and the module is imported once, so
+module-level state persists across dispatches; use `handleReport` to emit
+per-dispatch results (keyed by `dispatch_id`). Calls come from several threads
+(one per in-flight dispatch) but hold the GIL, so they never run at the same
+time. Cost is roughly 10 µs per call: fine for test-sized inputs, slow for full
+applications (narrow with `-k` and `-d`). If the module cannot be imported or
+lacks a required function, an error is printed and the dispatch runs with the
+default handlers instead. Only this plugin links libpython.
+
+See `tests/python_handler/stress_handler.py` for a complete example.
 
 ## Instrumented mode
 

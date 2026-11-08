@@ -97,9 +97,10 @@ See [docs/usage.md](docs/usage.md) for the complete reference with examples.
 |----------|-------------|
 | `MemoryAnalysis` | Detects uncoalesced global memory accesses and LDS bank conflicts |
 | `Heatmap` | Per-dispatch memory access heatmap by page |
-| `BasicBlockAnalysis` | Basic block execution timing with percentile breakdown |
+| `BasicBlockAnalysis` | Wave entries and active lanes per basic block, at source level (no timing) |
 | `AddressLogger` | Raw memory address trace logging |
 | `BasicBlockLogger` | Raw basic block timestamp logging |
+| `PythonHandler` | Passes every address and timing message to your own Python module |
 
 See [docs/usage.md#analyzers](docs/usage.md#analyzers) for details on each.
 
