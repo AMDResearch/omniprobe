@@ -112,6 +112,7 @@ Note that two overlaps recorded above are still live and still matter on resume:
 | ft_python-api-coverage | feature | 2026-11-08 |
 | bf_plugin-dhcomms-cuid-duplicate | bugfix | 2026-11-08 |
 | bf_zero-param-kernel-match | bugfix | 2026-11-08 |
+| bf_lds-split-entries | bugfix | 2026-11-08 |
 
 ## Completed (migrated from KT)
 
