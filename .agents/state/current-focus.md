@@ -37,7 +37,8 @@
   **`bf_lds-split-entries` done 2026-11-08.**
   **`bf_source-attribution-gaps`, `bf_logger-record-interleave` done 2026-11-08** (from re-checking
   ikimpl's two-file Makefile scenario). Suite count now **18**.
-  **Queue now:** flat-address runtime classification (scoped in seeds/ only) → Rene's order:
+  Flat-address runtime classification scoped (S–M): `.agents/workflows/seeds/ft_flat-address-classification.md`.
+  **Queue now:** Rene's order:
   pyhandler-gil, faulted-dispatch-hang, exact-arch-bitcode + #38 (gfx950), Triton 3.9. → (flat-address runtime classification, scoped only) (new, standalone) →
   IntelliKit Python API request → zero-param kernels, split LDS entries, flat-address warning →
   pyhandler-gil, faulted-dispatch-hang, exact-arch-bitcode + #38, Triton 3.9, intern-clone-name.
