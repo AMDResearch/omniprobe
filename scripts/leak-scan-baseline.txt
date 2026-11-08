@@ -1,0 +1,47 @@
+# leak-scan.sh accepted-findings baseline (owner decision D1, 2026-11-08).
+#
+# Hostname mentions already published before 2026-10-27, accepted without a
+# history rewrite. This file must never contain matched text: tree entries are
+# "tree <path> <sha256 of the matching line>", range entries are
+# "commit <full sha> <surface> <path|->". Editing an accepted line changes its
+# hash and makes it a finding again. Generate candidates with
+# `scripts/leak-scan.sh --print-baseline [<range>]` and review before adding.
+commit 2a9822d1bae12ae27432b0c11945900dd1c6a54e added-line .agents/workflows/done/bf_hip-duplicate-code-object-load/artifacts.md
+commit 2a9822d1bae12ae27432b0c11945900dd1c6a54e added-line .agents/workflows/done/bf_hip-duplicate-code-object-load/baseline-run_all_tests.txt
+commit 35a0ffe296c6d8ceb5e507c03678d95b61848a62 added-line .agents/pm/units/testing.md
+commit 7f18d4b17d4bc3df95ef6eef2947e2ce18b6fcbe commit-message -
+commit a23181cbf42c8de73cd20db06292572830fb05dc added-line .agents/pm/units/testing.md
+commit a23181cbf42c8de73cd20db06292572830fb05dc added-line .agents/state/current-focus.md
+commit d03a2471f27eeeed8aec6ce110a84929df53c2ab added-line .agents/state/current-focus.md
+commit d03a2471f27eeeed8aec6ce110a84929df53c2ab added-line .agents/workflows/done/bf_exit-status-not-propagated/artifacts.md
+commit d03a2471f27eeeed8aec6ce110a84929df53c2ab added-line .agents/workflows/done/bf_exit-status-not-propagated/handoff.md
+commit d03a2471f27eeeed8aec6ce110a84929df53c2ab added-line .agents/workflows/done/bf_exit-status-not-propagated/run-log.md
+commit d1863a00829db227dc3de86eeb400a877e6b24a5 added-line .agents/workflows/done/bf_hip-duplicate-code-object-load/artifacts.md
+commit d1863a00829db227dc3de86eeb400a877e6b24a5 added-line .agents/workflows/done/bf_hip-duplicate-code-object-load/baseline-run_all_tests.txt
+commit d1863a00829db227dc3de86eeb400a877e6b24a5 added-line .agents/workflows/done/bf_hip-duplicate-code-object-load/dossier.md
+commit d1863a00829db227dc3de86eeb400a877e6b24a5 added-line .agents/workflows/done/bf_hip-duplicate-code-object-load/handoff.md
+commit d1863a00829db227dc3de86eeb400a877e6b24a5 added-line .agents/workflows/done/bf_hip-duplicate-code-object-load/run-log.md
+commit d1863a00829db227dc3de86eeb400a877e6b24a5 commit-message -
+commit d332e6f1954ebe38b96837aaf2385ef40000c0a9 added-line .agents/workflows/active/bf_exit-status-not-propagated/handoff.md
+commit d332e6f1954ebe38b96837aaf2385ef40000c0a9 added-line .agents/workflows/active/bf_exit-status-not-propagated/run-log.md
+commit ef50230e71d98b142a7d72af55ed7cf00f2d3aad added-line .agents/workflows/active/bf_hip-duplicate-code-object-load/artifacts.md
+commit ef50230e71d98b142a7d72af55ed7cf00f2d3aad added-line .agents/workflows/active/bf_hip-duplicate-code-object-load/baseline-run_all_tests.txt
+commit fcabe1279bf39785f2e8e0006b7514724143e146 added-line .agents/kt/refactors/rf_ci-setup.md
+tree .agents/pm/units/testing.md b75ce106e896cf79ea9bb8376f92a6c781cffb7bd076f5b741fdca54f9360910
+tree .agents/pm/units/testing.md dfec27d18ffceeb1ed53bbfa9b1c242f8d7f731703bae3566399b2f9f25b9588
+tree .agents/state/current-focus.md c7bbb003d7a91888e7b086938159fea010666ed25ea8e998bc54ae4aa739bcd0
+tree .agents/state/current-focus.md c81ac14680c830e22141a171004cd34c1e7f608c79bed573f3521ba3aece3782
+tree .agents/workflows/done/bf_exit-status-not-propagated/artifacts.md ad18dbe20811792bff72eb8c4c457475c56ce997f97e9e4f676b6762b0d60cbe
+tree .agents/workflows/done/bf_exit-status-not-propagated/handoff.md 6ba8137bddb4947db73a685f868ebc5224f67abed273140addb93f43be3790e5
+tree .agents/workflows/done/bf_exit-status-not-propagated/handoff.md 7a774a7627f9129374b9c43776d7dbc704a80ecad9f0f938e24127bb76d2d128
+tree .agents/workflows/done/bf_exit-status-not-propagated/run-log.md 1e56c247684e057a581914097d2bbade6080a53b9ecb81883fbba3d86f8dcdbb
+tree .agents/workflows/done/bf_exit-status-not-propagated/run-log.md a6891158a421839326ccecb2c732d8a03c81d12fdd4c7a02877e284ad56bcd0d
+tree .agents/workflows/done/bf_hip-duplicate-code-object-load/artifacts.md 715f3de848e95b8f86b3529ae6df1ca7acf21a8397bfd819aef21cc4823d122d
+tree .agents/workflows/done/bf_hip-duplicate-code-object-load/artifacts.md 9d372e7c112b99661ac0f30500ed384fb098209fb7454072f0217464fac5941a
+tree .agents/workflows/done/bf_hip-duplicate-code-object-load/artifacts.md eb41d17d8f888d8b0c6f53a20f96959f2779e4028fbf221c46454358bcbfcbe6
+tree .agents/workflows/done/bf_hip-duplicate-code-object-load/baseline-run_all_tests.txt fb3ad22bb1b43b7e3e2ab957df061df969e7f82955d8bb680f951f7e98867819
+tree .agents/workflows/done/bf_hip-duplicate-code-object-load/dossier.md 41e1e2535953c12f5e89c327cade54a3cabdb866417d71232554c47a82bdedf0
+tree .agents/workflows/done/bf_hip-duplicate-code-object-load/handoff.md 4875a629a9ef47cc26a50f62a347f6196c719a6d21890d2296c390675837025e
+tree .agents/workflows/done/bf_hip-duplicate-code-object-load/handoff.md 56b7ee4e54b5d94e18a34f7de50f3a3d1b482bd5a4f3e5ba2d9629caf4b16640
+tree .agents/workflows/done/bf_hip-duplicate-code-object-load/run-log.md 1f4c5006769166ecff576f76012406825d20c49685805b4328509bd4fb0d3cc9
+tree .agents/workflows/done/bf_hip-duplicate-code-object-load/run-log.md 8537a130d8f8500909da4c097c88e456ad7b51aec37adce53528ff67ddbbfe9e
