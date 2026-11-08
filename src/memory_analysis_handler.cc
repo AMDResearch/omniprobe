@@ -97,6 +97,20 @@ memory_analysis_handler_t::memory_analysis_handler_t(const std::string& kernel, 
           {"global_store_dword", {4, memory_access::write}},    {"global_store_dwordx2", {8, memory_access::write}},
           {"global_store_dwordx3", {12, memory_access::write}}, {"global_store_dwordx4", {16, memory_access::write}},
 
+          // Flat accesses whose address space the plugin classified at run time.
+          {"flat_load_ubyte", {1, memory_access::read}},        {"flat_load_sbyte", {1, memory_access::read}},
+          {"flat_load_ubyte_d16", {1, memory_access::read}},    {"flat_load_ubyte_d16_hi", {1, memory_access::read}},
+          {"flat_load_sbyte_d16", {1, memory_access::read}},    {"flat_load_sbyte_d16_hi", {1, memory_access::read}},
+          {"flat_load_ushort", {2, memory_access::read}},       {"flat_load_sshort", {2, memory_access::read}},
+          {"flat_load_short_d16", {2, memory_access::read}},    {"flat_load_short_d16_hi", {2, memory_access::read}},
+          {"flat_load_dword", {4, memory_access::read}},        {"flat_load_dwordx2", {8, memory_access::read}},
+          {"flat_load_dwordx3", {12, memory_access::read}},     {"flat_load_dwordx4", {16, memory_access::read}},
+
+          {"flat_store_byte", {1, memory_access::write}},       {"flat_store_byte_d16_hi", {1, memory_access::write}},
+          {"flat_store_short", {2, memory_access::write}},      {"flat_store_short_d16_hi", {2, memory_access::write}},
+          {"flat_store_dword", {4, memory_access::write}},      {"flat_store_dwordx2", {8, memory_access::write}},
+          {"flat_store_dwordx3", {12, memory_access::write}},   {"flat_store_dwordx4", {16, memory_access::write}},
+
           {"global_load_lds_ubyte", {1, memory_access::read}},  {"global_load_lds_sbyte", {1, memory_access::read}},
           {"global_load_lds_ushort", {2, memory_access::read}}, {"global_load_lds_sshort", {2, memory_access::read}},
           {"global_load_lds_dword", {4, memory_access::read}},
@@ -167,6 +181,20 @@ memory_analysis_handler_t::memory_analysis_handler_t(bool verbose)
           {"global_store_short", {2, memory_access::write}},    {"global_store_short_d16_hi", {2, memory_access::write}},
           {"global_store_dword", {4, memory_access::write}},    {"global_store_dwordx2", {8, memory_access::write}},
           {"global_store_dwordx3", {12, memory_access::write}}, {"global_store_dwordx4", {16, memory_access::write}},
+
+          // Flat accesses whose address space the plugin classified at run time.
+          {"flat_load_ubyte", {1, memory_access::read}},        {"flat_load_sbyte", {1, memory_access::read}},
+          {"flat_load_ubyte_d16", {1, memory_access::read}},    {"flat_load_ubyte_d16_hi", {1, memory_access::read}},
+          {"flat_load_sbyte_d16", {1, memory_access::read}},    {"flat_load_sbyte_d16_hi", {1, memory_access::read}},
+          {"flat_load_ushort", {2, memory_access::read}},       {"flat_load_sshort", {2, memory_access::read}},
+          {"flat_load_short_d16", {2, memory_access::read}},    {"flat_load_short_d16_hi", {2, memory_access::read}},
+          {"flat_load_dword", {4, memory_access::read}},        {"flat_load_dwordx2", {8, memory_access::read}},
+          {"flat_load_dwordx3", {12, memory_access::read}},     {"flat_load_dwordx4", {16, memory_access::read}},
+
+          {"flat_store_byte", {1, memory_access::write}},       {"flat_store_byte_d16_hi", {1, memory_access::write}},
+          {"flat_store_short", {2, memory_access::write}},      {"flat_store_short_d16_hi", {2, memory_access::write}},
+          {"flat_store_dword", {4, memory_access::write}},      {"flat_store_dwordx2", {8, memory_access::write}},
+          {"flat_store_dwordx3", {12, memory_access::write}},   {"flat_store_dwordx4", {16, memory_access::write}},
 
           {"global_load_lds_ubyte", {1, memory_access::read}},  {"global_load_lds_sbyte", {1, memory_access::read}},
           {"global_load_lds_ushort", {2, memory_access::read}}, {"global_load_lds_sshort", {2, memory_access::read}},
@@ -308,6 +336,9 @@ get_dwarf_info(const dh_comms::message_t &message, const std::string &kernel_nam
            hdr.dwarf_line, hdr.dwarf_column);
   }
   uint8_t rw_kind = message.wave_header().user_data & 0b11;
+  uint16_t ir_data_size = (message.wave_header().user_data >> 6) & 0xffff;
+  dwarf_info_t first;
+  bool have_first = false;
   std::string isa_instruction = "";
   try {
     auto instructions = kdb->getInstructionsForLine(kernel_name, hdr.dwarf_line);
@@ -331,10 +362,22 @@ get_dwarf_info(const dh_comms::message_t &message, const std::string &kernel_nam
         // data access size for the ISA instruction
         const auto s2u = instr_size_map.find(isa_instruction);
         if (s2u != instr_size_map.end() and s2u->second.access_type == rw_kind) {
-          dwarf_info.fname = kdb_dwarf_fname;
-          dwarf_info.isa_instruction = isa_instruction;
-          dwarf_info.access_size = s2u->second.size;
-          return dwarf_info;
+          // Several instructions can share a source location (at -O0 the load of
+          // the pointer variable sits at the same line and column as the access
+          // through it). Prefer the one as wide as the IR access; otherwise the
+          // first, which may be a wider, combined access.
+          if (s2u->second.size == ir_data_size) {
+            dwarf_info.fname = kdb_dwarf_fname;
+            dwarf_info.isa_instruction = isa_instruction;
+            dwarf_info.access_size = s2u->second.size;
+            return dwarf_info;
+          }
+          if (!have_first) {
+            have_first = true;
+            first.fname = kdb_dwarf_fname;
+            first.isa_instruction = isa_instruction;
+            first.access_size = s2u->second.size;
+          }
         }
       }
     }
@@ -349,6 +392,8 @@ get_dwarf_info(const dh_comms::message_t &message, const std::string &kernel_nam
     return dwarf_info;
   }
 
+  if (have_first)
+    return first;
   //printf("Memory analysis handler: did not find %s in instr_size_map.\n", isa_instruction.c_str());
   return dwarf_info;
 }
