@@ -34,6 +34,14 @@ function(add_instrumentation_plugins)
     endif()
 
     # 1. Find llvm-config and clang++
+    # find_program caches its result, so re-configuring an existing build tree
+    # with a different LLVM_DIR (e.g. -DTRITON_LLVM after a Triton bump) would
+    # silently keep building against the old LLVM. Forget the cached path when
+    # it is not under the requested directory.
+    if(DEFINED CACHE{_llvm_config_${AIP_SUFFIX}} AND
+       NOT "${_llvm_config_${AIP_SUFFIX}}" STREQUAL "${AIP_LLVM_DIR}/bin/llvm-config")
+        unset(_llvm_config_${AIP_SUFFIX} CACHE)
+    endif()
     find_program(_llvm_config_${AIP_SUFFIX} llvm-config
         PATHS "${AIP_LLVM_DIR}/bin" NO_DEFAULT_PATH REQUIRED)
     set(_llvm_config "${_llvm_config_${AIP_SUFFIX}}")
