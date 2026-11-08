@@ -2,46 +2,39 @@
 
 ## State after 2026-11-08 — read first
 
-- **Order for this run (owner decisions D1-D10, 2026-11-08; supervisor ordering):** D1 done
-  (2026-10-27 WIP committed; `scripts/leak-scan-baseline.txt`). `bf_json-output-integrity`
-  **done** (suite 12, "Output file integrity"; `-o`/`-l` files are now overwritten per run).
-  Next: PR #40 (dynamic LDS) → `bf_library-filter-chain-silent-pass` → `bf_bba-hardening` (new)
-  → `bf_pyhandler-gil` → `bf_faulted-dispatch-hang` (new) → `rf_exact-arch-bitcode` + PR #38
-  (gfx950) → Triton v3.9.0 → `bf_intern-clone-name` → PR #37. Survey with the evidence:
-  `.untracked/survey-2026-11-03/report.md` § H2-rev and § I. This supersedes the "Next" bullets
-  in the 2026-10-27 section below.
-- **Also done 2026-11-08:** PR #40 merged (`e7ca202`) + follow-up `cd58bed` (underflow clamp,
-  CRLF→LF in its test files, test can no longer pass vacuously); PR #37 merged (`fc1c431`) +
-  follow-up `12a213a` (no `exit` in a sourced script; unresolved paths FAIL);
-  `build/lib/bitcode/` now populated by every build with all dh_comms bitcode (`31eb907`,
-  suite 13); leak-scan diffs merges against the first parent (`e17ae35`). GitHub comments on
-  #40/#37/#39 and issue #20 drafted, awaiting the supervisor's OK.
-- **Open, not yet a packet:** a pass plugin that cannot find its bitcode prints an error but
-  hipcc exits 0 and emits an uninstrumented binary (`loadAndLinkBitcode` → `return false` in all
-  three passes). Proposed to fold into `rf_exact-arch-bitcode`, which owns that code.
-- Full suite is now **13** suites.
-- **`bf_library-filter-chain-silent-pass` done 2026-11-08** (`2419835`): suite classifier now needs a
-  line-start `SKIP:` notice. GitHub: #40/#37 merged, #39 and issue #20 closed with comments.
-  **`bf_bba-hardening` done 2026-11-08**: BBA reports wave_visits/active_lanes per BBStart block,
-  no timing (BBInterval timing queued after faulted-dispatch-hang). Suite count now **15**.
-  **`bf_intern-clone-name` done 2026-11-08** (`3e31ee8`): static/anon kernels under `-fgpu-rdc`
-  instrumented and attributed for both hash flavours; end-of-run summary lists kernels without a
-  clone. Suite count now **16**.
-  **`bf_plugin-missing-bitcode-fatal` done 2026-11-08**: missing device bitcode is a compile error
-  (hipcc rc 1; Triton JIT rc 1).
-  **`ft_python-api-coverage` done 2026-11-08**: API for heatmap/address/BB traces, extended
-  memory fields, `uninstrumented_kernels`, flat-access count; launcher keeps stdout/stderr apart;
-  API installed. Suite count now **17**.
-  **`bf_plugin-dhcomms-cuid-duplicate` done 2026-11-08** (multi-file -fgpu-rdc links).
-  **`bf_zero-param-kernel-match` done 2026-11-08.**
-  **`bf_lds-split-entries` done 2026-11-08.**
-  **`bf_source-attribution-gaps`, `bf_logger-record-interleave` done 2026-11-08** (from re-checking
-  ikimpl's two-file Makefile scenario). Suite count now **18**.
-  Flat-address runtime classification scoped (S–M): `.agents/workflows/seeds/ft_flat-address-classification.md`.
-  **Queue now:** Rene's order:
-  pyhandler-gil, faulted-dispatch-hang, exact-arch-bitcode + #38 (gfx950), Triton 3.9. → (flat-address runtime classification, scoped only) (new, standalone) →
-  IntelliKit Python API request → zero-param kernels, split LDS entries, flat-address warning →
-  pyhandler-gil, faulted-dispatch-hang, exact-arch-bitcode + #38, Triton 3.9, intern-clone-name.
+**Remaining queue, in this order (supervisor, 2026-11-08):**
+
+1. `bf_pyhandler-gil` (active packet; its seed predates this run's changes, re-check against main
+   first).
+2. `bf_faulted-dispatch-hang` (new; survey § I defect 3: `signal_runner` never honours shutdown
+   after a GPU fault).
+3. `rf_exact-arch-bitcode` + PR #38 — needs a gfx950 node (the supervisor arranges it). Include
+   the 2026-11-08 finding: for Triton modules the plugin sees no `target-cpu` ("target unknown")
+   and falls back to cdna2 bitcode.
+4. Triton v3.9.0 bump (owner D4: after the bug fixes).
+5. `ft_flat-address-classification` (seed: `.agents/workflows/seeds/ft_flat-address-classification.md`).
+6. **Last, per the owner:** real per-block timing via BBInterval. If it works, IntelliKit gets the
+   plugin info and we test whether an agent uses it.
+
+Known, not queued: `-t json` without `-o` writes `results_<YYYY-mm-dd_HHMMSS>.json` in the
+working directory, so two runs started in the same second in the same directory share (and
+truncate) one file. Small; fold into any CLI packet.
+
+**Done 2026-11-08** (each with a check that fails before the fix; packets in `workflows/done/`):
+D1 (2026-10-27 WIP, leak-scan baseline), `bf_json-output-integrity`, PR #40 + follow-up, PR #37 +
+follow-up, build-tree bitcode, `bf_library-filter-chain-silent-pass`, `bf_bba-hardening` (BBA =
+counts per BBStart block, no timing), `bf_intern-clone-name`, `bf_plugin-missing-bitcode-fatal`,
+`ft_python-api-coverage`, `bf_plugin-dhcomms-cuid-duplicate`, `bf_zero-param-kernel-match`,
+`bf_lds-split-entries`, `bf_source-attribution-gaps`, `bf_logger-record-interleave`. GitHub: #40,
+#37 merged; #39 and issue #20 closed with comments; #42 untouched (deferred). Full suite: **18**
+suites. Pushes are gated on `scripts/leak-scan.sh` exiting 0.
+
+**Session history (no captures fabricated):**
+- The 2026-10-27 session (started 13:04) never closed. Its uncommitted work was committed on
+  2026-11-08 as D1: `6cb033f`, `de9fe47`, `ba5c79b`. It has no session capture.
+- The 2026-11-03 survey worker session was never closed, by design: investigation only, no tracked
+  changes. Its findings are in `.untracked/survey-2026-11-03/report.md`; the 2026-11-08 queue was
+  built from them (§ H2-rev, § I).
 
 ## State after 2026-10-27 — read first
 
