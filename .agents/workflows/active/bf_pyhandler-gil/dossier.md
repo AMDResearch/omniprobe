@@ -9,7 +9,7 @@
 - Intended Write Scope: see the `write-scope` block below (canonical)
 - Dependencies On Other Active Workflows: shares `tests/run_all_tests.sh` with
   `bf_intern-clone-name` and `bf_exit-status-not-propagated` — see § Dependencies
-- Base Commit: 821c89b97cc13ae2509e3ceecff2790af014017a
+- Base Commit: 1bb27a6fbaed3f7878a22838befb56404579bbbd
 
 ```write-scope
 src/pyHandler.cc
