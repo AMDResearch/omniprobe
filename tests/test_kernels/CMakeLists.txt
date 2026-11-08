@@ -225,6 +225,10 @@ target_link_libraries(module_load_test PRIVATE amdhip64)
 add_dependencies(module_load_test module_load_kernel_hsaco)
 
 
+# LDS conflict-set probe (tests/lds_conflict_sets/run.sh); not instrumented.
+add_executable(lds_conflict_sets ${CMAKE_CURRENT_SOURCE_DIR}/../lds_conflict_sets/lds_conflict_sets.cpp)
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../lds_conflict_sets/lds_conflict_sets.cpp PROPERTIES LANGUAGE HIP)
+
 # The instrumentation plugins run inside the compiler, so a rebuilt plugin must
 # recompile the kernels it instruments; add_dependencies only orders the build.
 # Without this, a plugin change left the instrumented test binaries stale and the
