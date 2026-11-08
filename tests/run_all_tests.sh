@@ -133,6 +133,11 @@ run_suite "Internal-linkage kernels" "${SCRIPT_DIR}/test_intern_linkage.sh"
 # memory fields, flat-access count, uninstrumented kernels). Needs a GPU.
 run_suite "Python API end to end" "${SCRIPT_DIR}/test_python_api_e2e.sh"
 
+# Suite 18: a two-file application built without -fgpu-rdc, as a Makefile
+# would: source attribution with and without -g, and AddressLogger records from
+# overlapping dispatches. Needs a GPU.
+run_suite "Two-file application" "${SCRIPT_DIR}/test_two_file_app.sh"
+
 # Summary
 echo ""
 echo "================================================================================"
