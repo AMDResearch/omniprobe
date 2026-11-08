@@ -208,3 +208,46 @@ interrupted, this log is the only record of progress.
 - **Blocker / Risk**: none. Worth knowing generally: a base commit stamped early enough for other
   work to land in between turns the scope check into a report on the repository rather than on the
   packet.
+
+### 2026-11-08 — executed and completed (opimpl, supervised run; moved up the queue on Pennant evidence)
+
+- Determinism (Open Question 1): clang's `-cuid=` pins the .intern hash (hash = f(cuid) only,
+  same with and without the plugin). Fixture `tests/test_kernels/intern_linkage_test.cpp` built
+  twice: `-cuid=a` → `a8b6f1c0b975c10c` (letter), `-cuid=c` → `37b7379df0088a4a` (digit).
+- Reproduced exactly as diagnosed (letter: static/anon "No instrumented alternative").
+- **New finding**: the digit arm "worked" only for clone lookup — kernelDB keys undemangleable
+  names by dropping the last '.'-component (the hash), the handler's lookup kept it, so every
+  access lost DWARF attribution and MemoryAnalysis reported 0 accesses for those kernels, silently.
+- Open Question 2: fix is runtime-only; clones are not renamed (prebuilt rocBLAS/hipBLASLt suites
+  pass). Open Question 3: getArgDescriptor uses the same keys (arg_map_ built via the same
+  demangling), covered by the fix.
+- Fix `3e31ee8`: `demangleKernelName` (uniform decorated demangling for both flavours, Pv repair
+  for clones), `kernelDBName` threaded to handlers, end-of-run summary of kernels without a clone.
+- New suite 16; unfixed source (same fixture/test) →
+```
+  ✓ PASS - hash a8b6f1c0b975c10c is letter-leading
+  ✗ FAIL - not instrumented: kernel_static kernel_anon
+  ✗ FAIL - BAD ['kernel_static: 0 accesses', 'kernel_anon: 0 accesses']
+  ✓ PASS - hash 37b7379df0088a4a is digit-leading
+  ✓ PASS - all three kernels ran their instrumented clones
+  ✗ FAIL - BAD ['kernel_static: 0 accesses', 'kernel_anon: 0 accesses']
+  ✗ FAIL - no end-of-run summary for the uninstrumented kernel (see /work1/amd/rvanoo/repos/omniprobe/tests/test_output/intern_linkage/plain.log)
+```
+  Fixed: 7/7. Full suite 16/16.
+- Pennant (copy of ~/repos/pennant incl. its working-tree patch, built in /tmp with
+  `-fgpu-rdc`, gfx90a, this repo's plugin; hash `bb7720288b8abfe1`): unfixed, 6 kernels ran
+  uninstrumented (calcCornersPerPoint, gpuInvMap, gpuMain3_interior, gpuMain4, gpuMain5,
+  storeCornersByPoint); fixed, all instrumented with attributed accesses.
+- acceptance.sh (fixture glob widened to .cpp; base re-stamped to 05b39fd; scope amended):
+```
+PASS  AC-1     fixture present and its build produced a .intern.<hash> symbol
+PASS  AC-2     test output names a letter-leading .intern.<hash>
+PASS  AC-3     test output names a digit-leading .intern.<hash>
+PASS  AC-4     all fixture kernels resolved (6 found, 0 unresolved)
+PASS  AC-5     vacuity guard fires: test exits 1 when forced to see no .intern. symbol
+PASS  AC-6     the new suite is registered and actually ran inside run_all_tests.sh
+PASS  AC-7     pre-existing suites pass — no external-linkage regression
+PASS  AC-8     run_all_tests.sh: exit 0, 0 failed, 0 skipped
+JUDGE AC-9     the new test fails at the base commit and passes at HEAD
+PASS  SCOPE    no writes outside the declared write scope (9 entries; working tree and commits since 05b39fd8b9b9c927d68f011399b8844ec054a0af)
+```

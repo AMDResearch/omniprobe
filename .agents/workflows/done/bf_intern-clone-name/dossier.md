@@ -4,23 +4,30 @@
 
 - Workflow ID: bf_intern-clone-name
 - Workflow Type: bugfix
-- Lifecycle State: active
+- Lifecycle State: done
 - Owner / Current Executor: unassigned
 - Intended Write Scope: see the `write-scope` block below (canonical)
 - Dependencies On Other Active Workflows: overlaps `rf_exact-arch-bitcode` on
   `src/instrumentation/InstrumentationCommon.cpp` (that packet is *suspended*, not active, so
   this is not a live collision — but the two must not be executed in parallel)
-- Base Commit: 5b9425f6777f87f28cb789a89a428d0c20d29658
+- Base Commit: 05b39fd8b9b9c927d68f011399b8844ec054a0af (re-stamped 2026-11-08 at execution start; filed against 5b9425f)
 
 ```write-scope
 src/utils.cc
-src/instrumentation/InstrumentationCommon.cpp
-src/instrumentation/include/InstrumentationCommon.h
+inc/utils.h
+src/interceptor.cc
+inc/interceptor.h
+src/comms_mgr.cc
+inc/comms_mgr.h
 tests/test_kernels/
 tests/run_all_tests.sh
-tests/test_intern_clone.sh    # narrowed 2026-09-08 — see below
-tests/intern_clone/           # narrowed 2026-09-08 — alternative layout
+tests/test_intern_linkage.sh
 ```
+
+**Amended 2026-11-08 at execution.** The fix is runtime-only (Open Question 2: clones are not
+renamed, so the pass files are out of scope); the digit-hash data loss found at execution needed
+the kernelDB lookup name threaded through `interceptor`/`comms_mgr`; the end-of-run summary of
+uninstrumented kernels (supervisor request) lives in `interceptor`.
 
 **Narrowed 2026-09-08, after two sibling packets were filed.** This block originally ended with a
 bare `tests/`, which subsumed every path under it — including `tests/test_exit_status.sh` and

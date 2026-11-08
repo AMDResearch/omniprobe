@@ -50,7 +50,7 @@ AC_DOSSIER_PATH="$AC_PACKET_DIR/dossier.md"
 # the two hash flavours are forced). These globs let the gate find the fixture
 # under any reasonable name rather than pinning one prematurely.
 
-FIXTURE_SRC="$(ls "$AC_REPO_ROOT"/tests/test_kernels/*intern*.hip 2>/dev/null | head -1)"
+FIXTURE_SRC="$(ls "$AC_REPO_ROOT"/tests/test_kernels/*intern*.hip "$AC_REPO_ROOT"/tests/test_kernels/*intern*.cpp 2>/dev/null | head -1)"
 TEST_SCRIPT="$(ls "$AC_REPO_ROOT"/tests/*intern*.sh "$AC_REPO_ROOT"/tests/*intern*/run_test.sh 2>/dev/null | head -1)"
 
 TEST_OUT="$(mktemp)"

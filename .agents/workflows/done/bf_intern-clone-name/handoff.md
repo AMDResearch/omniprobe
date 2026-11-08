@@ -4,6 +4,12 @@
 
 ## Current Status
 
+Done 2026-11-08 (`3e31ee8`). All ACs pass; AC-9 evidence in run-log (unfixed: 4/7 fail).
+Follow-up worth a seed: the lookup-key scheme (demangled strings as keys, three different
+demanglings: libstdc++, kernelDB's, ours) is the root fragility; keying by raw symbol would remove
+the class of bug.
+
+
 **Active**, promoted 2026-09-08 from `draft` after passing `workflow-readiness-check`. Base
 commit `e2aa500`. The packet was filed the same day after a pre-packet investigation that
 reproduced the defect end-to-end in-repo, identified the root cause as a coordinated pair of

@@ -24,8 +24,10 @@
   line-start `SKIP:` notice. GitHub: #40/#37 merged, #39 and issue #20 closed with comments.
   **`bf_bba-hardening` done 2026-11-08**: BBA reports wave_visits/active_lanes per BBStart block,
   no timing (BBInterval timing queued after faulted-dispatch-hang). Suite count now **15**.
-  **Queue now (supervisor, 2026-11-08):** `bf_intern-clone-name` (moved up; Pennant `-fgpu-rdc`
-  evidence) → `bf_plugin-missing-bitcode-fatal` (new, standalone) →
+  **`bf_intern-clone-name` done 2026-11-08** (`3e31ee8`): static/anon kernels under `-fgpu-rdc`
+  instrumented and attributed for both hash flavours; end-of-run summary lists kernels without a
+  clone. Suite count now **16**.
+  **Queue now (supervisor, 2026-11-08):** `bf_plugin-missing-bitcode-fatal` (new, standalone) →
   IntelliKit Python API request → zero-param kernels, split LDS entries, flat-address warning →
   pyhandler-gil, faulted-dispatch-hang, exact-arch-bitcode + #38, Triton 3.9, intern-clone-name.
 
