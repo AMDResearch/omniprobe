@@ -29,6 +29,7 @@ CDNA = {
          [*range(32, 36), *range(52, 56)], [*range(36, 40), *range(48, 52)],
          [*range(40, 44), *range(60, 64)], [*range(44, 48), *range(56, 60)]],
 }
+CDNA_WRITE_16 = [range(a, a + 8) for a in range(0, 64, 8)]  # 16-byte writes: 8 consecutive lanes
 
 
 def load(path):
@@ -93,7 +94,7 @@ def main(d, cxx):
                 print(f"    128-byte stride: {n128} conflicting pairs -> "
                       + ("32 banks (same sets)" if same else
                          "64 or more banks" if n128 == 0 else "UNEXPECTED (sets differ)"))
-            expect = sorted(sorted(g) for g in CDNA[width])
+            expect = sorted(sorted(g) for g in (CDNA_WRITE_16 if (width, rw) == (16, "write") else CDNA[width]))
             print("    CDNA1-3 model: " + ("matches" if comps == expect else "differs"))
             if cxx:
                 print("    C++: {%d, {%s}}," % (width, ", ".join(
