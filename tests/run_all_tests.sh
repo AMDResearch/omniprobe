@@ -173,6 +173,11 @@ run_suite "Kernel filter names" "${SCRIPT_DIR}/test_kernel_filter_names.sh"
 # Triton module's triple. Compiles only; no GPU needed.
 run_suite "Bitcode selection" "${SCRIPT_DIR}/test_bitcode_selection.sh"
 
+# Suite 26: LDS bank conflicts — omniprobe's counts equal the SQ_LDS_BANK_CONFLICT
+# hardware counter on pattern kernels that separate 32/64 banks, 32/64-lane
+# phases, and 16-byte read/write phases. Needs a GPU and rocprofv3.
+run_suite "LDS bank conflicts vs hardware" "${SCRIPT_DIR}/test_lds_bank_conflicts.sh"
+
 # Summary
 echo ""
 echo "================================================================================"

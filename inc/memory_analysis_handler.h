@@ -30,7 +30,9 @@ THE SOFTWARE.
 
 namespace dh_comms {
 //! The conflict_set class is used in the analysis of LDS bank conflicts. LDS memory
-//! is partitioned into 32 banks of 4-byte dwords each. If two lanes in a wavefront
+//! is partitioned into 32 banks of 4-byte dwords each (CDNA1-3; the per-architecture
+//! model is lds_model in memory_analysis_handler.cc). The rest of this comment
+//! describes reads on CDNA1-3; 16-byte writes differ, see lds_model. If two lanes in a wavefront
 //! access two different addresses on the same bank simultaneously, that is a bank
 //! conflict: those accesses have to be serialized. But: the memory accesses for
 //! all 64 lanes in a wavefront are executed in phases, and which lanes are active
@@ -63,7 +65,7 @@ namespace dh_comms {
 
 class conflict_set {
 public:
-  conflict_set(const std::vector<std::pair<std::size_t, std::size_t>> &fl_pairs);
+  conflict_set(const std::vector<std::pair<std::size_t, std::size_t>> &fl_pairs, std::size_t no_banks);
   bool register_access(size_t lane, uint64_t address);
   size_t bank_conflict_count() const;
   void clear();
@@ -97,8 +99,9 @@ private:
   void report_json();
 
 private:
-  //! Maps each of the supported memory access sizes to the conflict sets for that size
-  std::map<std::size_t, std::vector<conflict_set>> conflict_sets;
+  //! Per architecture (gcnarch) and access kind (write or not), maps each supported
+  //! memory access size to the conflict sets for that size. Built on first use.
+  std::map<std::pair<uint8_t, bool>, std::map<std::size_t, std::vector<conflict_set>>> conflict_sets;
 
   struct memory_accesses_t {
     size_t no_accesses = 0;

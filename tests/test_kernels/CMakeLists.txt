@@ -225,6 +225,17 @@ target_link_libraries(module_load_test PRIVATE amdhip64)
 add_dependencies(module_load_test module_load_kernel_hsaco)
 
 
+# LDS bank patterns (tests/test_lds_bank_conflicts.sh): instrumented for
+# omniprobe, plain for the SQ_LDS_BANK_CONFLICT hardware counter.
+add_executable(lds_bank_patterns_test lds_bank_patterns.cpp)
+target_compile_options(lds_bank_patterns_test PRIVATE ${TEST_KERNEL_COMPILE_FLAGS} -fpass-plugin=${INST_PLUGIN})
+target_link_options(lds_bank_patterns_test PRIVATE -fgpu-rdc)
+add_dependencies(lds_bank_patterns_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
+add_executable(lds_bank_patterns_plain lds_bank_patterns.cpp)
+target_compile_options(lds_bank_patterns_plain PRIVATE ${TEST_KERNEL_COMPILE_FLAGS})
+target_link_options(lds_bank_patterns_plain PRIVATE -fgpu-rdc)
+set_source_files_properties(lds_bank_patterns.cpp PROPERTIES LANGUAGE HIP)
+
 # LDS conflict-set probe (tests/lds_conflict_sets/run.sh); not instrumented.
 add_executable(lds_conflict_sets ${CMAKE_CURRENT_SOURCE_DIR}/../lds_conflict_sets/lds_conflict_sets.cpp)
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../lds_conflict_sets/lds_conflict_sets.cpp PROPERTIES LANGUAGE HIP)

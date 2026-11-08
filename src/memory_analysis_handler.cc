@@ -36,15 +36,56 @@
 #include <fstream>
 
 namespace {
-constexpr size_t no_banks = 32;
+using lane_ranges_t = std::vector<std::pair<std::size_t, std::size_t>>;
+
+// LDS geometry assumed by the bank-conflict analysis: the bank count, and for
+// each access size the groups of lanes served in the same phase (see
+// memory_analysis_handler.h), for reads and for writes. Measured with
+// tests/lds_conflict_sets/run.sh (pairwise SQ_LDS_BANK_CONFLICT); suite 26
+// compares the resulting counts with the hardware counter.
+struct lds_model_t {
+  std::size_t banks;
+  std::map<std::size_t, std::vector<lane_ranges_t>> read_phases;
+  std::map<std::size_t, std::vector<lane_ranges_t>> write_phases;
+};
+
+// Allocated once and never destroyed: the handler of the last dispatch can
+// still be running on its own thread while exit() runs static destructors.
+// Function-local statics would also race on first use, since this library is
+// built with -fno-threadsafe-statics.
+//
+// CDNA1-3 (measured on gfx90a, 2026-11-08). 16-byte writes are served 8
+// consecutive lanes at a time, unlike 16-byte reads.
+const lds_model_t &cdna_lds = [] {
+  std::map<std::size_t, std::vector<lane_ranges_t>> reads{
+      {1, {{{0, 32}}, {{32, 64}}}},
+      {2, {{{0, 32}}, {{32, 64}}}},
+      {4, {{{0, 32}}, {{32, 64}}}},
+      {8, {{{0, 16}}, {{16, 32}}, {{32, 48}}, {{48, 64}}}},
+      {16,
+       {{{0, 4}, {20, 24}},
+        {{4, 8}, {16, 20}},
+        {{8, 12}, {28, 32}},
+        {{12, 16}, {24, 28}},
+        {{32, 36}, {52, 56}},
+        {{36, 40}, {48, 52}},
+        {{40, 44}, {60, 64}},
+        {{44, 48}, {56, 60}}}}};
+  auto writes = reads;
+  writes[16] = {{{0, 8}}, {{8, 16}}, {{16, 24}}, {{24, 32}},
+                {{32, 40}}, {{40, 48}}, {{48, 56}}, {{56, 64}}};
+  return *new lds_model_t{32, reads, writes};
+}();
+
+const lds_model_t &lds_model(uint8_t /*arch*/) { return cdna_lds; }
 } // namespace
 
 namespace dh_comms {
 
 // See memory_analysis_handler.h for an explanation of conflict sets.
-conflict_set::conflict_set(const std::vector<std::pair<std::size_t, std::size_t>> &fl_pairs)
+conflict_set::conflict_set(const std::vector<std::pair<std::size_t, std::size_t>> &fl_pairs, std::size_t no_banks)
     : lanes(),
-      banks(std::vector<std::set<uint64_t>>(32)) {
+      banks(std::vector<std::set<uint64_t>>(no_banks)) {
   for (const auto &fl_pair : fl_pairs) {
     assert(fl_pair.first < fl_pair.second);
     for (std::size_t i = fl_pair.first; i != fl_pair.second; ++i) {
@@ -57,7 +98,7 @@ bool conflict_set::register_access(size_t lane, uint64_t address) {
     return false;
   }
   uint64_t dword = address / sizeof(uint32_t);
-  size_t bank = dword % no_banks;
+  size_t bank = dword % banks.size();
   banks[bank].insert(dword);
   return true;
 }
@@ -128,36 +169,7 @@ memory_analysis_handler_t::memory_analysis_handler_t(const std::string& kernel, 
           {"buffer_store_dword", {4, memory_access::write}},    {"buffer_store_dwordx2", {8, memory_access::write}},
           {"buffer_store_dwordx3", {12, memory_access::write}}, {"buffer_store_dwordx4", {16, memory_access::write}}
       }
-{
-  conflict_sets.insert({1, std::vector<conflict_set>{
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{0, 32}}},
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{32, 64}}},
-                           }});
-  conflict_sets.insert({2, std::vector<conflict_set>{
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{0, 32}}},
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{32, 64}}},
-                           }});
-  conflict_sets.insert({4, std::vector<conflict_set>{
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{0, 32}}},
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{32, 64}}},
-                           }});
-  conflict_sets.insert({8, std::vector<conflict_set>{
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{0, 16}}},
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{16, 32}}},
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{32, 48}}},
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{48, 64}}},
-                           }});
-  conflict_sets.insert({16, std::vector<conflict_set>{
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{0, 4}, {20, 24}}},
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{4, 8}, {16, 20}}},
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{8, 12}, {28, 32}}},
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{12, 16}, {24, 28}}},
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{32, 36}, {52, 56}}},
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{36, 40}, {48, 52}}},
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{40, 44}, {60, 64}}},
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{44, 48}, {56, 60}}},
-                            }});
-}
+{}
 
 memory_analysis_handler_t::memory_analysis_handler_t(bool verbose)
     : conflict_sets(),
@@ -213,36 +225,7 @@ memory_analysis_handler_t::memory_analysis_handler_t(bool verbose)
           {"buffer_store_dword", {4, memory_access::write}},    {"buffer_store_dwordx2", {8, memory_access::write}},
           {"buffer_store_dwordx3", {12, memory_access::write}}, {"buffer_store_dwordx4", {16, memory_access::write}}
       }
-  {
-  conflict_sets.insert({1, std::vector<conflict_set>{
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{0, 32}}},
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{32, 64}}},
-                           }});
-  conflict_sets.insert({2, std::vector<conflict_set>{
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{0, 32}}},
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{32, 64}}},
-                           }});
-  conflict_sets.insert({4, std::vector<conflict_set>{
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{0, 32}}},
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{32, 64}}},
-                           }});
-  conflict_sets.insert({8, std::vector<conflict_set>{
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{0, 16}}},
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{16, 32}}},
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{32, 48}}},
-                               conflict_set{std::vector<std::pair<size_t, size_t>>{{48, 64}}},
-                           }});
-  conflict_sets.insert({16, std::vector<conflict_set>{
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{0, 4}, {20, 24}}},
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{4, 8}, {16, 20}}},
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{8, 12}, {28, 32}}},
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{12, 16}, {24, 28}}},
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{32, 36}, {52, 56}}},
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{36, 40}, {48, 52}}},
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{40, 44}, {60, 64}}},
-                                conflict_set{std::vector<std::pair<size_t, size_t>>{{44, 48}, {56, 60}}},
-                            }});
-}
+{}
 
 bool memory_analysis_handler_t::handle(const message_t &message) {
   if (message.wave_header().user_type != message_type::address) {
@@ -532,7 +515,19 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
   assert(message.no_data_items() == lane_ids_of_active_lanes.size());
   uint8_t rw_kind = message.wave_header().user_data & 0b11;
   uint16_t data_size = (message.wave_header().user_data >> 6) & 0xffff;
-  if (conflict_sets.find(data_size) == conflict_sets.end()) {
+  uint8_t arch = message.wave_header().arch;
+  bool write = rw_kind == memory_access::write;
+  auto arch_sets = conflict_sets.find({arch, write});
+  if (arch_sets == conflict_sets.end()) {
+    const lds_model_t &model = lds_model(arch);
+    std::map<std::size_t, std::vector<conflict_set>> sets;
+    for (const auto &[size, phases] : write ? model.write_phases : model.read_phases)
+      for (const auto &lanes : phases)
+        sets[size].emplace_back(lanes, model.banks);
+    arch_sets = conflict_sets.emplace(std::make_pair(arch, write), std::move(sets)).first;
+  }
+  auto &size_sets = arch_sets->second;
+  if (size_sets.find(data_size) == size_sets.end()) {
     printf("bank conflict handling of %u-byte accesses not supported\n", data_size);
     return false;
   }
@@ -541,7 +536,7 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
     auto lane = lane_ids_of_active_lanes[i];
     uint64_t address = *(const uint64_t *)message.data_item(i);
     assert(address % data_size == 0); // we only handle naturally-aligned data
-    for (auto &cs : conflict_sets[data_size]) {
+    for (auto &cs : size_sets[data_size]) {
       if (cs.register_access(lane, address)) {
         break;
       }
@@ -549,7 +544,7 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
   }
 
   size_t bank_conflict_count = 0;
-  for (auto &cs : conflict_sets[data_size]) {
+  for (auto &cs : size_sets[data_size]) {
     bank_conflict_count += cs.bank_conflict_count();
     cs.clear();
   }
