@@ -43,30 +43,32 @@ def phases(lanes_per_phase):
     return [range(s, s + lanes_per_phase) for s in range(0, 64, lanes_per_phase)]
 
 
-# 16-byte phases as measured on gfx90a (tests/lds_conflict_sets): reads pair
-# 4-lane blocks {0..3, 20..23}, {4..7, 16..19}, ...; writes take 8 consecutive
-# lanes. Used by every hypothesis below; lds_conflict_sets is the authority
-# for 16-byte phases on other hardware.
-B128 = {
-    "read": [[*range(a, a + 4), *range(b, b + 4)] for h in (0, 32)
-             for a, b in ((h, h + 20), (h + 4, h + 16), (h + 8, h + 28), (h + 12, h + 24))],
-    "write": phases(8),
-}
+def groups(*ranges_per_group):
+    return [[lane for a, b in g for lane in range(a, b)] for g in ranges_per_group]
 
-# hypothesis -> (banks, {element bytes: lane groups served in one phase})
-HYPOTHESES = {
-    "32 banks, 32/16-lane phases (CDNA1-3)": (32, {4: phases(32), 8: phases(16)}),
-    "64 banks, 32/16-lane phases": (64, {4: phases(32), 8: phases(16)}),
-    "64 banks, 64/32-lane phases": (64, {4: phases(64), 8: phases(32)}),
+
+# The models in src/memory_analysis_handler.cc (lds_model), measured with
+# tests/lds_conflict_sets: (width, read|write) -> (banks, lane groups per phase).
+CDNA = {
+    (4, "read"): (32, phases(32)), (4, "write"): (32, phases(32)),
+    (8, "read"): (32, phases(16)), (8, "write"): (32, phases(16)),
+    (16, "read"): (32, groups(*[((a, a + 4), (b, b + 4)) for h in (0, 32) for a, b in
+                                ((h, h + 20), (h + 4, h + 16), (h + 8, h + 28), (h + 12, h + 24))])),
+    (16, "write"): (32, phases(8)),
 }
+CDNA4 = dict(CDNA)
+CDNA4[(8, "read")] = (64, phases(32))
+CDNA4[(16, "read")] = (64, groups(((0, 4), (12, 16), (20, 28)), ((4, 12), (16, 20), (28, 32)),
+                                  ((32, 36), (44, 48), (52, 60)), ((36, 44), (48, 52), (60, 64))))
+HYPOTHESES = {"CDNA1-3 (gfx90a)": CDNA, "CDNA4 (gfx950)": CDNA4}
 
 
 def predict(hypothesis, pattern, rw):
     """Extra passes per wave and instruction: per phase, max distinct dwords in a bank - 1."""
-    banks, groups = HYPOTHESES[hypothesis]
     width, index = PATTERNS[pattern]
+    banks, lane_groups = HYPOTHESES[hypothesis][(width, rw)]
     total = 0
-    for group in (B128[rw] if width == 16 else groups[width]):
+    for group in lane_groups:
         per_bank = defaultdict(set)
         for lane in group:
             first = index(lane) * width // 4

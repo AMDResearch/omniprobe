@@ -38,15 +38,18 @@
 namespace {
 using lane_ranges_t = std::vector<std::pair<std::size_t, std::size_t>>;
 
-// LDS geometry assumed by the bank-conflict analysis: the bank count, and for
-// each access size the groups of lanes served in the same phase (see
-// memory_analysis_handler.h), for reads and for writes. Measured with
+// LDS geometry assumed by the bank-conflict analysis: for each access size,
+// reads and writes separately, the bank count and the groups of lanes served
+// in the same phase (see memory_analysis_handler.h). Measured with
 // tests/lds_conflict_sets/run.sh (pairwise SQ_LDS_BANK_CONFLICT); suite 26
 // compares the resulting counts with the hardware counter.
-struct lds_model_t {
+struct lds_phases_t {
   std::size_t banks;
-  std::map<std::size_t, std::vector<lane_ranges_t>> read_phases;
-  std::map<std::size_t, std::vector<lane_ranges_t>> write_phases;
+  std::vector<lane_ranges_t> groups;
+};
+struct lds_model_t {
+  std::map<std::size_t, lds_phases_t> reads;
+  std::map<std::size_t, lds_phases_t> writes;
 };
 
 // Allocated once and never destroyed: the handler of the last dispatch can
@@ -54,30 +57,49 @@ struct lds_model_t {
 // Function-local statics would also race on first use, since this library is
 // built with -fno-threadsafe-statics.
 //
-// CDNA1-3 (measured on gfx90a, 2026-11-08). 16-byte writes are served 8
-// consecutive lanes at a time, unlike 16-byte reads.
+// CDNA1-3 (measured on gfx90a, 2026-11-08): 32 banks throughout. 16-byte
+// writes are served 8 consecutive lanes at a time, unlike 16-byte reads.
 const lds_model_t &cdna_lds = [] {
-  std::map<std::size_t, std::vector<lane_ranges_t>> reads{
-      {1, {{{0, 32}}, {{32, 64}}}},
-      {2, {{{0, 32}}, {{32, 64}}}},
-      {4, {{{0, 32}}, {{32, 64}}}},
-      {8, {{{0, 16}}, {{16, 32}}, {{32, 48}}, {{48, 64}}}},
+  const lds_phases_t halves{32, {{{0, 32}}, {{32, 64}}}};
+  std::map<std::size_t, lds_phases_t> reads{
+      {1, halves},
+      {2, halves},
+      {4, halves},
+      {8, {32, {{{0, 16}}, {{16, 32}}, {{32, 48}}, {{48, 64}}}}},
       {16,
-       {{{0, 4}, {20, 24}},
-        {{4, 8}, {16, 20}},
-        {{8, 12}, {28, 32}},
-        {{12, 16}, {24, 28}},
-        {{32, 36}, {52, 56}},
-        {{36, 40}, {48, 52}},
-        {{40, 44}, {60, 64}},
-        {{44, 48}, {56, 60}}}}};
+       {32,
+        {{{0, 4}, {20, 24}},
+         {{4, 8}, {16, 20}},
+         {{8, 12}, {28, 32}},
+         {{12, 16}, {24, 28}},
+         {{32, 36}, {52, 56}},
+         {{36, 40}, {48, 52}},
+         {{40, 44}, {60, 64}},
+         {{44, 48}, {56, 60}}}}}};
   auto writes = reads;
-  writes[16] = {{{0, 8}}, {{8, 16}}, {{16, 24}}, {{24, 32}},
-                {{32, 40}}, {{40, 48}}, {{48, 56}}, {{56, 64}}};
-  return *new lds_model_t{32, reads, writes};
+  writes[16] = {32,
+                {{{0, 8}}, {{8, 16}}, {{16, 24}}, {{24, 32}},
+                 {{32, 40}}, {{40, 48}}, {{48, 56}}, {{56, 64}}}};
+  return *new lds_model_t{reads, writes};
 }();
 
-const lds_model_t &lds_model(uint8_t /*arch*/) { return cdna_lds; }
+// CDNA4 (measured on gfx950/MI350, 2026-11-08). Writes and 4-byte reads as on
+// CDNA1-3. 8- and 16-byte reads use 64 banks, with 32- and 16-lane phases.
+// 1- and 2-byte accesses are not measured; they follow 4-byte.
+const lds_model_t &cdna4_lds = [] {
+  auto reads = cdna_lds.reads;
+  reads[8] = {64, {{{0, 32}}, {{32, 64}}}};
+  reads[16] = {64,
+               {{{0, 4}, {12, 16}, {20, 28}},
+                {{4, 12}, {16, 20}, {28, 32}},
+                {{32, 36}, {44, 48}, {52, 60}},
+                {{36, 44}, {48, 52}, {60, 64}}}};
+  return *new lds_model_t{reads, cdna_lds.writes};
+}();
+
+const lds_model_t &lds_model(uint8_t arch) {
+  return arch == dh_comms::gcnarch::gfx950 ? cdna4_lds : cdna_lds;
+}
 } // namespace
 
 namespace dh_comms {
@@ -521,9 +543,9 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
   if (arch_sets == conflict_sets.end()) {
     const lds_model_t &model = lds_model(arch);
     std::map<std::size_t, std::vector<conflict_set>> sets;
-    for (const auto &[size, phases] : write ? model.write_phases : model.read_phases)
-      for (const auto &lanes : phases)
-        sets[size].emplace_back(lanes, model.banks);
+    for (const auto &[size, phases] : write ? model.writes : model.reads)
+      for (const auto &lanes : phases.groups)
+        sets[size].emplace_back(lanes, phases.banks);
     arch_sets = conflict_sets.emplace(std::make_pair(arch, write), std::move(sets)).first;
   }
   auto &size_sets = arch_sets->second;
