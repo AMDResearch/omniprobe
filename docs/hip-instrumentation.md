@@ -34,10 +34,32 @@ Three plugins are available, each with a `-rocm` variant for HIP:
 |--------|-------------------|---------|
 | `libAMDGCNSubmitAddressMessages-rocm.so` | Global and LDS memory accesses | MemoryAnalysis, Heatmap, AddressLogger |
 | `libAMDGCNSubmitBBStart-rocm.so` | Basic block entry timestamps | BasicBlockAnalysis, BasicBlockLogger |
-| `libAMDGCNSubmitBBInterval-rocm.so` | Basic block start/stop timing intervals | — |
+| `libAMDGCNSubmitBBInterval-rocm.so` | Basic block start/stop timing intervals (experimental) | none (raw time-interval messages; see below) |
 
 The address messages plugin is the most commonly used — it enables all
 memory-related analyses.
+
+**BBInterval is experimental and not a per-block timing tool.** It records, per
+wave and per basic block executed, an `s_memtime` interval around the block's
+work (no analyzer aggregates these per block; the default time-interval handler
+and `PythonHandler` see the raw intervals). Measured on gfx90a (2026-11-08):
+
+- Within one kernel, the block with the most ticks was the same in three runs;
+  lower ranks swapped where their shares differed by about 2%. A loop body's
+  per-iteration interval is steady.
+- But the instrumentation inlines about a thousand instructions of submit code
+  per block. A block that a wave executes once or a few times (typical of
+  stencil/hydro kernels such as PENNANT's) measures mostly cold instruction
+  fetch: no block in PENNANT's kernels measured under ~530 ticks.
+- A block that waits (barrier, atomic retry loop) is charged the wait, inflated
+  because the other waves are slowed by their own instrumentation. In PENNANT,
+  summed per-wave block ticks put `gpuMain5` at 87% and `gpuMain2` at 1.5%,
+  against 17% and 45% of actual kernel time.
+- `s_memtime` ticks do not convert reliably to time, and a block's source line
+  is that of its first instruction, often inlined from a header.
+
+For "which code runs most", use `BasicBlockAnalysis` (execution and lane counts
+per block, with source lines). For time per kernel, use a profiler.
 
 ### Plugin locations
 
