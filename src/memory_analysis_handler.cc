@@ -509,9 +509,22 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
 
   auto line = message.wave_header().dwarf_line;
   auto column = message.wave_header().dwarf_column;
-  auto fname = fname_hash_to_fname[message.wave_header().dwarf_fname_hash];
-  if (fname == "") {
-    fname = "<unknown source file>";
+  // File name for the hash: from global accesses already seen in this
+  // dispatch, else from kernelDB's file names for the kernel. The map alone
+  // depended on message order: LDS messages handled before the first global
+  // access from the same file got "<unknown source file>", splitting one
+  // source location into two entries.
+  auto hash = message.wave_header().dwarf_fname_hash;
+  std::string fname;
+  auto known = fname_hash_to_fname.find(hash);
+  if (known != fname_hash_to_fname.end()) {
+    fname = known->second;
+  } else {
+    fname = sourceFileForHash(hash);
+    if (fname.empty() || fname.rfind("<unresolved", 0) == 0 || fname == "<unknown>")
+      fname = "<unknown source file>";
+    else
+      fname_hash_to_fname[hash] = fname;
   }
   auto &accesses = lds_accesses[fname][line][column]; // reference to std::vector of lds_accesses_t
 

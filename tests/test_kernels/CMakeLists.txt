@@ -86,6 +86,16 @@ target_compile_options(bb_counts_am_test PRIVATE
 target_link_options(bb_counts_am_test PRIVATE -fgpu-rdc)
 add_dependencies(bb_counts_am_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
 
+# LDS accesses before any global access (test_json_output.sh)
+add_executable(lds_split_test lds_split_test.cpp)
+set_source_files_properties(lds_split_test.cpp PROPERTIES LANGUAGE HIP)
+target_compile_options(lds_split_test PRIVATE
+    ${TEST_KERNEL_COMPILE_FLAGS}
+    -fpass-plugin=${INST_PLUGIN}
+)
+target_link_options(lds_split_test PRIVATE -fgpu-rdc)
+add_dependencies(lds_split_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
+
 # Internal-linkage kernels under -fgpu-rdc (test_intern_linkage.sh). The
 # .intern.<hash> suffix is derived from the compilation unit ID; fixing -cuid
 # makes the hash deterministic. cuid "a" -> letter-leading hash, "c" ->

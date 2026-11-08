@@ -246,4 +246,40 @@ PY
     fi
 done
 
+################################################################################
+# MemoryAnalysis: one entry per source location (bf_lds-split-entries). LDS
+# accesses handled before any global access from the same file were filed
+# under "<unknown source file>", splitting one location into two entries.
+################################################################################
+TESTS_RUN=$((TESTS_RUN + 1))
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} memory_analysis_one_entry_per_location"
+f="$OUT/lds_split.json"; rm -f "$f"
+op "$OUT/lds_split.log" -i -a MemoryAnalysis -t json -o "$f" -- "${BUILD_DIR}/tests/test_kernels/lds_split_test"
+verdict="$(python3 - "$f" <<'PY'
+import collections, json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+except Exception as e:
+    print(f"BAD output unusable: {e}"); sys.exit()
+acc = [a for d in data for a in d["accesses"]]
+groups = collections.Counter((a["line"], a["column"], a["memory_space"], a["access_type"]) for a in acc)
+split = {k: n for k, n in groups.items() if n > 1}
+unknown = [a for a in acc if "unknown" in a["source_file"]]
+lds = [a for a in acc if a["memory_space"] == "lds"]
+if not lds:
+    print("BAD no LDS accesses reported"); sys.exit()
+if split or unknown:
+    print(f"BAD split locations {split}, entries without a file {len(unknown)}")
+else:
+    print(f"OK {len(acc)} entries ({len(lds)} LDS), one per location, all with a source file")
+PY
+)"
+if [[ "$verdict" == OK* ]]; then
+    echo -e "  ${GREEN}✓ PASS${NC} - $verdict"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - $verdict"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 print_summary
