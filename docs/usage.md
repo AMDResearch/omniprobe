@@ -100,25 +100,36 @@ memory heatmap report(simple_kernel(int*, unsigned long) [clone .kd][1])
     page[0x7ff3b4500000:7ff3b45fffff] 256 accesses
 ```
 
+With `-t json`, one line per dispatch:
+`{"kernel": ..., "dispatch_id": N, "page_size": 1048576, "pages": [{"start_address": A, "end_address": B, "accesses": C}, ...]}`
+(`end_address` is inclusive).
+
 #### BasicBlockAnalysis
 
-Tracks execution time of each basic block per wave (wavefront). After the kernel
-completes, reports timing statistics including min, max, and percentile
-breakdowns. Also maps which compute units each wave ran on.
-
-Useful for identifying hot basic blocks or uneven workload distribution across
-compute units.
+Counts, per basic block, how many times a wave entered it and how many lanes
+were active, with the block's source location. No timing; see the
+BasicBlockAnalysis JSON schema below.
 
 #### AddressLogger
 
-Logs all memory address messages to output in CSV or JSON format. This is the
-raw trace — useful when you want to post-process the data yourself rather than
-use one of the higher-level analyzers.
+Logs every memory address message: one record per instrumented memory
+instruction executed by a wave. This is the raw trace, for post-processing.
+With `-t json`, one object per line with `kernel_name`, `dispatch_id`, `exec`,
+`active_lane_count`, `timestamp`, `block_idx_x/y/z`, `wave_num`, `xcc_id`,
+`se_id`, `cu_id`, `source_file`, `dwarf_line`, `dwarf_column`, `op_type`
+(`read`/`write`/`readwrite`), `memory_space` (`flat`, `global`, `shared`,
+`constant`, `scratch`, `gds`), `access_size` (bytes of the accessed type) and
+`addresses` (one per active lane, in increasing lane order). The source
+location is the instruction's own: code inlined from a header (e.g. HIP's
+`blockDim`, a 2-byte `constant` read) points into that header. With CSV
+(default) the rows are `ADDRESS_MESSAGE,...` under a header line.
 
 #### BasicBlockLogger
 
-Logs raw basic block entry timestamps. Like AddressLogger, this produces the raw
-trace for custom post-processing.
+Logs one record per wave per basic block entered, with a timestamp. Same JSON
+fields as AddressLogger minus the address fields, plus `basic_block_id` (the
+id BasicBlockAnalysis reports; `user_data` carries the same value). CSV rows
+are `WAVE_MESSAGE,...`.
 
 > **Note**: `BasicBlockLogger` and `BasicBlockAnalysis` require the
 > `libAMDGCNSubmitBBStart` plugin (use `-rocm.so` for HIP, `-triton.so` for
@@ -252,6 +263,15 @@ a flat `accesses` array. Multiple dispatches are wrapped in a JSON array.
 | `execution_count` | Number of times this access was observed |
 | `excess_cache_lines` | Extra L2 cache lines fetched beyond the minimum needed (global only) |
 | `bank_conflicts` | Total LDS bank conflicts observed (LDS only) |
+| `cache_lines_needed`, `cache_lines_used` | Summed over executions; their difference is `excess_cache_lines` |
+| `ir_bytes`, `isa_bytes`, `isa_instruction` | Accessed type size, bytes the ISA instruction moves, and that instruction |
+
+Each dispatch object also has `unanalyzed_flat_accesses`: wave-level accesses
+through *flat* pointers, which are not analyzed because their address space is
+only known at run time. All accesses are flat at `-O0` (CMake's Debug
+default) and when a pointer is loaded from memory, so a kernel with no
+`accesses` but a non-zero count needs an optimized build (`-O1` or higher). A
+line on stderr reports the count per dispatch.
 
 #### BasicBlockAnalysis JSON schema
 
@@ -329,6 +349,17 @@ omniprobe -i -a AddressLogger -l output.csv -- ./my_app
 
 Default is `console` (stdout). Primarily used for CSV output. When `-t json`
 is active, prefer `-o` instead.
+
+### Output streams
+
+omniprobe forwards the instrumented application's stdout to its own stdout and
+the application's stderr to its own stderr, line by line and unchanged. Analysis
+handlers run inside the application, so their console reports (the default
+`-l console`) appear on **stdout**; omniprobe's and the interceptor's own
+messages (e.g. "Found instrumented alternative", warnings, the end-of-run
+summary of kernels that ran without an instrumented clone) are on **stderr**.
+A handler plugin that writes to `std::cout` or `printf` therefore reaches the
+user's stdout.
 
 ## Block index filtering
 
@@ -484,7 +515,7 @@ reads the JSON output file, and parses it into structured dataclasses.
 ```python
 from omniprobe.api import Omniprobe
 
-op = Omniprobe()  # finds omniprobe on PATH
+op = Omniprobe()  # finds omniprobe on PATH, else the launcher next to the package
 
 # Memory analysis
 result = op.analyze_memory("./my_hip_app", kernel_filter="matmul")
@@ -493,6 +524,8 @@ for kernel in result.kernels:
         if access.excess_cache_lines > 0:
             print(f"{access.source_file}:{access.line} — "
                   f"{access.excess_cache_lines} excess cache lines")
+if result.uninstrumented_kernels:
+    print("partial result, not instrumented:", result.uninstrumented_kernels)
 
 # Basic block analysis
 bb_result = op.analyze_basic_blocks("./my_hip_app")
@@ -500,21 +533,53 @@ for kernel in bb_result.kernels:
     for bb in kernel.basic_blocks:
         print(f"BB {bb.bb_id} {bb.source_file}:{bb.line}: "
               f"{bb.wave_visits} wave visits, {bb.active_lanes} active lanes")
+
+# Raw address trace, first 10000 records only
+trace = op.log_addresses("./my_hip_app", max_records=10000)
 ```
 
 ### API reference
 
-**`Omniprobe(omniprobe_path=None)`** — Constructor. Pass an explicit path or
-let it search `PATH`. Raises `FileNotFoundError` if not found.
+All analysis methods take `(command, kernel_filter=None, dispatches="all")`;
+the two trace methods also take `max_records=None`. Every result has
+`uninstrumented_kernels: dict[str, int]` (kernel name → dispatches that ran
+without an instrumented clone and are therefore missing from the result).
 
-**`analyze_memory(command, kernel_filter=None, dispatches="all")`** — Returns
-a `MemoryAnalysisResult` with per-kernel `accesses` containing `source_file`,
-`line`, `column`, `excess_cache_lines`, and `bank_conflicts`.
+**`Omniprobe(omniprobe_path=None)`** — Constructor. Uses an explicit path,
+else `omniprobe` on `PATH`, else the launcher shipped next to the package
+(install tree `<prefix>/omniprobe/bin/omniprobe`). Raises `FileNotFoundError`
+if none exists.
 
-**`analyze_basic_blocks(command, kernel_filter=None, dispatches="all")`** —
-Returns a `BasicBlockResult` with per-kernel `basic_blocks` containing
-`bb_id`, `source_file`, `line`, `column`, `wave_visits` and `active_lanes`
-(see the BasicBlockAnalysis JSON schema above for their meaning).
+**`analyze_memory(...)`** → `MemoryAnalysisResult`: per kernel dispatch
+(`KernelMemoryResult`: `kernel_name`, `dispatch_id`, `accesses`,
+`unanalyzed_flat_accesses`), each `MemoryAccess` with `source_file`, `line`,
+`column`, `memory_space`, `access_type`, `execution_count`,
+`excess_cache_lines`, `bank_conflicts`, `cache_lines_needed`,
+`cache_lines_used`, `isa_instruction`, `ir_bytes`, `isa_bytes`.
+AddressMessages binary.
+
+**`analyze_basic_blocks(...)`** → `BasicBlockResult` with per-kernel
+`basic_blocks` containing `bb_id`, `source_file`, `line`, `column`,
+`wave_visits` and `active_lanes` (see the BasicBlockAnalysis JSON schema).
+BBStart binary.
+
+**`analyze_heatmap(...)`** → `HeatmapResult`: per dispatch `KernelHeatmap`
+(`kernel_name`, `dispatch_id`, `page_size`, `pages`), each `HeatmapPage`
+with `start_address`, `end_address` (inclusive), `accesses`. AddressMessages
+binary.
+
+**`log_addresses(..., max_records=None)`** → `AddressTrace(records,
+truncated)`, each `AddressRecord` with `kernel_name`, `dispatch_id`,
+`timestamp`, `exec_mask`, `active_lane_count`, `block_idx` (x, y, z),
+`wave_num`, `xcc_id`, `se_id`, `cu_id`, `op_type`, `memory_space`,
+`access_size`, `source_file`, `line`, `column`, `addresses` (one per active
+lane, increasing lane order). The trace file is parsed as a stream: with
+`max_records` at most that many records are kept and `truncated` says whether
+more followed. AddressMessages binary.
+
+**`log_basic_blocks(..., max_records=None)`** → `BasicBlockTrace(records,
+truncated)`, each `BBRecord` with the same wave fields plus `basic_block_id`,
+`source_file`, `line`, `column`. BBStart binary.
 
 ### Error handling
 
@@ -526,6 +591,7 @@ Returns a `BasicBlockResult` with per-kernel `basic_blocks` containing
 
 ### Module location
 
-The API lives at `omniprobe/api/` in the source tree. It is importable as
-`omniprobe.api` when the `omniprobe/` directory is on `PYTHONPATH` or when
-running from the Omniprobe install tree.
+The API lives at `omniprobe/api/` in the source tree and is installed to
+`<prefix>/omniprobe/api/`. Put the repository root (source tree) or `<prefix>`
+(install tree) on `PYTHONPATH` and `from omniprobe.api import Omniprobe`
+works; in the install tree no `PATH` setting is needed either.

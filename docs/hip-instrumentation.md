@@ -62,16 +62,24 @@ hipcc \
 | Flag | Purpose |
 |------|---------|
 | `-fpass-plugin=<path>` | Load the Omniprobe LLVM instrumentation plugin |
-| `-fgpu-rdc` | Enable relocatable device code (required for kernel cloning) |
+| `-fgpu-rdc` | Optional: relocatable device code. Instrumentation works with and without it |
 | `--offload-arch=<arch>` | Target GPU architecture |
 
-Both compile and link steps need `-fgpu-rdc`:
+`-fgpu-rdc` is **not** required: every kernel gets an instrumented clone in
+either mode, including `static` and anonymous-namespace kernels and kernels in
+several source files. Use it if the application itself needs relocatable device
+code (e.g. device functions called across source files); then both the compile
+and the link step need it:
 
 ```bash
-# Separate compilation
+# Separate compilation with relocatable device code
 hipcc -fgpu-rdc -fpass-plugin=<plugin> -c kernel.cpp -o kernel.o
 hipcc -fgpu-rdc kernel.o -o my_app
 ```
+
+With `-fgpu-rdc`, internal-linkage kernels get names like
+`kernel(int*) [clone .intern] [clone .<hash>] [clone .kd]`; `-k kernel`
+still matches them.
 
 ### Complete example
 
