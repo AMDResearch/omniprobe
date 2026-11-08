@@ -4,11 +4,10 @@
 
 **Remaining queue, in this order (supervisor, 2026-11-08):**
 
-1. ~~`bf_pyhandler-gil`~~ implemented and pushed 2026-11-08 (`a5617d3`..`1434fa1`); packet stays
-   in `active/` only until the supervisor acknowledges JUDGE AC-5 (reading recorded in its
-   `artifacts.md`), then `/workflow-complete`.
+1. ~~`bf_pyhandler-gil`~~ done 2026-11-08 (`a5617d3`..`1434fa1`; AC-5 acknowledged by supervisor).
 2. ~~`bf_faulted-dispatch-hang`~~ done 2026-11-08 (packet in `done/`).
-3. `rf_exact-arch-bitcode` + PR #38 — needs a gfx950 node (the supervisor arranges it). Include
+3. `rf_exact-arch-bitcode` + PR #38 — needs a gfx950 node (the supervisor switches the allocation
+   near the end of the session; do the Triton bump first). Include
    the 2026-11-08 finding: for Triton modules the plugin sees no `target-cpu` ("target unknown")
    and falls back to cdna2 bitcode.
 4. Triton v3.9.0 bump (owner D4: after the bug fixes).
@@ -25,8 +24,7 @@ D1 (2026-10-27 WIP, leak-scan baseline), `bf_json-output-integrity`, PR #40 + fo
 follow-up, build-tree bitcode, `bf_library-filter-chain-silent-pass`, `bf_bba-hardening` (BBA =
 counts per BBStart block, no timing), `bf_intern-clone-name`, `bf_plugin-missing-bitcode-fatal`,
 `ft_python-api-coverage`, `bf_plugin-dhcomms-cuid-duplicate`, `bf_zero-param-kernel-match`,
-`bf_lds-split-entries`, `bf_source-attribution-gaps`, `bf_logger-record-interleave`, `bf_faulted-dispatch-hang`
-(+ `bf_pyhandler-gil` pending AC-5 ack). GitHub: #40,
+`bf_lds-split-entries`, `bf_source-attribution-gaps`, `bf_logger-record-interleave`, `bf_faulted-dispatch-hang`, `bf_pyhandler-gil`. GitHub: #40,
 #37 merged; #39 and issue #20 closed with comments; #42 untouched (deferred). Full suite: **20**
 suites. Pushes are gated on `scripts/leak-scan.sh` exiting 0.
 

@@ -4,9 +4,9 @@
 
 ## Current Status
 
-**2026-11-08: implemented, full-suite verification in progress.** Fix, plugin, test (suite 19) and
-docs written; the new suite passes 7/7 on gfx90a and fails 7/7 (SIGSEGV) on the unfixed
-`pyHandler.cc`. See run-log 2026-11-08.
+**Done 2026-11-08. All acceptance criteria met** (11 PASS + JUDGE AC-5 acknowledged by the
+supervisor; see `artifacts.md`). Code at `a5617d3`..`1434fa1`. Next Exact Step: N/A. Constructor
+error path: references are cleared before the throw (`src/pyHandler.cc:102-104`), so nothing leaks.
 
 ## Decisions (2026-11-08, resolving Open Questions 1-3)
 

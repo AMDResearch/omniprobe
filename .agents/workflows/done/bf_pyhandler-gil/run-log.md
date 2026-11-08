@@ -95,3 +95,10 @@ interrupted, this log is the only record of progress.
   second, large-message run.
 - **Core**: `nm -D --undefined-only build/lib/liblogDuration64.so | grep -c ' Py'` 13 → 0; `ldd`
   shows no libpython (AC-6).
+
+### 2026-11-08 — completion
+
+- **Actor**: claude (opimpl worker)
+- **Action taken**: acceptance.sh exit 0 (11 PASS, 1 JUDGE). JUDGE AC-5 was acknowledged by the supervisor (on Rene's behalf), recorded in artifacts.md. Workflow marked done.
+- **Verification**: full suite 19/19 at the time of the run, 20/20 after bf_faulted-dispatch-hang.
+- **Criteria impact**: all criteria met.

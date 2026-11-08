@@ -43,7 +43,9 @@ passed, 0 skipped, 0 failed.
 
 ### `JUDGE AC-5` — src/pyHandler.cc acquires the GIL on every path touching the Python C-API and releases it on every exit path
 
-Worker's reading (2026-11-08), **awaiting the supervisor's acknowledgement**:
+Worker's reading (2026-11-08). **Acknowledged 2026-11-08 by the supervisor on Rene's behalf**, from an independent reading of `src/pyHandler.cc` at `13ca707`: every C-API path (constructor incl. `resolve_module`'s `PySys_GetObject`, destructor, `addressMessage`/`timingMessage`/`report`, `call()` reached only from them) runs under `gil_lock`; `ensure_interpreter` is `call_once` + `PyEval_SaveThread`; no `Py_Finalize`. The supervisor's side question (references leaked when the constructor throws) is already handled: `src/pyHandler.cc:102-103` `Py_CLEAR`s all six references before the `throw` at :104.
+
+Worker's reading:
 - Constructor: `ensure_interpreter()` runs before any GIL is taken; inside `call_once` it is the
   only C-API use (`Py_IsInitialized`, safe without the GIL; `Py_InitializeEx` then
   `PyEval_SaveThread`, so the initializing thread does not keep the GIL). Everything after is under
