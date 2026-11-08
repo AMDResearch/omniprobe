@@ -59,8 +59,8 @@ Options:
 
 Examples:
   ./triton_install.sh                           # auto-detect everything
-  ./triton_install.sh --triton-version v3.8.0   # specific Triton tag
-  ./triton_install.sh -g v3.8.0 --pytorch-rocm 7.1
+  ./triton_install.sh --triton-version v3.9.0   # specific Triton tag
+  ./triton_install.sh -g v3.9.0 --pytorch-rocm 7.1
   ./triton_install.sh --local-sources ~/repos/sandbox/triton
 HELP
 }
@@ -258,15 +258,15 @@ if ! command -v jq &>/dev/null; then
     exit 1
 fi
 
-# Find a Python >= 3.10 (required for PyTorch ROCm wheels).
-# Try versioned names first (most specific), then fall back to python3.
+# Find a Python >= 3.11 (Triton v3.9.0 requires >=3.11,<3.16; PyTorch ROCm
+# wheels need 3.10+). Try versioned names first (most specific), then python3.
 PYTHON=""
-for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
+for candidate in python3.13 python3.12 python3.11 python3; do
     if command -v "$candidate" &>/dev/null; then
         _py_ver=$("$candidate" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
         _py_major=${_py_ver%%.*}
         _py_minor=${_py_ver##*.}
-        if [ "$_py_major" -eq 3 ] && [ "$_py_minor" -ge 10 ] 2>/dev/null; then
+        if [ "$_py_major" -eq 3 ] && [ "$_py_minor" -ge 11 ] 2>/dev/null; then
             PYTHON="$candidate"
             break
         fi
@@ -274,8 +274,8 @@ for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
 done
 unset _py_ver _py_major _py_minor
 if [ -z "$PYTHON" ]; then
-    log_error "Python >= 3.10 not found in PATH"
-    log_error "PyTorch ROCm wheels require Python 3.10+. Install it and retry."
+    log_error "Python >= 3.11 not found in PATH"
+    log_error "Triton v3.9.0 requires Python 3.11+. Install it and retry."
     exit 1
 fi
 
@@ -513,8 +513,10 @@ source .venv/bin/activate
 
 log_info "venv activated: $(which python3) ($(python3 --version))"
 
-# Build-time dependencies (setuptools needed for --no-build-isolation Triton build)
-python3 -m pip install ninja cmake wheel pybind11 setuptools
+# Build-time dependencies (setuptools needed for --no-build-isolation Triton build).
+# Triton v3.9.0 binds with nanobind (its setup.py imports it; pinned in its
+# pyproject.toml); pybind11 is kept for older tags.
+python3 -m pip install ninja cmake wheel pybind11 "nanobind==2.10.2" setuptools
 # Run-time dependencies (includes pyfiglet for omniprobe)
 python3 -m pip install matplotlib pandas pyfiglet
 # PyTorch
