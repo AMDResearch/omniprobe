@@ -10,7 +10,16 @@
   (gfx950) → Triton v3.9.0 → `bf_intern-clone-name` → PR #37. Survey with the evidence:
   `.untracked/survey-2026-11-03/report.md` § H2-rev and § I. This supersedes the "Next" bullets
   in the 2026-10-27 section below.
-- Full suite is now **12** suites.
+- **Also done 2026-11-08:** PR #40 merged (`e7ca202`) + follow-up `cd58bed` (underflow clamp,
+  CRLF→LF in its test files, test can no longer pass vacuously); PR #37 merged (`fc1c431`) +
+  follow-up `12a213a` (no `exit` in a sourced script; unresolved paths FAIL);
+  `build/lib/bitcode/` now populated by every build with all dh_comms bitcode (`31eb907`,
+  suite 13); leak-scan diffs merges against the first parent (`e17ae35`). GitHub comments on
+  #40/#37/#39 and issue #20 drafted, awaiting the supervisor's OK.
+- **Open, not yet a packet:** a pass plugin that cannot find its bitcode prints an error but
+  hipcc exits 0 and emits an uninstrumented binary (`loadAndLinkBitcode` → `return false` in all
+  three passes). Proposed to fold into `rf_exact-arch-bitcode`, which owns that code.
+- Full suite is now **13** suites.
 
 ## State after 2026-10-27 — read first
 
