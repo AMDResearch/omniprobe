@@ -157,6 +157,11 @@ run_suite "Flat-pointer accesses" "${SCRIPT_DIR}/test_flat_access.sh"
 # to completion with real (non-zero) intervals, one per block executed. Needs a GPU.
 run_suite "BBInterval loop" "${SCRIPT_DIR}/test_bb_interval.sh"
 
+# Suite 23: bf_robustness-errors — configuration errors exit 1 with an error
+# (no hang, no silent fallback), kernelDB failures never drop dispatches, and
+# the exit summary arrives in one piece. Needs a GPU.
+run_suite "Robustness" "${SCRIPT_DIR}/test_robustness.sh"
+
 # Summary
 echo ""
 echo "================================================================================"

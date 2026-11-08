@@ -566,6 +566,14 @@ documented here for debugging and advanced use cases.
 | `DH_COMMS_GROUP_FILTER_Z` | `--filter-z` | Block index filter for Z dimension |
 | `INSTRUMENTATION_SCOPE` | `--instrumentation-scope` | Compile-time scope filter (Triton) |
 | `INSTRUMENTATION_SCOPE_FILE` | `--instrumentation-scope-file` | Scope filter file (Triton) |
+| `ROCM_PATH` | — | ROCm whose `llvm/bin/llvm-objdump` kernelDB runs (source attribution). If unset or lacking it, the CLI picks, in order: the ROCm `liblogDuration64.so` links against, `hipconfig --rocmpath`, `rocminfo`/`hipcc` on `PATH`, `/opt/rocm-*`, `/opt/rocm`; an instrumented run with none of them is an error |
+| `OMNIPROBE_PYTHON_HANDLER` | — | Python module for `-a PythonHandler` (set by you; see PythonHandler) |
+
+Configuration errors end the run with `omniprobe: ERROR: ...` and exit status 1
+before the application runs: an unknown analyzer name, a handler plugin that
+does not exist, cannot be loaded or has no `getMessageHandlers`, and a
+`PythonHandler` module that is unset, cannot be imported, or defines none of
+the handler functions.
 
 ## Python API
 
