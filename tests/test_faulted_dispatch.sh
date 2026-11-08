@@ -9,8 +9,10 @@
 #
 # fault_test stores to an unmapped address and exits 3 when synchronization
 # reports the fault (0 with --no-fault). Expected under omniprobe, in timing
-# and in instrumented mode: exit 3 well within the timeout, and a warning that
-# names fault_kernel. Without a fault: exit 0 and no such warning.
+# and in instrumented mode: the bare application's exit status (3 where the
+# runtime reports the fault) well within the timeout, and a warning that names
+# fault_kernel when the process survives the fault. Without a fault: exit 0 and
+# no such warning.
 #
 # Must never print the string run_all_tests.sh treats as a whole-suite skip marker.
 ################################################################################
@@ -50,8 +52,17 @@ run_case() {   # run_case <name> <expected status> <expect warning: yes|no> <omn
     fi
 }
 
-run_case fault_timing_mode       3 yes -- "$BIN"
-run_case fault_instrumented_mode 3 yes -i -a AddressLogger -- "$BIN"
+# How the fault ends the bare application depends on the runtime and node: on
+# gfx90a (MI210) synchronization reports it and fault_test exits 3; on a gfx950
+# VM (MI350, 2026-11-08) the runtime kills the process (SIGPIPE, 141) before
+# fault_test can. Omniprobe must end promptly with that same status; the
+# abandonment warning can only be printed when the process survives the fault.
+ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" timeout -k 5 "$LIMIT" "$BIN" > "$OUT/bare.log" 2>&1
+BARE=$?
+echo "fault_test without omniprobe: exit $BARE"
+[ "$BARE" -lt 128 ] && FAULT_WARN=yes || FAULT_WARN=no
+run_case fault_timing_mode       "$BARE" "$FAULT_WARN" -- "$BIN"
+run_case fault_instrumented_mode "$BARE" "$FAULT_WARN" -i -a AddressLogger -- "$BIN"
 run_case no_fault                0 no  -i -a AddressLogger -- "$BIN" --no-fault
 
 print_summary
