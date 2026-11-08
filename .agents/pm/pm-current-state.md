@@ -6,23 +6,18 @@ Omniprobe is a GPU kernel instrumentation toolkit for HIP/Triton. The project is
 development with a stable core (interceptor, handlers, instrumentation plugins) and ongoing
 refactors to improve naming consistency, architecture cleanliness, and test organization.
 
-## Active Work Areas (2026-11-08, end of second session)
+## Active Work Areas (2026-11-08, end of third session)
 
-**No packet is active.** Of the supervisor's queue, all but one item is done; the remaining one is
-`rf_exact-arch-bitcode` (suspended), together with PR #38, on gfx950. It should include the
-finding that Triton modules reach the plugin with no `target-cpu` ("target unknown") and fall
-back to cdna2 bitcode, and that since v3.9.0 their triple carries the arch (`amdgpu9.0a-amd-amdhsa`)
-— see `instrumentation`, `build-system`.
+**No packet is active; the supervisor's 2026-11-08 queue is done.** This session completed
+`rf_exact-arch-bitcode` with PR #38 (merged, lwitschen credited): exact-arch device bitcode with a
+legacy fallback, the arch read from Triton's triple, gfx950 supported end to end (dh_comms
+`9551a41` pushed), and the LDS bank-conflict model measured per architecture on gfx90a and gfx950
+(`memory-analysis`). Also: 16-byte LDS writes miscounted (fixed), clean-parallel-build ordering
+(fixed), `-d random` silent emptiness (now warned). Full suite: **27 suites** (`testing`).
 
-**Done 2026-11-08, second session** (packets in `.agents/workflows/done/`):
-`bf_pyhandler-gil` (PythonHandler plugin — IntelliKit is no longer blocked by omniprobe),
-`bf_faulted-dispatch-hang`, `rf_triton-v3.9-bump` (pin now v3.9.0), `ft_flat-address-classification`,
-`bf_bb-interval-dynamic-alloca`, `iv_bb-interval-timing-spike` (outcome (c): BBInterval stays
-experimental, no timing analyzer), `ft_pythonhandler-wave-fields`, `bf_robustness-errors`,
-`bf_kernel-filter-search` (not reproduced; semantics pinned). Full suite is **24 suites**
-(`testing`).
+**Next gfx90a session:** run the full suite once on main (the final main ran on gfx950 only).
 
-**Known follow-ups, not packets:** PythonHandler interpreter teardown ownership (interpreter is
+**Known follow-ups, not packets:** 1-/2-byte LDS phases on gfx950 unmeasured; `-d random` sampling semantics (Rene, deferred); PythonHandler interpreter teardown ownership (interpreter is
 deliberately never finalized); PythonHandler inside a Python host (Triton) untested — possible
 GIL deadlock at completion; a `--python-handler` launcher flag; docs name `OMNIPROBE_*`
 environment variables where the code reads `LOGDUR_*` (noted on the suspended

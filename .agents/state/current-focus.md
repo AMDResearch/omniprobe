@@ -1,5 +1,24 @@
 # Current Focus
 
+## State after the third 2026-11-08 session — read first
+
+**The supervisor's 2026-11-08 queue is done; no packet is active.** Completed this session:
+`rf_exact-arch-bitcode` + PR #38 (merged, lwitschen credited, PR comment posted), with gfx950
+validated on an MI350 node; dh_comms gfx950 support pushed (`9551a41`); LDS bank-conflict model
+measured per architecture (`memory-analysis` unit has the gfx90a and gfx950 maps); 16-byte LDS
+write miscount fixed; clean-parallel-build ordering fixed; `-d random` now warns instead of
+ending silently empty (sampling kept, option A). Full suite: **27 suites**.
+
+**Next, on a gfx90a node:** run the full suite once on main (the final main — measured gfx950
+model, dh_comms gfx950, fault-test change — was run on gfx950 only: 24 pass, 3 rocBLAS/hipBLASLt
+N/A). The gfx950 worktree `.untracked/wt-gfx950` (branches `mi350-prep`, `mi350`) is merged and can
+be removed.
+
+**Open, not queued:** 1-/2-byte LDS phases on gfx950 unmeasured; `-d random` semantics (Rene,
+deferred); first `Build` CI run on the v3.9.0 toolchain image (image build was still running);
+pnimpl's `-k gpuMain` report (not reproduced); PythonHandler follow-ups; `OMNIPROBE_*` vs
+`LOGDUR_*` env-var docs.
+
 ## State after the second 2026-11-08 session — read first
 
 **Next:** `rf_exact-arch-bitcode` + PR #38 on a gfx950 (MI350) node — the supervisor moves the
@@ -317,7 +336,7 @@ the script — open, unmerged, and no fix for upstream; it does not explain #124
   **The values live only in `.untracked/test-env.sh` and `.claude/settings.local.json`, both
   gitignored** — they are personal absolute paths and this repository is public. Do not copy them
   into a tracked file; refer to the variable names instead.
-- **`build/` is a gfx90a tree, configured against Triton v3.8.0's LLVM (since 2026-10-27).**
+- **`build/` is a gfx90a tree, configured against Triton v3.9.0's LLVM (since 2026-11-08).**
   Running it on a gfx950 node produces a crash (now loud, since exit-status propagation landed), not
   results. Build for the node you are on (`build_gfx950/` exists but lacks the Triton plugin and
   predates the bump), and check `rocminfo` before believing a test result. `build_t380/` is a

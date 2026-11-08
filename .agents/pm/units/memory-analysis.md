@@ -69,6 +69,28 @@ needed. For LDS: detects bank conflicts.
   `<unknown source file>`; an empty `source_file` on merged loads is fixed via the hash fallback.
 - Dynamic LDS size is preserved on the instrumented dispatch (PR #40 `e7ca202`, clamp `cd58bed`).
 
+### LDS bank-conflict model is per architecture, size and direction (2026-11-08)
+
+`lds_model(arch)` in `src/memory_analysis_handler.cc`: for each access size, reads and writes
+separately, a bank count and the lane groups served in one phase. **All measured** with
+`tests/lds_conflict_sets/run.sh` (Rene's pairwise method: only lanes i and j hit one bank;
+`SQ_LDS_BANK_CONFLICT` per dispatch; 256-byte stride = same bank for 32 or 64 banks, 128-byte only
+for 32). The counter equals the handler's conflict count exactly (extra passes per wave per
+instruction), so suite 26 (`tests/test_lds_bank_conflicts.sh`, 32 pattern kernels) demands equality.
+
+| | gfx90a (CDNA1-3) | gfx950 (CDNA4, MI350X) |
+|---|---|---|
+| b32 r/w | {0..31},{32..63}, 32 banks | same |
+| b64 read | 4 x 16 lanes, 32 banks | {0..31},{32..63}, **64 banks** |
+| b64 write | 4 x 16 lanes, 32 banks | same as gfx90a |
+| b128 read | {0..3,20..23},{4..7,16..19},{8..11,28..31},{12..15,24..27} (+32), 32 banks | {0..3,12..15,20..27},{4..11,16..19,28..31} (+32), **64 banks** |
+| b128 write | 8 x 8 consecutive lanes, 32 banks | same as gfx90a |
+
+The b128-write grouping was a bug until `8d7f35d` (the read grouping was applied to writes).
+1- and 2-byte accesses are unmeasured and follow 4-byte. The model objects are allocated once and
+never destroyed: function-local statics made omniprobe segfault at exit and lose the last dispatch
+(the library is built with `-fno-threadsafe-statics`; handler threads outlive static destruction).
+
 ## Dependencies
 
 - Sub-project: dh_comms — message types, handler base class, GPU architecture constants
@@ -88,3 +110,4 @@ None.
 2026-10-27 (mechanical re-check only: every file path and code symbol named in this unit exists in the tree; prose claims not re-read; no corrections)
 2026-11-08 (new JSON counters, LDS name fallback, dynamic LDS; verified on gfx90a; cache-line and bank-conflict invariants not re-read)
 2026-11-08 (second session: unanalyzed_flat_accesses now mixed-space waves only; flat_* ISA sizes and width-preferring match; from e807927/4cd6f48 and the ft_flat-address-classification packet, not re-measured; other invariants not re-read)
+- 2026-11-08 (third session): LDS model section; suite 26 32/32 on gfx90a and on gfx950.

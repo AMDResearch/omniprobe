@@ -149,6 +149,15 @@ defects" were attributed to that misreading before it was caught. Both have been
 - `-k` is a regex searched in the demangled name (see `interceptor`); anchoring with `^` misses
   template kernels, whose demangled names begin with the return type (`void ...`).
 
+## `-d random` (2026-11-08, `8e18d9e`)
+
+Each dispatch the `-k` filter lets through is captured independently with probability 1/100
+(`RANDOM_DISPATCH_DISTRIBUTION`, `src/utils.cc` `randomDispatcher`); the filter is applied first
+(`interceptor.cc`, `filter_allows && canDispatch`). It is **not** "one random dispatch per kernel"
+(the old docs). Kernels with few dispatches are usually not captured; the end-of-run summary now
+lists every kernel random captured nothing of. Supervisor ruling (option A): keep the sampling;
+changing it is on Rene's deferred list. Suite 27.
+
 ## Open Questions
 
 None.
@@ -160,3 +169,4 @@ None.
 2026-10-26 (exit-status propagation complete and verified on gfx90a; prior "always exits 0" section rewritten)
 2026-11-08 (Python API surface and BBA schema change from this session's commits; exit-status section not re-verified, resting on 2026-10-26)
 2026-11-08 (second session: configuration-error checks, ROCm resolution order and ROCM_PATH export, raw-chunk output forwarding; verified by reading omniprobe/omniprobe at 22c4d95 and bf_robustness-errors; exit-status section not re-read)
+- 2026-11-08 (third session): -d random section.

@@ -71,6 +71,15 @@ None (leaf submodule).
   `hipHostMallocUncached` (`0x10000000`, MTYPE_UC) to also avoid L2 pollution. See
   `.untracked/l2-cache-miss-investigation.md` and `.untracked/amd_gpu_memory_system.md`.
 
+## gfx950 (2026-11-08, dh_comms `9551a41` on AMDResearch/dh_comms main)
+
+`gcnarch::gfx950 = 7`, 128-byte L2 line, `__gfx950__` branch, XCC_ID read on gfx950. Measured on
+MI350X: wave headers give xcc 0..7, se 0..3, 8 CUs per (xcc,se), 256 distinct = rocminfo (cu_id
+spans 0..8 with one id absent per SE). **The `#elif !defined(__host__) / #error` in
+`data_headers_dev.h` can never fire** (HIP defines `__host__` as a macro): an unlisted arch compiles
+silently with `arch = unsupported`. Left as is (making it fire would break builds for unlisted
+archs); omniprobe's plugin guards with its own allowlist (`instrumentation`).
+
 ## Open Questions
 
 None.
@@ -79,3 +88,4 @@ None.
 
 2026-04-27 (re-verified; core content accurate, minor omissions noted but non-blocking)
 2026-10-27 (mechanical re-check only: every file path and code symbol named in this unit exists in the tree; prose claims not re-read; hipHostMalloc* flag values re-checked against ROCm 7.2 headers and hold; KT note replaced — the submodule has its own .agents/ tree)
+- 2026-11-08 (third session): gfx950 section.

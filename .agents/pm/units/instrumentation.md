@@ -260,6 +260,20 @@ unanalyzed). If the accessed pointer itself is non-flat (a cast from flat), its 
 - Block line attribution uses the block's first instruction **without** following `inlinedAt`
   (often a header line) — unlike BBStart.
 
+## Device bitcode selection (2026-11-08, `rf_exact-arch-bitcode`, PR #38)
+
+`getBitcodePath()` (`src/instrumentation/InstrumentationCommon.cpp`) takes the architecture from
+the `target-cpu` module flag, else a function's `target-cpu`, else the **triple** (Triton modules
+carry no `target-cpu`; since Triton v3.9.0 the triple names the processor: `amdgpu9.0a` -> gfx90a,
+`amdgpu9.50` -> gfx950; family-level names like `amdgpu9.4` give nothing). It links
+`dh_comms_dev_<arch>_coN.bc` if that file exists and the arch is in `IdentifiedByDhComms`
+(gfx906/908/90a/940/941/942/950); otherwise the legacy bucket (cdna3 for gfx94x, cdna2 else) with a
+warning naming the missing file. **The allowlist matters:** dh_comms device code for an arch it
+does not list compiles without error (its `#error` guard is dead, see `sub-dh-comms`) and reports
+`gcnarch::unsupported`, which MemoryAnalysis skips silently. Adding an arch = dh_comms enum +
+`data_headers_dev.h` branch + this list + `IDENTIFIED` in `tests/test_bitcode_selection.sh`.
+Per-arch files exist only for `CMAKE_HIP_ARCHITECTURES`. Suite 25 checks all of this, compile-only.
+
 ## Open Questions
 
 None.
@@ -272,3 +286,4 @@ None.
 2026-10-27 (#44 merged, descriptor table re-measured in the linked build — workitem_id claim corrected; validateAMDGPUTarget fixed, triple history corrected from Triton source)
 2026-11-08 (bitcode-missing fatal, __hip_cuid_ internalization, Triton target-unknown fallback, clone-naming bug closed without renaming; attributor and triple sections not re-verified, resting on 2026-10-27)
 2026-11-08 (second session: run-time flat-pointer classification; BBInterval entry alloca, pinning and the (c) verdict; verified against e807927, dc9a6fe, ccb109f and grep of AMDGCNSubmitBBInterval.cpp at 22c4d95, numbers from the ft_flat-address-classification and iv_bb-interval-timing-spike packets, not re-measured; triple and attributor sections not re-read)
+- 2026-11-08 (third session): bitcode selection section; verified on gfx90a and gfx950 (MI350).

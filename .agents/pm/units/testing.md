@@ -205,6 +205,21 @@ instrumentation`) as well as the tally. And an acceptance check must be run agai
 *unfixed* code once — `bf_library-filter-chain-silent-pass`'s AC-4 passed before its fix in the
 first draft, because the condition it checked was gated off.
 
+## Added 2026-11-08 (third session): suites 25-27 and hardware-specific notes
+
+- Suite 25 bitcode selection (compile-only), 26 LDS vs `SQ_LDS_BANK_CONFLICT` (needs rocprofv3),
+  27 `-d random`. Full suite = **27 suites**. `tests/lds_conflict_sets/run.sh` (~15 s) is a tool,
+  not a suite.
+- gfx950 (MI350 VM, 1 GPU, fuseblk /work1): the full suite runs from an in-repo build tree; 24
+  pass, rocBLAS/hipBLASLt suites skip (gfx90a-only libraries; record as N/A). The runtime kills
+  `fault_test` with SIGPIPE (141) there; suite "Faulted dispatch" now expects the bare app's status.
+- A clean parallel build needs every test target ordered after all three -rocm plugins (`1ec32b4`).
+- A second worktree lacks the gitignored prebuilt `tests/hipblaslt/test_hipblaslt_transform` and
+  `tests/rocblas_filter/test_rocblas_{gemm,scal}`: copy them or those suites fail.
+- `tests/library_filter_chain/build` is reused unless the plugin path changes; clear it when the
+  same path now points at another architecture's build.
+- rocprofv3 leaves `.rocprofv3/` in its cwd; run it from an output directory.
+
 ## Open Questions
 
 - What refactoring is needed to enable true unit tests with GoogleTest?
@@ -244,3 +259,4 @@ Workflows whose write scope reaches into `tests/`. State (= directory under `.ag
 2026-10-27 (11/11 on Triton v3.8.0, default env; testing-another-tree traps; library_filter_chain silent pass)
 2026-11-08 (18 suites; SKIP classifier fixed; library filter chain fails rather than skips; set -e lesson; full-suite tally not re-recorded in this unit)
 2026-11-08 (second session: 24 suites, what suites 19-24 pin, OBJECT_DEPENDS on plugins, Triton suite BUILD_DIR; verified against tests/run_all_tests.sh, tests/test_kernels/CMakeLists.txt and commits ad19235/f48753c at 22c4d95; per-node tallies above not re-measured)
+- 2026-11-08 (third session): suites 25-27 section.
