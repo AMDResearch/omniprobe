@@ -260,8 +260,21 @@ bool basic_block_analysis::handle(const dh_comms::message_t &message)
         return true;
 
     bool bReturn = true;
-    message_count_++;
     auto hdr = message.wave_header();
+    // Only BBStart messages carry a basic-block index in user_data. Anything
+    // else (e.g. address messages from an AddressMessages-instrumented binary,
+    // whose user_data packs access kind and size) used as an index walked off
+    // the end of the block table and crashed.
+    if (hdr.user_type != dh_comms::message_type::basic_block_start) {
+        if (!warned_wrong_type_) {
+            std::cerr << "omniprobe basic block analysis: ignoring messages of type " << hdr.user_type
+                      << " for " << strKernel_ << "; BasicBlockAnalysis needs a binary instrumented with "
+                      << "the BBStart plugin (libAMDGCNSubmitBBStart-*.so)" << std::endl;
+            warned_wrong_type_ = true;
+        }
+        return true;
+    }
+    message_count_++;
     waveIdentifier_t wave = {hdr.block_idx_x, hdr.block_idx_y, hdr.block_idx_z, hdr.wave_num};
     updateComputeResources(hdr);
 
@@ -270,7 +283,15 @@ bool basic_block_analysis::handle(const dh_comms::message_t &message)
         uint32_t block_idx = hdr.user_data;
         auto& thisKernel = kdb_p_->getKernel(kernel_name_);
         const auto& blocks = thisKernel.getBasicBlocks();
-        assert(block_idx < blocks.size());
+        if (block_idx >= blocks.size()) {
+            if (!warned_bad_index_) {
+                std::cerr << "omniprobe basic block analysis: block index " << block_idx << " out of range for "
+                          << strKernel_ << " (" << blocks.size() << " blocks known); ignoring such messages"
+                          << std::endl;
+                warned_bad_index_ = true;
+            }
+            return true;
+        }
         kernelDB::basicBlock *thisBlock = blocks[block_idx].get();
         auto& instructions = thisBlock->getInstructions();
         if (instructions.size())

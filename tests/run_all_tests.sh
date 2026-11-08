@@ -114,6 +114,10 @@ run_suite "Output file integrity" "${SCRIPT_DIR}/test_json_output.sh"
 # holds every .bc dh_comms builds). Compiles only; needs no GPU.
 run_suite "Build-tree device bitcode" "${SCRIPT_DIR}/test_build_tree_bitcode.sh"
 
+# Suite 14: regression coverage for bf_bba-hardening — BasicBlockAnalysis on a
+# binary it cannot interpret warns and exits 0 instead of crashing. Needs a GPU.
+run_suite "BasicBlockAnalysis robustness" "${SCRIPT_DIR}/test_bba_robustness.sh"
+
 # Summary
 echo ""
 echo "================================================================================"

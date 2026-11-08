@@ -139,6 +139,8 @@ private:
     bool verbose_;
     std::string strKernel_;
     uint64_t message_count_;
+    bool warned_wrong_type_ = false;
+    bool warned_bad_index_ = false;
     uint64_t dispatch_id_;
     kernelDB::basicBlock *current_block_;
     uint64_t start_time_;
