@@ -20,6 +20,13 @@
   hipcc exits 0 and emits an uninstrumented binary (`loadAndLinkBitcode` → `return false` in all
   three passes). Proposed to fold into `rf_exact-arch-bitcode`, which owns that code.
 - Full suite is now **13** suites.
+- **`bf_library-filter-chain-silent-pass` done 2026-11-08** (`2419835`): suite classifier now needs a
+  line-start `SKIP:` notice. GitHub: #40/#37 merged, #39 and issue #20 closed with comments.
+  **Queue now (supervisor, 2026-11-08):** `bf_bba-hardening` (widened: AddressMessages-binary
+  segfault + analyzer/plugin check; Pennant `gpuMain3_interior` segfault; BB timing semantics;
+  BasicBlockLogger CSV header) → `bf_plugin-missing-bitcode-fatal` (new, standalone) →
+  IntelliKit Python API request → zero-param kernels, split LDS entries, flat-address warning →
+  pyhandler-gil, faulted-dispatch-hang, exact-arch-bitcode + #38, Triton 3.9, intern-clone-name.
 
 ## State after 2026-10-27 — read first
 

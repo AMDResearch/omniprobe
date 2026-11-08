@@ -4,7 +4,7 @@
 
 - Workflow ID: bf_library-filter-chain-silent-pass
 - Workflow Type: bugfix
-- Lifecycle State: active
+- Lifecycle State: done
 - Owner / Current Executor: opimpl worker (supervised run, 2026-11-08)
 - Intended Write Scope:
 - Dependencies On Other Active Workflows: write-scope overlap with `bf_intern-clone-name` and
