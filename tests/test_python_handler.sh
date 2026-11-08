@@ -137,4 +137,61 @@ check "concurrent: interpreter_survives_dispatches" -c "$VERDICT_PY" "$OUT/concu
 check "concurrent: deliveries_overlap" -c "$VERDICT_PY" "$OUT/concurrent.jsonl" 4 64064 128 concurrency
 python3 -c "$VERDICT_PY" "$OUT/many.jsonl" 32 2048 2048 sentinels 2>/dev/null | grep -E '^PYHANDLER_(ADDR|DISPATCHES)='
 
+# Per-wave interface (handleAddressWave) and time-interval fields.
+run_fixture() {   # run_fixture <name> <fixture> <binary> <args...> -> $OUT/<name>.{jsonl,log}
+    local name="$1" fixture="$2"; shift 2
+    rm -f "$OUT/$name.jsonl"
+    PYHANDLER_EVIDENCE="$OUT/$name.jsonl" OMNIPROBE_PYTHON_HANDLER="${SCRIPT_DIR}/python_handler/$fixture" \
+        ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" timeout 600 \
+        "$OMNIPROBE" -i -a PythonHandler -- "$@" > "$OUT/$name.log" 2>&1
+}
+run_fixture waves wave_handler.py "$BIN" 1 2 1024 1
+run_fixture waves_masked wave_handler.py "${BUILD_DIR}/tests/test_kernels/flat_access_test"
+run_fixture intervals time_handler.py "${BUILD_DIR}/tests/test_kernels/bb_interval_loop_test" 10
+
+FIELDS_PY='
+import json, re, sys
+path, what = sys.argv[1], sys.argv[2]
+try:
+    recs = [json.loads(l) for l in open(path)]
+except Exception as e:
+    print(f"BAD evidence unusable: {e}"); sys.exit()
+if what == "waves":
+    src = sys.argv[3]
+    lines = {i + 1: l for i, l in enumerate(open(src))}
+    load_line = next(n for n, l in lines.items() if "sum += v[i];" in l)
+    store_line = next(n for n, l in lines.items() if "out[i] = sum / loads + 1;" in l)
+    if len(recs) != 2:
+        print(f"BAD {len(recs)} dispatches reported, want 2"); sys.exit()
+    for d in recs:
+        w = d["waves"]
+        kinds = sorted((x["line"], x["access_type"]) for x in w)
+        want = sorted([(load_line, "read")] * 16 + [(store_line, "write")] * 16)
+        if kinds != want:
+            print(f"BAD dispatch {d['dispatch_id']}: (line, access_type) {sorted(set(kinds))} x{len(kinds)}, want 16 each of {load_line}/read, {store_line}/write"); sys.exit()
+        bad = [x for x in w if not (x["file"] == "python_handler_test.cpp" and x["memory_space"] == "global"
+               and x["access_size"] == 4 and x["n_addresses"] == 64 and x["distinct"] == 64 and x["lanes_ok"]
+               and x["exec"] == 2**64 - 1 and x["timestamp"] > 0 and x["column"] > 0 and x["kernel"].startswith("python_handler_kernel"))]
+        if bad:
+            print(f"BAD field values: {bad[0]}"); sys.exit()
+        blocks = sorted(x["block_idx"][0] for x in w if x["access_type"] == "read")
+        if blocks != list(range(16)):
+            print(f"BAD block_idx.x of the load waves: {blocks}"); sys.exit()
+    print(f"OK 2 dispatches x 32 wave messages: lines {load_line}/{store_line}, 64 lanes each, all fields as expected")
+elif what == "masked":
+    w = [x for d in recs for x in d["waves"] if x["exec"] not in (0, 2**64 - 1)]
+    odd = [x for x in w if x["exec"] == 0xAAAAAAAAAAAAAAAA]
+    if not odd or not all(x["lanes_ok"] and x["n_addresses"] == 32 for x in odd) or not all(x["lanes_ok"] for x in w):
+        print(f"BAD partial-exec waves: {[(hex(x['exec']), x['n_addresses'], x['lanes_ok']) for x in w][:4]}"); sys.exit()
+    print(f"OK {len(w)} partial-exec waves, lanes match exec (odd lanes only: {len(odd)} waves of 32 addresses)")
+elif what == "intervals":
+    ok = recs and all(r["stop"] >= r["start"] and r["elapsed_time"] == r["stop"] - r["start"] and r["has_source_file"]
+                      and r["start"] > 0 and r["timestamp"] > 0 for r in recs)
+    print(f"OK {len(recs)} time intervals with start/stop/elapsed_time/block_id/source location" if ok and len(recs) == 12
+          else f"BAD {len(recs)} intervals (want 12), first {recs[:1]}")
+'
+check "waves: fields_per_wave" -c "$FIELDS_PY" "$OUT/waves.jsonl" waves "${SCRIPT_DIR}/test_kernels/python_handler_test.cpp"
+check "waves: lanes_match_partial_exec" -c "$FIELDS_PY" "$OUT/waves_masked.jsonl" masked
+check "intervals: time_message_fields" -c "$FIELDS_PY" "$OUT/intervals.jsonl" intervals
+
 print_summary

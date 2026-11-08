@@ -148,25 +148,48 @@ as a module name importable through `PYTHONPATH`:
 OMNIPROBE_PYTHON_HANDLER=./my_analysis.py omniprobe -i -a PythonHandler -- ./my_app
 ```
 
-The module must define two functions and may define a third. Each receives one
-`dict`; every dict has `kernel` (str) and `dispatch_id` (int):
+The module defines any of the following functions; at least one of the first
+three is required. Each receives one `dict`, and every dict has `kernel` (str)
+and `dispatch_id` (int):
 
-| Function | Called | Extra keys |
-|----------|--------|------------|
-| `handleAddressMessage(msg)` | once per active lane of each instrumented memory instruction | `address` (int) |
-| `handleTimeMessage(msg)` | once per time-interval message | `elapsed_time` (int, `stop - start`) |
-| `handleReport(msg)` (optional) | once per dispatch, after its last message | none |
+| Function | Called |
+|----------|--------|
+| `handleAddressWave(msg)` | once per wave per instrumented memory instruction (recommended) |
+| `handleAddressMessage(msg)` | once per active lane of each instrumented memory instruction; only key `address` (int). The original interface, kept as is |
+| `handleTimeMessage(msg)` | once per time-interval message |
+| `handleReport(msg)` | once per dispatch, after its last message; no further keys |
+
+`handleAddressWave` keys:
+
+| Key | Meaning |
+|-----|---------|
+| `addresses` | list of int, one per active lane, in increasing lane order |
+| `lanes` | list of int, the lane id of each address (the set bits of `exec`) |
+| `exec` | int, the wave's 64-bit execution mask |
+| `access_type` | `"read"`, `"write"`, `"readwrite"` or `"undefined"` |
+| `memory_space` | `"global"`, `"shared"` (LDS), `"scratch"`, `"constant"`, `"gds"`, or `"flat"` when the wave's lanes pointed into different spaces |
+| `access_size` | bytes of the accessed type |
+| `source_file`, `line`, `column` | source location of the instruction (its own, so possibly a header for inlined code) |
+| `block_idx` | (x, y, z) workgroup index |
+| `wave_num`, `cu_id`, `se_id`, `xcc_id` | which wave, and where it ran |
+| `timestamp` | int, `s_memtime` ticks when the wave sent the message |
+
+`handleTimeMessage` keys: `start`, `stop`, `elapsed_time` (`stop - start`, in
+`s_memtime` ticks), `block_id` (the instrumentation's tag; the basic block index
+for BBInterval), plus the same wave keys (`exec`, `source_file`, `line`,
+`column`, `block_idx`, `wave_num`, `cu_id`, `se_id`, `xcc_id`, `timestamp`).
 
 There is one interpreter per process and the module is imported once, so
 module-level state persists across dispatches; use `handleReport` to emit
 per-dispatch results (keyed by `dispatch_id`). Calls come from several threads
 (one per in-flight dispatch) but hold the GIL, so they never run at the same
-time. Cost is roughly 10 µs per call: fine for test-sized inputs, slow for full
-applications (narrow with `-k` and `-d`). If the module cannot be imported or
+time. Cost is roughly 10 µs per call, so `handleAddressWave` (one call per wave) is
+up to 64 times cheaper than `handleAddressMessage` (one per lane); for full
+applications, narrow with `-k` and `-d`. If the module cannot be imported or
 lacks a required function, an error is printed and the dispatch runs with the
 default handlers instead. Only this plugin links libpython.
 
-See `tests/python_handler/stress_handler.py` for a complete example.
+See `tests/python_handler/wave_handler.py` (per wave) and `tests/python_handler/stress_handler.py` (per lane) for complete examples.
 
 ## Instrumented mode
 
