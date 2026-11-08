@@ -50,3 +50,17 @@
   Branch suite on gfx90a: 23/26 in the first run; the 3 failures were prebuilt, gitignored
   rocBLAS/hipBLASLt test binaries absent from the worktree (copied; 3/3 then pass).
 - `.untracked/gfx950-validation/run.sh` rewritten: LDS suite first, then full suite.
+
+## 2026-11-08, last MI210 turn
+
+- `0e257bc` tests/lds_conflict_sets (Rene's pairwise method). gfx90a control, ~15 s: b32 two
+  32-lane sets, b64 four 16-lane, b128 reads {0..3,20..23}-style, 32 banks (128-byte sweep);
+  one-process-per-pair spot checks equal the in-process sweep. **b128 writes: 8 consecutive
+  lanes**, not the read grouping (confirmed one process per pair).
+- `8d7f35d` handler: separate read/write phase groups (fixes b128 write counts), per-arch lookup;
+  suite 26 on main with b128 patterns. Fails before: write_b128_rwsplit hw 8 vs omniprobe 0.
+- `8e18d9e` -d random: actual mechanism is per-dispatch probability 1/100 after -k (not a draw
+  over excluded dispatches); now warns per kernel it captured nothing of; docs corrected.
+  Suite 27 fails before (captured=0, warned=0). Full suite 27/27, pushed with `9fc83ea`.
+- MI350 branch is now `mi350` (`21764ce`, on main): dh_comms 9551a41 + gfx950 exact-arch +
+  cdna4_lds placeholder. Dry run on gfx90a: 27/27. run.sh step (0) runs the conflict-set sweep.
