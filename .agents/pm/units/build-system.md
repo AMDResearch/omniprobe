@@ -72,6 +72,11 @@ build/
 Bitcode is located via `getBitcodePath()`: looks in `../bitcode/` relative to the plugin
 directory.
 
+In the **build tree** too (2026-11-08, `31eb907`): the top-level `copy_bitcode` target populates
+`build/lib/bitcode/` in every build with all dh_comms bitcode, exact-arch variants included, so
+build-tree plugins find it without an install. A missing or unreadable bitcode file is a fatal
+compile error, not a silent skip — see `instrumentation`.
+
 ### Standard Build Command
 
 ```bash
@@ -237,6 +242,18 @@ searched before `DT_RUNPATH`** — measured: pointing it at the other tree silen
 under a plugin compiled against a different one. `ldd`'s `=> not found` on a plugin is the bait:
 never "fix" it by putting an LLVM lib dir on `LD_LIBRARY_PATH`.
 
+## Leak scan gates every push (2026-11-08, `ba5c79b`, `e17ae35`)
+
+The repo is public and must not gain hostnames. `scripts/leak-scan.sh` (copied from the AMP
+framework) scans the tree and history and reads `scripts/leak-scan-baseline.txt`: an
+owner-approved list of **accepted, already-published** findings (decision D1, `pm-decisions`),
+keyed by path + SHA-256 of the matching line for tree findings, or commit sha + surface + path for
+history findings — never by the matching text itself. `--print-baseline` emits candidate entries.
+
+- Merge commits are diffed against their **first parent only** (`e17ae35`). `-m` (diff against
+  every parent) produced false findings on merges of old branches.
+- Gate a push on the scan's **exit code**, not on grepping its output.
+
 ## Open Questions
 
 None.
@@ -246,3 +263,4 @@ None.
 2026-04-27 (created by pm-restructure from architecture + instrumentation)
 2026-10-26 (CI container layering, Triton pin facts for the v3.8.0 bump)
 2026-10-27 (pin now v3.8.0; LLVM pin verification; two-stage image + cache checkpoint; fork-PR CI measured; branch protection; soname collision)
+2026-11-08 (build-tree bitcode via copy_bitcode; leak-scan baseline and push gate; from session commits, not re-measured here; CI and Triton-pin sections untouched, still resting on 2026-10-27)

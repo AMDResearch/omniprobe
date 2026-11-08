@@ -17,6 +17,7 @@ resources across kernel dispatches.
 | `plugins/memory_analysis_plugin.cc` | MemoryAnalysis handler plugin |
 | `plugins/logger_plugin.cc` | Message logger plugin |
 | `plugins/basic_block_plugin.cc` | Basic block handler plugin |
+| `inc/json_output.h` | `json_array_separator` — `[` vs `,` decided by output-file emptiness |
 
 ## Key Types and Classes
 
@@ -102,6 +103,39 @@ to get a message to the handler without also supplying reachability.
 Tracked by `bf_pyhandler-gil`. The bridge ships as a **plugin**, not a core change — see
 `pm-decisions.md`.
 
+## Output files and record integrity (2026-11-08)
+
+- The CLI truncates the `-o`/`-l` file **once, before the run** (`cbac82a`); handlers only append.
+- MemoryAnalysis and BasicBlockAnalysis JSON are one array per run: each record's prefix (`[` or
+  `,`) comes from whether the file is empty, via `json_array_separator` in `inc/json_output.h`.
+  The CLI finalizer appends `]` and warns if the result does not parse.
+- Heatmap, AddressLogger and BasicBlockLogger JSON are **JSON Lines**, not arrays.
+- Logger CSV contains only CSV rows (`ADDRESS_MESSAGE` / `WAVE_MESSAGE`); each kind's header is
+  written with its first row (`f296bba`).
+- Logger writes are serialized by a **process-wide mutex**: records from overlapping dispatches
+  (each ≥1 KiB) interleaved without it (`de04bbd`).
+- Handler console reports go to **stdout**, interceptor messages to **stderr** — the launcher
+  forwards the target's streams verbatim (`2f60d83`).
+- Known, unfixed: `-t json` without `-o` writes `results_<YYYY-mm-dd_HHMMSS>.json` in the cwd, so
+  two runs started in the same second share a file.
+
+## BasicBlockAnalysis semantics (2026-11-08, `093a6fe`, `2717c26`, `03c12f6`)
+
+- **BBStart `user_data` is the IR basic-block ordinal (layout order). It does NOT correspond to
+  kernelDB's ISA-derived blocks** — do not join the two.
+- BBA keys blocks by `user_data` and takes file/line/column from the message header. The
+  file-name hash is resolved against kernelDB's file names by
+  `kdb_message_handler_base::sourceFileForHash`, which walks the line map, because basic-block
+  instruction copies lack path ids in non-RDC builds.
+- The BBStart plugin attributes a block to its first instruction that has a line, walked through
+  `inlinedAt` to the kernel's own line.
+- Reports `wave_visits` and `active_lanes`. **Timing was removed** (supervisor ruling, option 1):
+  submit-to-submit `s_memtime` intervals measured instrumentation contention, not the block —
+  median ~25k cycles at 16 waves vs 4–24M at 4096 waves. Real per-block timing via BBInterval is
+  queued last (`pm-current-state`).
+- Non-BBStart messages are ignored with a once-per-process warning; MemoryAnalysis and Heatmap
+  likewise warn once on non-address messages.
+
 ## Open Questions
 
 None.
@@ -111,3 +145,4 @@ None.
 2026-04-27 (merged from plugins + comms-mgr by pm-restructure)
 2026-09-08 (pyHandler GIL defects and unreachability; verified by grep, nm and ldd)
 2026-10-27 (mechanical re-check only: every file path and code symbol named in this unit exists in the tree; prose claims not re-read; basic_block_plugin handler corrected to basic_block_analysis)
+2026-11-08 (output-file semantics and BBA semantics from this session's commits, verified on gfx90a; pyHandler section not re-verified, still resting on 2026-09-08)

@@ -97,6 +97,15 @@ The deeper design point, recorded because it outlives the bug: a map keyed by a 
 depends on a demangler's success is a latent hazard independent of `.intern.`. Re-keying on the
 raw symbol is a refactor, not a bug fix, and is a declared non-goal of `bf_intern-clone-name`.
 
+**Fixed 2026-11-08 (`3e31ee8`, `8a3ea17`).** `demangleKernelName`
+(`src/utils.cc`) gives both `.intern` hash flavours (letter- and digit-leading) the same decorated
+demangled form and repairs the clone's misplaced `Pv`; `kernelDBName` gives handlers the name
+kernelDB keyed the kernel under (kernelDB drops the last `.`-component of undemangleable names).
+`getInstrumentedName` maps an empty parameter list to `(void, void*)`, because the clone of
+`_Z1kv` is `_Z1kvPv`. `-cuid=<x>` pins the `.intern` hash, which is how the test fixture gets
+both flavours (`a` → letter-leading, `c` → digit-leading). An end-of-run summary on stderr lists
+kernels that ran without an instrumented clone (`__amd_rocclr_` blit kernels excluded).
+
 ## Open Questions
 
 None.
@@ -107,3 +116,4 @@ None.
 2026-09-08 (data flow steps 4-5 rewritten for bf_hip-duplicate-code-object-load: app-loaded code objects are indexed rather than loaded into a private executable, and the -k filter now gates the clone swap at dispatch)
 2026-09-08 (lookup-key scheme and its dependence on demangler success; measured)
 2026-10-27 (mechanical re-check only: every file path and code symbol named in this unit exists in the tree; prose claims not re-read; no corrections)
+2026-11-08 (demangler-key defects fixed; kernelDBName; uninstrumented-kernel summary; data-flow steps not re-read)

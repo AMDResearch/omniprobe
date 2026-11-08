@@ -6,7 +6,27 @@ Omniprobe is a GPU kernel instrumentation toolkit for HIP/Triton. The project is
 development with a stable core (interceptor, handlers, instrumentation plugins) and ongoing
 refactors to improve naming consistency, architecture cleanliness, and test organization.
 
-## Active Work Areas
+## Active Work Areas (2026-11-08) — remaining queue, in supervisor order
+
+1. `bf_pyhandler-gil` (active) — still the only packet blocking IntelliKit.
+2. `bf_faulted-dispatch-hang`.
+3. `rf_exact-arch-bitcode` (suspended) together with PR #38, on gfx950. Include the finding that
+   the plugin sees no `target-cpu` for Triton modules ("target unknown") and falls back to cdna2
+   bitcode — see `instrumentation`.
+4. Triton v3.9.0 bump (see Current Risks: not a repeat of v3.8.0).
+5. `ft_flat-address-classification` — seed in `.agents/workflows/seeds/`, scoped, not started.
+6. BBInterval real per-block timing — deliberately **last** (`pm-decisions`, BBA option 1).
+
+**Done 2026-11-08** (packets in `.agents/workflows/done/`): `bf_intern-clone-name`,
+`bf_library-filter-chain-silent-pass`, `bf_json-output-integrity`, `bf_bba-hardening`,
+`bf_lds-split-entries`, `bf_logger-record-interleave`, `bf_plugin-dhcomms-cuid-duplicate`,
+`bf_plugin-missing-bitcode-fatal`, `bf_source-attribution-gaps`, `bf_zero-param-kernel-match`, and the feature `ft_python-api-coverage`.
+Full suite is 18 suites (`testing`). Leak scan now gates pushes (`build-system`).
+
+**GitHub (2026-11-08):** PRs #40 and #37 merged with authorship intact, plus follow-up commits;
+PR #39 and issue #20 closed with comments; PR #42 untouched (deferred).
+
+## Active Work Areas (superseded 2026-11-08 — kept for history)
 
 Two bugfix packets are active (see the next section). The six packets listed below are
 **suspended**, not active — four of them need human input before they can move.
@@ -25,7 +45,7 @@ Two bugfix packets are active (see the next section). The six packets listed bel
 5. **Test organization** — design decisions needed before restructuring tests/.
    See rf_test-organization.
 
-## Active Work Areas — two bugfix packets (was three; updated 2026-10-26)
+## Active Work Areas — two bugfix packets (was three; updated 2026-10-26; superseded 2026-11-08)
 
 Promoted 2026-09-08, neither with production code written. Ordered by the owner: the packets
 filed from the **IntelliKit sidecar** come first, because that project is blocked on them.
@@ -43,7 +63,7 @@ filed from the **IntelliKit sidecar** come first, because that project is blocke
 Each begins by re-stamping its own `Base Commit`: promoting three packets in one commit leaves
 every gate reporting its siblings' directories as out-of-scope writes.
 
-**Draft (2026-10-27): `bf_library-filter-chain-silent-pass`.** `tests/library_filter_chain/run_test.sh`
+**Draft (2026-10-27; done 2026-11-08): `bf_library-filter-chain-silent-pass`.** `tests/library_filter_chain/run_test.sh`
 can report PASSED having run none of Tests 2–5, or having instrumented with a different tree's
 plugin than the omniprobe under test. Diagnosed and reproduced by its `acceptance.sh`; not fixed.
 
@@ -78,7 +98,7 @@ gfx90a — met with no code change once a gfx90a node was available.
 
 ## Current Risks
 
-- **Library filter chain tests can pass without testing anything** (found 2026-10-27). Its green
+- ~~**Library filter chain tests can pass without testing anything**~~ **FIXED 2026-11-08** — the suite now uses `OMNIPROBE_ROOT`'s plugin and fails on missing pieces. (Found 2026-10-27.) Its green
   is trustworthy only when run from a repo whose `build/` is the tree under test — then all 5
   tests do run and pass. See `bf_library-filter-chain-silent-pass` and `testing`.
 - ~~**rocBLAS integration test broken**: Instrumented sscal not found in current build.~~
@@ -86,7 +106,7 @@ gfx90a — met with no code change once a gfx90a node was available.
   `74c6ed2` and at HEAD — `Found instrumented alternative for sscal kernel`. The risk was
   recorded from a node where the suite could not run at all.
 - ~~**Unfiled defect: `.intern.<hash>` clone names.**~~ **FILED 2026-09-08 as
-  `bf_intern-clone-name`** (active). The mechanism is no longer inferred: internal linkage *plus*
+  `bf_intern-clone-name`; FIXED 2026-11-08** (`3e31ee8`, `8a3ea17`; see `interceptor`). The mechanism is no longer inferred: internal linkage *plus*
   `-fgpu-rdc` is necessary and sufficient, measured with a three-kernel in-repo probe. The defect
   is **intermittent at ~37.5% per translation unit**, decided by whether the content hash begins
   with a hex letter, because two independent defects cancel in the other ~62.5%. Read the
@@ -99,6 +119,8 @@ gfx90a — met with no code change once a gfx90a node was available.
 - **The next Triton bump is not a repeat of this one.** v3.8.0 lacks both #10849 and #11532
   (subarch triples, pre-handled by `e6db747`); expect the Triton path to change behaviour. Validate
   on a GPU node, with the test environment's Triton matched to the pin.
+- **`-t json` without `-o` can collide**: two runs started in the same second share
+  `results_<YYYY-mm-dd_HHMMSS>.json` in the cwd. Known, unfixed (`handler-pipeline`).
 - **CI cannot catch semantic breakage.** `build.yml` is build-only, `ubuntu-latest`, no GPU, no
   test invocation. A green CI run says the code compiles and nothing more. See `build-system`.
 
@@ -158,6 +180,11 @@ gfx90a — met with no code change once a gfx90a node was available.
   suites could not run and the fifth ran the wrong architecture's binaries. Two entries above and
   in `units/testing.md` were retracted on that evidence. The general form is worth keeping: **a
   tally measured where most suites skip records the environment, not the code.**
+
+- BasicBlockAnalysis no longer reports timing (2026-11-08): counts only, keyed by IR block
+  ordinal, which does not match kernelDB's ISA blocks. Earlier timing-percentile schema
+  statements are superseded (`handler-pipeline`, `omniprobe-cli`).
+- Handler console reports go to stdout, interceptor messages to stderr (`2f60d83`).
 
 ## Recommended Read Order
 

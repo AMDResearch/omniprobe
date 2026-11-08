@@ -51,6 +51,15 @@ needed. For LDS: detects bank conflicts.
   `bank_conflicts`. Global accesses also have `cache_lines_needed`, `cache_lines_used`,
   `ir_bytes`, `isa_bytes`, `isa_instruction`. Metadata section with version, timestamp,
   gpu_info. Multi-dispatch output wrapped in JSON array by `finalize_json_output()` in CLI.
+  *(Mechanism refined 2026-11-08: each record's `[`/`,` prefix comes from file emptiness via
+  `inc/json_output.h`; the finalizer appends `]` — see `handler-pipeline`.)*
+- Per-dispatch JSON also carries `unanalyzed_flat_accesses` (flat-address-space pointers: all of
+  them at `-O0`, and pointers loaded from memory) and `unattributed_accesses` (no ISA instruction
+  for the source line: all accesses when built without `-g`), each with a stderr line
+  (`dab6433`, `7f826d1`).
+- LDS source files fall back to kernelDB names, so there are no split entries or
+  `<unknown source file>`; an empty `source_file` on merged loads is fixed via the hash fallback.
+- Dynamic LDS size is preserved on the instrumented dispatch (PR #40 `e7ca202`, clamp `cd58bed`).
 
 ## Dependencies
 
@@ -69,3 +78,4 @@ None.
 
 2026-07-20 (updated JSON schema documentation for ft_omniprobe-python-api)
 2026-10-27 (mechanical re-check only: every file path and code symbol named in this unit exists in the tree; prose claims not re-read; no corrections)
+2026-11-08 (new JSON counters, LDS name fallback, dynamic LDS; verified on gfx90a; cache-line and bank-conflict invariants not re-read)

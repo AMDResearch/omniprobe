@@ -25,6 +25,10 @@ GoogleTest are planned but disabled.
   (`tests/test_kernel_filter_semantics.sh`, 2 suites)
 
 **Top-level runner:** `tests/run_all_tests.sh` (runs all 10 suites).
+*(Superseded 2026-11-08: **18 suites**. Added since: 11 exit status, 12 output integrity,
+13 build-tree bitcode (incl. missing-bitcode and two-file RDC link), 14 BBA robustness, 15 BBA
+counts (`bb_counts_test`, analytic expected counts), 16 internal-linkage + zero-param kernels,
+17 Python API end-to-end, 18 two-file non-RDC application.)*
 
 **The suite is green, and the tally depends entirely on the node.** Measured 2026-09-08 on
 `k005-005.hpcfund` (MI210 / gfx90a) with `.untracked/test-env.sh` sourced: **10 run, 10 passed,
@@ -70,6 +74,7 @@ see Negative Knowledge.
 
 - **Do NOT attempt to use GoogleTest** until handler refactoring for dependency injection is complete.
 - Test kernels **MUST** be compiled with `-g` (debug info). Without it, DWARF source location info is missing, causing `MemoryAnalysis` handler to silently drop all messages.
+  *(2026-11-08: no longer silent — such accesses are counted in `unattributed_accesses` with a stderr line; see `memory-analysis`. `-g` is still required for attribution.)*
 - Test kernels should read back results (`hipMemcpy` to host) to prevent dead-store elimination.
 - **A test binary built for the wrong GPU architecture does not error.** *(Mechanism corrected
   2026-10-26 — this bullet used to say it "silently fails to dispatch, exits 0, and produces no
@@ -93,6 +98,8 @@ see Negative Knowledge.
   — it has not fired, because the Tensile search at `run_test.sh:86` matches on filename glob plus
   a `__amd_crk_Cijk` symbol check rather than on architecture — but it would fire on a build
   without instrumented Tensile kernels.
+  *(Fixed 2026-11-08, `2419835`: a suite is classified skipped only on a line-start `SKIP:`,
+  colour codes stripped.)*
 - **`tests/triton/run_test.sh` exits 0 when it skips.** Any check reading only its exit status
   records a pass for a suite that never ran.
 - **Renaming a log line silently re-points every test assertion written against it, and the
@@ -118,6 +125,13 @@ see Negative Knowledge.
   three dependent suites then skip. Confirm `source .untracked/test-env.sh` prints **both**
   variables before trusting a tally. This constraint blocked `bf_exit-status-not-propagated`'s
   AC-8 for seven weeks.
+
+- **Test scripts sourced under `set -e` must capture expected failures as
+  `cmd && rc=0 || rc=$?`** — a bare failing command kills the sourcing runner (Triton suite).
+- The library filter chain suite now uses `OMNIPROBE_ROOT`'s plugin and **fails, not skips**, on
+  missing pieces (`bf_library-filter-chain-silent-pass`, done). The "§ Testing a tree other than
+  `<repo>/build`" bullet about it below is superseded.
+- Every bug fix of 2026-11-08 has a check shown to fail on the unfixed build; keep that standard.
 
 ## Acceptance-gate patterns that do not work here
 
@@ -176,9 +190,9 @@ first draft, because the condition it checked was gated off.
 
 Workflows whose write scope reaches into `tests/`. State (= directory under `.agents/workflows/`) in parentheses.
 
-- `bf_intern-clone-name` (active) — new suite + `tests/test_kernels/` fixture; appends to `run_all_tests.sh`.
+- `bf_intern-clone-name` (done 2026-11-08, suite 16).
 - `bf_pyhandler-gil` (active) — new suite `tests/test_python_handler.sh`; appends to `run_all_tests.sh`.
-- `bf_library-filter-chain-silent-pass` (draft) — `tests/library_filter_chain/run_test.sh` only.
+- `bf_library-filter-chain-silent-pass` (done 2026-11-08) — `tests/library_filter_chain/run_test.sh` only.
 - `rf_test-organization` (suspended) — all of `tests/`; restructures suites, collides with everything above.
 - `rf_exact-arch-bitcode` (suspended) — `tests/test_kernels/CMakeLists.txt`.
 - `rf_rename-logduration-to-omniprobe` (suspended) — `tests/CMakeLists.txt`.
@@ -204,3 +218,4 @@ Workflows whose write scope reaches into `tests/`. State (= directory under `.ag
 2026-09-08 (acceptance-gate pattern collisions; each demonstrated against failing input)
 2026-10-26 (11-suite green run on gfx90a; fuseblk finding; wrong-arch bullet mechanism corrected)
 2026-10-27 (11/11 on Triton v3.8.0, default env; testing-another-tree traps; library_filter_chain silent pass)
+2026-11-08 (18 suites; SKIP classifier fixed; library filter chain fails rather than skips; set -e lesson; full-suite tally not re-recorded in this unit)

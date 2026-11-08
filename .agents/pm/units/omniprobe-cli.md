@@ -18,6 +18,10 @@ Python script that orchestrates running instrumented applications. Sets up envir
 ## Key Types and Classes
 
 - **`Omniprobe`** (`omniprobe/api/omniprobe.py`) — Drives the CLI with `-t json` and parses output. Methods: `analyze_memory()`, `analyze_basic_blocks()`.
+  *(Extended 2026-11-08, `b8105ee`, `5cbb8e2`:)* methods are `analyze_memory`,
+  `analyze_basic_blocks`, `analyze_heatmap`, `log_addresses`, `log_basic_blocks` (the two
+  loggers stream, with `max_records` / `truncated`). Every result has `uninstrumented_kernels`.
+  Installed to `<prefix>/omniprobe/api`; `Omniprobe()` falls back to the sibling launcher.
 - **Result dataclasses** (`omniprobe/api/results.py`):
   - `MemoryAnalysisResult` → `KernelMemoryResult` → `MemoryAccess`
   - `BasicBlockResult` → `KernelBBResult` → `BasicBlock`
@@ -71,6 +75,11 @@ When `-t json` is specified, handlers emit structured JSON suitable for machine 
 
 - **MemoryAnalysis**: per-dispatch object with `kernel`, `dispatch_id`, flat `accesses` array. Each access has `source_file`, `line`, `column`, `excess_cache_lines`, `bank_conflicts`, `memory_space`, `access_type`.
 - **BasicBlockAnalysis**: per-dispatch object with `kernel`, `dispatch_id`, `basic_blocks` array. Each block has `basic_block_id`, `source_file`, `line`, timing percentiles (`p25`–`p99`), `min_cycles`, `max_cycles`, `wave_count`.
+  **Superseded 2026-11-08:** timing fields were removed; blocks now report `wave_visits` and
+  `active_lanes`, keyed by the BBStart IR block ordinal. See `handler-pipeline` § BasicBlockAnalysis semantics.
+- **Heatmap / AddressLogger / BasicBlockLogger**: JSON Lines, not an array. Output-file
+  truncation, stream routing (reports → stdout, interceptor → stderr) and the same-second
+  `results_<timestamp>.json` collision are recorded in `handler-pipeline` § Output files.
 
 The Python API (`omniprobe/api/`) wraps this: `Omniprobe.analyze_memory()` and `Omniprobe.analyze_basic_blocks()` return dataclasses that parse these schemas.
 
@@ -130,3 +139,4 @@ None.
 - 2026-07-20 (updated for Python API, JSON schema docs, corrected flag names)
 2026-09-08 (exit-status propagation; verified by reading and by running the CLI)
 2026-10-26 (exit-status propagation complete and verified on gfx90a; prior "always exits 0" section rewritten)
+2026-11-08 (Python API surface and BBA schema change from this session's commits; exit-status section not re-verified, resting on 2026-10-26)

@@ -96,7 +96,9 @@ Two consequences worth carrying:
   built under the current scheme, and `tests/rocblas_hipblaslt/run_test.sh:86` matches on
   `__amd_crk_Cijk`.
 
-Tracked by `bf_intern-clone-name`.
+Tracked by `bf_intern-clone-name` — **now done** (2026-11-08). The fix is on the lookup side
+(`3e31ee8`, see `interceptor`); **clones are deliberately NOT renamed**, so prebuilt instrumented
+rocBLAS/hipBLASLt keep working.
 
 ## The AMDGPU attributor runs before this plugin, and clones inherit its conclusions
 
@@ -195,6 +197,18 @@ Not tested end to end against Triton `main` (needs a source build of it); zhangl
 same check working there. The general lesson stands: the dangerous breakage in a Triton/LLVM bump
 is semantic, not a compile error, and CI (`build.yml`, build-only, no GPU) cannot see it.
 
+## Plugin robustness (2026-11-08)
+
+- **Missing or unreadable device bitcode is fatal** (`report_fatal_error`): hipcc exits 1, a
+  Triton JIT compile exits 1 (`5d9266b` and its follow-up fix).
+- `__hip_cuid_*` globals in the dh_comms bitcode are given **internal linkage before linking**,
+  which fixes "duplicate symbol" in multi-file `-fgpu-rdc` links (`f3b9b8f`).
+- `-fgpu-rdc` is **optional** for instrumentation; two-file non-RDC applications work.
+- For Triton modules the plugin sees **no `target-cpu`** ("target unknown") and falls back to
+  the cdna2 bitcode. Relevant to `rf_exact-arch-bitcode`.
+- BBStart attributes a block to its first instruction with a line, walked through `inlinedAt`
+  (see `handler-pipeline` § BasicBlockAnalysis semantics).
+
 ## Open Questions
 
 None.
@@ -205,3 +219,4 @@ None.
 2026-09-08 (clone-name construction under internal linkage; measured, not re-read)
 2026-10-26 (AMDGPU attributor ordering and clone attribute inheritance, measured; validateAMDGPUTarget triple fragility)
 2026-10-27 (#44 merged, descriptor table re-measured in the linked build — workitem_id claim corrected; validateAMDGPUTarget fixed, triple history corrected from Triton source)
+2026-11-08 (bitcode-missing fatal, __hip_cuid_ internalization, Triton target-unknown fallback, clone-naming bug closed without renaming; attributor and triple sections not re-verified, resting on 2026-10-27)
