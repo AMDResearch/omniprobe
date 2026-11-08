@@ -224,8 +224,18 @@ omniprobe -i -a MemoryAnalysis -k "matmul|gemm" -- ./my_app
 ```
 
 The filter is an [ECMAScript regular expression](https://en.cppreference.com/w/cpp/regex/ecmascript)
-matched against the kernel name. Only instrumented kernels whose names match will
-be dispatched; all others run their original (uninstrumented) version.
+*searched* in the demangled kernel name, so `-k gpuMain` selects `gpuMain2`,
+`gpuMain3_interior`, and so on. Only instrumented kernels whose names match will
+be dispatched; all others run their original (uninstrumented) version and are
+logged as `Kernel filter excluded <name>`.
+
+The demangled name is the one in those log lines, e.g. `void gpuMain2<4>(double,
+...)` for a template, `(anonymous namespace)::f(int*)`, or `f(int*) [clone
+.intern] ...` for a static kernel. Anchor with care: `^gpuMain2` does not match
+the template above, because its name starts with its return type. If no
+dispatched kernel matches, the run ends with `omniprobe: WARNING: no dispatched
+kernel matched the kernel filter -k '...'` and the names it could have matched,
+which is different from kernels having no instrumented clone.
 
 Filtering does not cost you source-line attribution. Kernels are indexed for the kernel
 database regardless of the filter, so a filtered run reports source file, line and column

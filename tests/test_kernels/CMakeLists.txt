@@ -67,6 +67,13 @@ target_compile_options(bb_interval_loop_test PRIVATE
 target_link_options(bb_interval_loop_test PRIVATE -fgpu-rdc)
 add_dependencies(bb_interval_loop_test copy_bitcode AMDGCNSubmitBBInterval-rocm)
 
+# Kernel names for -k semantics (prefix/substring/anchored, template, static, no params, anonymous ns)
+add_executable(kernel_filter_names_test kernel_filter_names_test.cpp)
+set_source_files_properties(kernel_filter_names_test.cpp PROPERTIES LANGUAGE HIP)
+target_compile_options(kernel_filter_names_test PRIVATE ${TEST_KERNEL_COMPILE_FLAGS} -fpass-plugin=${INST_PLUGIN})
+target_link_options(kernel_filter_names_test PRIVATE -fgpu-rdc)
+add_dependencies(kernel_filter_names_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
+
 # A kernel that faults on the GPU (bf_faulted-dispatch-hang)
 add_executable(fault_test fault_test.cpp)
 set_source_files_properties(fault_test.cpp PROPERTIES LANGUAGE HIP)

@@ -162,6 +162,11 @@ run_suite "BBInterval loop" "${SCRIPT_DIR}/test_bb_interval.sh"
 # the exit summary arrives in one piece. Needs a GPU.
 run_suite "Robustness" "${SCRIPT_DIR}/test_robustness.sh"
 
+# Suite 24: bf_kernel-filter-search — -k is a regex searched in the demangled
+# name for plain, template, static (.intern), no-parameter and anonymous-
+# namespace kernels; "no kernel matched -k" is its own warning. Needs a GPU.
+run_suite "Kernel filter names" "${SCRIPT_DIR}/test_kernel_filter_names.sh"
+
 # Summary
 echo ""
 echo "================================================================================"
