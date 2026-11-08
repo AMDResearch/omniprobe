@@ -15,6 +15,12 @@
 # count (one interval per block executed; the loop is one block per iteration
 # at -O3, plus a fixed number outside it).
 #
+# The loop body must also be inside its own interval: ticks per iteration,
+# (total at 1000 - total at 10) / 990, must be well above the few ticks two
+# back-to-back clock reads take. Without pinning, codegen moved the body's work
+# (which only feeds the next iteration) past the stop clock, and every
+# iteration read ~4 ticks.
+#
 # Must never print the string run_all_tests.sh treats as a whole-suite skip marker.
 ################################################################################
 
@@ -59,6 +65,24 @@ if [ -n "${EXTRA[10]:-}" ] && [ "${EXTRA[10]}" = "${EXTRA[1000]:-x}" ]; then
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
     echo -e "  ${RED}✗ FAIL${NC} - intervals minus trip count: 10 -> '${EXTRA[10]:-}', 1000 -> '${EXTRA[1000]:-}'"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} loop_body_inside_its_interval"
+total_of() { sed -n 's/.*total time for all [0-9]* intervals: \([0-9]*\).*/\1/p' "$OUT/loop_$1.log" | head -1; }
+t10="$(total_of 10)"; t1000="$(total_of 1000)"
+if [ -n "$t10" ] && [ -n "$t1000" ]; then
+    per_iter=$(( (t1000 - t10) / 990 ))
+    if [ "$per_iter" -ge 30 ]; then
+        echo -e "  ${GREEN}✓ PASS${NC} - $per_iter ticks per loop iteration"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - $per_iter ticks per loop iteration (want >= 30: measured 60 with the body pinned inside its interval, 12 without)"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+else
+    echo -e "  ${RED}✗ FAIL${NC} - no time_interval totals in $OUT/loop_10.log / loop_1000.log"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 

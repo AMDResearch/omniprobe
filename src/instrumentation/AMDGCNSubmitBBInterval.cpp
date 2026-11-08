@@ -28,6 +28,7 @@ THE SOFTWARE.
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/IntrinsicsAMDGPU.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -51,6 +52,58 @@ THE SOFTWARE.
 using namespace llvm;
 using namespace std;
 using namespace instrumentation::common;
+
+
+// Codegen is free to move a block's work across the two s_clock64() calls:
+// computation whose only use is in a later block sinks past the stop clock,
+// and loads are hoisted above the start clock, so the interval measures
+// nothing. A scheduling barrier after the start clock and before the stop
+// clock, plus an empty side-effecting asm use of every value the block
+// defines for later blocks, pins the block's work between them.
+static void pinValue(IRBuilder<> &B, Value *V) {
+  const DataLayout &DL = B.GetInsertBlock()->getModule()->getDataLayout();
+  Type *T = V->getType();
+  if (auto *VT = dyn_cast<FixedVectorType>(T)) {
+    for (unsigned i = 0; i != VT->getNumElements(); ++i)
+      pinValue(B, B.CreateExtractElement(V, B.getInt32(i)));
+    return;
+  }
+  if (T->isPointerTy())
+    V = B.CreatePtrToInt(V, B.getIntNTy(DL.getPointerSizeInBits(T->getPointerAddressSpace())));
+  else if (!T->isIntegerTy())
+    V = B.CreateBitCast(V, B.getIntNTy(DL.getTypeSizeInBits(T)));
+  unsigned Bits = V->getType()->getIntegerBitWidth();
+  if (Bits < 32)
+    V = B.CreateZExt(V, B.getInt32Ty());
+  else if (Bits != 32 && Bits != 64) {
+    for (unsigned lo = 0; lo < Bits; lo += 32)
+      pinValue(B, B.CreateTrunc(B.CreateLShr(V, lo), B.getInt32Ty()));
+    return;
+  }
+  FunctionType *FT = FunctionType::get(B.getVoidTy(), {V->getType()}, false);
+  B.CreateCall(FT, InlineAsm::get(FT, "; bbinterval pin $0", "v", /*hasSideEffects=*/true), {V});
+}
+
+static bool pinnable(Type *T) {
+  if (auto *VT = dyn_cast<FixedVectorType>(T))
+    return pinnable(VT->getElementType());
+  return T->isIntegerTy() || T->isFloatingPointTy() || T->isPointerTy();
+}
+
+static void pinBlockLiveOuts(IRBuilder<> &B, BasicBlock &BB, Instruction *Skip) {
+  for (auto &Inst : BB) {
+    if (&Inst == Skip || Inst.isTerminator() || Inst.getType()->isVoidTy() ||
+        isa<AllocaInst>(Inst) || !pinnable(Inst.getType()))
+      continue;
+    bool LiveOut = false;
+    for (User *U : Inst.users())
+      if (auto *UI = dyn_cast<Instruction>(U))
+        if (UI->getParent() != &BB || isa<PHINode>(UI))
+          LiveOut = true;
+    if (LiveOut)
+      pinValue(B, &Inst);
+  }
+}
 
 bool AMDGCNSubmitBBInterval::runOnModule(Module &M) {
   if (!validateAMDGPUTarget(M)) {
@@ -103,6 +156,8 @@ bool AMDGCNSubmitBBInterval::runOnModule(Module &M) {
               .getCallee());
       // Insert call to s_clock64() at BB entry (replacing __clock64())
       CallInst *startCall = BuilderStart.CreateCall(sClock64Func, {});
+      BuilderStart.CreateIntrinsic(Intrinsic::amdgcn_sched_barrier, {},
+                                   {BuilderStart.getInt32(0)});
       // Allocate a 2-element array for timestamps and get pointer with proper
       // GEP
       Value *zero32 = BuilderStart.getInt32(0);
@@ -137,6 +192,9 @@ bool AMDGCNSubmitBBInterval::runOnModule(Module &M) {
       // Insert s_clock64() call at BB end (before terminator)
       Instruction *insertPt = BB->getTerminator();
       IRBuilder<> BuilderEnd(insertPt);
+      pinBlockLiveOuts(BuilderEnd, *BB, startCall);
+      BuilderEnd.CreateIntrinsic(Intrinsic::amdgcn_sched_barrier, {},
+                                 {BuilderEnd.getInt32(0)});
       CallInst *endCall = BuilderEnd.CreateCall(sClock64Func, {});
       Value *one32 = BuilderEnd.getInt32(1);
       Value *endPtr = BuilderEnd.CreateInBoundsGEP(
