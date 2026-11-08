@@ -244,6 +244,10 @@ message("CPack-install-prefix: ${CPACK_PACKAGING_INSTALL_PREFIX}")
 install(TARGETS ${INTERCEPTOR_TARGET} LIBRARY DESTINATION omniprobe/lib)
 install(PROGRAMS ${ROOT_DIR}/omniprobe/omniprobe DESTINATION omniprobe/bin)
 install(DIRECTORY ${ROOT_DIR}/omniprobe/config DESTINATION omniprobe FILES_MATCHING PATTERN "*")
+# Python API: with <prefix> on PYTHONPATH, "from omniprobe.api import Omniprobe"
+# works against the install tree, and finds <prefix>/omniprobe/bin/omniprobe
+# without PATH being set.
+install(DIRECTORY ${ROOT_DIR}/omniprobe/api DESTINATION omniprobe FILES_MATCHING PATTERN "*.py" PATTERN "__pycache__" EXCLUDE)
 install(FILES ${ROOT_DIR}/LICENSE DESTINATION omniprobe/share/omniprobe)
 
 # Plugin install rules are inside add_instrumentation_plugins()
