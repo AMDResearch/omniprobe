@@ -11,6 +11,11 @@
 - Commit meaningful units of work with descriptive messages.
 - Do not force-push, rebase published branches, or reset shared history without explicit user approval.
 - Do not commit secrets, credentials, or large binary files.
+- Do not put cluster or node hostnames in tracked files or commit messages. This repository is
+  public. Describe a node by what matters about it (GPU, architecture, filesystem type, VM or
+  bare metal) rather than by name. Hostnames may go in `.untracked/`. `scripts/leak-scan.sh`
+  checks this before a push. *(Owner, 2026-10-27, after hostnames were found in 10 tracked files
+  and 2 commit messages.)*
 - Do not delete branches that other workflows or agents may depend on.
 - When in doubt about a destructive git operation, ask the user first.
 

@@ -6,7 +6,7 @@
 #
 # Needs a GPU node with an arch-matched build in <repo>/build and
 # .untracked/test-env.sh present (it is sourced here). Before the fix, AC-1..AC-4
-# are expected to FAIL — that is the reproduction.
+# and AC-6 are expected to FAIL — that is the reproduction.
 
 set -u -o pipefail
 
@@ -87,6 +87,46 @@ else
 fi
 
 rm -rf "$S1" "$S3" "$S4"
+
+# --- AC-6 / AC-7: the run_all_tests.sh suite classifier ---
+# Evaluate every top-level function definition of run_all_tests.sh (not just
+# run_suite, so a fix that factors classification into a helper still loads),
+# then drive run_suite in a subshell and read the counters back as "P S F".
+# If no run_suite is defined at all, every case fails with "? ? ?" rather than
+# passing.
+classify() {   # classify <script>
+  local script="$1"
+  (
+    RED='' GREEN='' YELLOW='' NC=''
+    SUITES_RUN=0 SUITES_PASSED=0 SUITES_SKIPPED=0 SUITES_FAILED=0 FAILED_SUITES=""
+    eval "$(awk '/^[A-Za-z_][A-Za-z0-9_]*\(\) *\{/{f=1} f{print} f&&/^}/{f=0}' "$REPO/tests/run_all_tests.sh")"
+    declare -F run_suite >/dev/null || { echo "? ? ?"; exit 0; }
+    run_suite "probe" "$script" >/dev/null 2>&1 || true
+    echo "$SUITES_PASSED $SUITES_SKIPPED $SUITES_FAILED"
+  )
+}
+STUBS="$(mktemp -d)"
+printf '#!/bin/sh\necho "Test 1 PASSED"\necho "[INFO] OMNIPROBE_SKIP_LIST=none"\necho "Test 2 PASSED"\nexit 0\n' >"$STUBS/incidental.sh"
+printf '#!/bin/sh\nprintf "\\033[38;5;208mSKIP: TOOL_DIR not set.\\033[0m\\n"\nexit 0\n' >"$STUBS/wholeskip.sh"
+printf '#!/bin/sh\necho "SKIP: something"\necho "Test 1 FAILED"\nexit 1\n' >"$STUBS/failing.sh"
+chmod +x "$STUBS"/*.sh
+
+R_A="$(classify "$STUBS/incidental.sh")"
+R_B="$(classify "$STUBS/wholeskip.sh")"
+R_C="$(classify "$STUBS/failing.sh")"
+if [ "$R_A" = "1 0 0" ] && [ "$R_B" = "0 1 0" ] && [ "$R_C" = "0 0 1" ]; then
+  ac_pass "AC-6" "classifier: incidental SKIP -> passed, whole-suite skip -> skipped, non-zero -> failed"
+else
+  ac_fail "AC-6" "counters 'passed skipped failed': incidental='$R_A' (want 1 0 0), whole-skip='$R_B' (want 0 1 0), failing='$R_C' (want 0 0 1)"
+fi
+rm -rf "$STUBS"
+
+R_T="$(env -u TRITON_DIR bash -c "$(declare -f classify); REPO='$REPO'; classify '$REPO/tests/triton/run_test.sh'")"
+if [ "$R_T" = "0 1 0" ]; then
+  ac_pass "AC-7" "real Triton suite with TRITON_DIR unset is still classified skipped"
+else
+  ac_fail "AC-7" "Triton suite, TRITON_DIR unset: counters='$R_T' (want 0 1 0)"
+fi
 
 # --- AC-5: default full suite unchanged ---
 SUITE="$(cd "$REPO" && bash tests/run_all_tests.sh 2>&1)"; RC5=$?

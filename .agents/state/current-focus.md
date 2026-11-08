@@ -13,7 +13,15 @@
 - **`main` is branch-protected** (no force-push/deletion, admins included). The agent may now push;
   force/delete/mirror/`+refspec` pushes are denied in `.claude/settings.local.json`.
 - **Next: `bf_pyhandler-gil`** in a fresh session — still the last thing blocking IntelliKit.
-- New draft packet `bf_library-filter-chain-silent-pass` (a suite that can pass having tested nothing).
+- **Then `bf_library-filter-chain-silent-pass`** (draft), ahead of `bf_intern-clone-name`. This
+  is the owner's decision from the 2026-10-27 batch review. Its scope now includes the
+  `run_all_tests.sh:59` suite classifier (AC-6/7). Rationale: a known-defective instrument left in
+  service keeps costing (framework FM-7). See `.agents/improvement/session-reviews/2026-10-27-batch-review.md`.
+- **`scripts/leak-scan.sh` added 2026-10-27**, copied from the framework repo, which does not ship
+  it to clients. The tracked tree has known findings (cluster hostnames, already published). Owner
+  decision (2026-10-27, confirmed as D1 on 2026-11-08): accept them, no history rewrite, add no new
+  ones. They are listed in `scripts/leak-scan-baseline.txt`, keyed by path and line hash (never the
+  text), so the scan passes on them and still fails on any new match.
 - Detail lives in PM: `build-system` (pin, CI, image checkpoint, soname hazard), `instrumentation`
   (#44, triple), `testing` (testing-another-tree traps), `pm-decisions`.
 
@@ -114,8 +122,9 @@ exit). Closed GitHub issue #41.
 ## Immediate Next Recommended Actions
 
 *Updated 2026-10-27 — the list below this note predates the Triton bump and #43/#44, which are
-both done. In order now: (a) `bf_pyhandler-gil`; (b) `bf_intern-clone-name`, after re-finding its
-line references; (c) `bf_library-filter-chain-silent-pass`, promote and execute. Parked by the
+both done. In order now (reordered 2026-10-27 by the owner): (a) `bf_pyhandler-gil`;
+(b) `bf_library-filter-chain-silent-pass`, promote and execute, now including the suite
+classifier; (c) `bf_intern-clone-name`, after re-finding its line references. Parked by the
 owner, do not act on unprompted: the upstream Triton `build-llvm-project.sh` silent-pin failure —
 **reported 2026-10-27 as a comment on triton-lang/triton#12413** (an existing open issue asking for
 `set -e`; its PR #12415 was closed unmerged without comment by ThomasRaoux, whom the comment asks
@@ -255,7 +264,9 @@ the script — open, unmerged, and no fix for upstream; it does not explain #124
   "Testing a tree other than `<repo>/build`".
 - **`.claude/session_init_primes.json` is a dead pre-AMP leftover** with stale values (v3.7.1 paths,
   a `lib/` that should be `lib64/`). Nothing live reads it. Do not use it as a source of truth.
-- **A latent suite-classifier bug.** `tests/run_all_tests.sh:59` marks a whole suite as *skipped*
+- **A latent suite-classifier bug** *(now in `bf_library-filter-chain-silent-pass`'s scope, AC-6/7,
+  since 2026-10-27. It also under-matches: the lowercase `skipping` is invisible to it)*.
+  `tests/run_all_tests.sh:59` marks a whole suite as *skipped*
   if the string `SKIP` appears anywhere in its output, and `tests/rocblas_hipblaslt/run_test.sh:220`
   emits one mid-run. It has not fired — the Tensile search at `run_test.sh:86` matches on filename
   glob plus a `__amd_crk_Cijk` symbol check rather than on architecture, so it finds the gfx90a

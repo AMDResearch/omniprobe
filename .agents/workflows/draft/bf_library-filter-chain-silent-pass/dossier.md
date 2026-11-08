@@ -7,13 +7,15 @@
 - Lifecycle State: draft
 - Owner / Current Executor: unassigned
 - Intended Write Scope:
-- Dependencies On Other Active Workflows: nominal write-scope overlap with `bf_intern-clone-name`
-  and `bf_pyhandler-gil`, which both declare all of `tests/`. Neither touches this file in its
-  plan. Do not execute concurrently with either; any order is fine.
+- Dependencies On Other Active Workflows: write-scope overlap with `bf_intern-clone-name` and
+  `bf_pyhandler-gil`, which both declare all of `tests/`. Both append their own `run_suite` line to
+  `tests/run_all_tests.sh`; this packet edits `run_suite` itself. Do not execute concurrently with
+  either. Order is prescribed (owner): this packet runs before `bf_intern-clone-name`.
 - Base Commit: (unstamped — set at promotion)
 
 ```write-scope
 tests/library_filter_chain/run_test.sh
+tests/run_all_tests.sh
 ```
 
 ## Objective
@@ -25,6 +27,29 @@ omniprobe tests (Tests 2–5) against the omniprobe tree it was told to test. Co
    (`OMNIPROBE_ROOT`), not unconditionally from `${REPO_ROOT}/build`.
 2. When no usable omniprobe tree exists, it **fails**, rather than warning and passing.
 3. A run in which the static-library kernels were not instrumented cannot pass Test 2.
+4. `tests/run_all_tests.sh` classifies a suite as *skipped* only on a whole-suite skip signal,
+   not because the substring `SKIP` appears somewhere in its output. *(Added 2026-10-27, before
+   promotion, at the owner's direction — see "Scope widened" below.)*
+
+### Scope widened 2026-10-27 (draft, owner-approved)
+
+The batch session review of 2026-10-27 found three long-lived instruments that were known to be
+defective and were still in service. This suite was one of them and the classifier at
+`tests/run_all_tests.sh:59` was another. The owner accepted the review's proposal to fix both in
+this packet. The two defects compound:
+
+```
+elif echo "$output" | grep -q "SKIP"; then     # whole suite -> skipped
+```
+
+It is a case-sensitive substring match, so it is wrong in **both** directions:
+
+- **Over-match.** Any incidental `SKIP` in a suite's output, such as a log line, a variable
+  name, or the partial-skip line at `tests/rocblas_hipblaslt/run_test.sh:220`, reclassifies a
+  passing suite as skipped.
+- **Under-match.** This suite's own skip messages are lowercase (`skipping omniprobe tests`,
+  `run_test.sh:151,156`), so the classifier never saw them. That is how four skipped tests were
+  counted as a **pass**.
 
 ## Background / Context
 
@@ -105,7 +130,15 @@ built. `S` denotes a scratch root containing only a copy of `tests/library_filte
   `Test 2 PASSED`. (Without the symlink the check is vacuous: Test 2 is skipped, so it
   "does not pass" before the fix too. The first draft of this check made that mistake.)
 - **AC-5**: Default full suite from the main repo (`source .untracked/test-env.sh;
-  tests/run_all_tests.sh`): 11 run, 11 passed, 0 skipped, 0 failed.
+  tests/run_all_tests.sh`): every suite run passes — N run, N passed, 0 skipped, 0 failed, where N
+  is the suite count at execution time (11 at 64cc406; packets landing first add suites).
+- **AC-6**: The `run_all_tests.sh` classifier, driven with stub suite scripts, classifies:
+  (a) exit 0 with an **incidental** `SKIP` substring among passing output as *passed*;
+  (b) exit 0 with only a whole-suite skip notice in the existing form
+  (`<color>SKIP: <reason><reset>`, as `tests/triton/run_test.sh:43` prints) as *skipped*;
+  (c) a non-zero exit as *failed*, whatever it printed.
+- **AC-7**: The real `tests/triton/run_test.sh` with `TRITON_DIR` unset, put through the same
+  classifier, is still classified *skipped*. Legitimate whole-suite skips keep working.
 - **SCOPE**: no writes outside the `write-scope` block.
 
 The AC-1/3/4 checks are the regression test. They live in `acceptance.sh`, which stays
@@ -119,7 +152,10 @@ stop and report rather than loosening an assertion.
 
 ## Scope
 
-The three silent-pass paths listed in Background, in `run_test.sh` only.
+The three silent-pass paths listed in Background, in `library_filter_chain/run_test.sh`. The
+suite classifier in `run_all_tests.sh`. The skip *signal* design is an implementation choice, but
+it must work without editing the other suites' scripts, which are outside the write scope.
+Reaching them is a scope amendment and must be declared as one.
 
 ## Non-Goals
 
@@ -154,8 +190,11 @@ None functional. See the write-scope note in Metadata.
 3. **Fix**: derive the plugin path and the Tests 2–5 gate from `OMNIPROBE_ROOT`; turn the
    missing-tree warnings and the line-171 warning into failures (`log_error` + `exit 1`), keeping
    `--no-instrument` behaviour coherent with AC-4. No message containing `SKIP`.
-4. **Regression**: run `acceptance.sh` — AC-1..AC-4 exercise each path.
-5. **Verify**: AC-5, full default suite.
+4. **Fix the classifier** in `run_all_tests.sh` (AC-6, AC-7). Run `acceptance.sh` before the edit
+   too: AC-6(a) must FAIL pre-fix.
+5. **Regression**: run `acceptance.sh`. AC-1..AC-4 exercise each silent-pass path, and AC-6/7
+   exercise the classifier.
+6. **Verify**: AC-5, full default suite.
 
 ## Verification Strategy
 
@@ -166,6 +205,8 @@ None functional. See the write-scope note in Metadata.
 | AC-3 | scratch-root run with bogus `OMNIPROBE_ROOT`, exit code + output greps |
 | AC-4 | `--no-instrument` run, absence of `Test 2 PASSED` |
 | AC-5 | `run_all_tests.sh` summary parsed for the four counts |
+| AC-6 | `run_all_tests.sh`'s function definitions extracted and evaluated, then `run_suite` driven with three stub scripts and the counters read back |
+| AC-7 | same harness, real Triton suite script, `TRITON_DIR` unset |
 | SCOPE | `ac_check_write_scope` |
 
 AC-1/3/4 grep log text. That is acceptable here because the strings are the script's own
@@ -186,3 +227,7 @@ renames those lines would turn the checks vacuous. If the fix changes any of `Te
 - With `--no-instrument`, should Tests 2–5 be skipped explicitly (exit 0, clear message without
   `SKIP`) or fail? AC-4 only requires that Test 2 cannot *pass*; either satisfies it. Owner's call
   at execution time; default to explicit skip-with-message, since the flag requests it.
+- **Partial skips** such as `tests/rocblas_hipblaslt/run_test.sh:220` (one part of a suite
+  skipped, the rest passed). Are they *passed*, or should they be surfaced separately in the
+  summary? AC-6 does not decide this. Default: classify as passed and list the partial-skip
+  lines in the summary, so the tally does not hide them.

@@ -22,9 +22,16 @@ AC-4 passed in the first run because its scratch root had no `build/`, so Test 2
 and "did not pass" vacuously — the same failure mode this packet is about. Fixed by giving the
 AC-4 scratch root a `build/` symlink; re-checked in isolation and it now fails pre-fix as it must.
 
+**Scope widened 2026-10-27 (still draft, owner-approved):** the `tests/run_all_tests.sh:59`
+suite classifier was added to this packet, with AC-6 and AC-7. The block was run alone against the
+unfixed tree: AC-6 FAILs as it should (incidental `SKIP` is counted as skipped, counters `0 1 0`,
+expected `1 0 0`) and AC-7 PASSes. As a positive control, both pass against a candidate classifier
+in a throwaway copy. That candidate was a control and is not the chosen fix. AC-1..5 were not
+re-run.
+
 ## Last Verified
 
-2026-10-27, against `b12d7f0`.
+2026-10-27, against `b12d7f0` (AC-1..5); AC-6/7 against `64cc406`.
 
 ## Next Exact Step
 
@@ -36,8 +43,10 @@ Plan of Record step 0: promote (move to `active/`, stamp `Base Commit`, commit a
 - Needs a GPU node with an arch-matched `<repo>/build`.
 - Write-scope overlap is nominal: `bf_intern-clone-name` and `bf_pyhandler-gil` declare `tests/`.
   Do not run concurrently with either.
-- `tests/run_all_tests.sh:59` treats any `SKIP` in a suite's output as "suite skipped". No new
-  message may contain it (AC-3 checks).
+- `tests/run_all_tests.sh:59` treats any `SKIP` in a suite's output as "suite skipped". That is
+  now in scope (AC-6/7). Until it is fixed, no new message may contain `SKIP` (AC-3 checks).
+- The classifier fix must not require editing the other suites' scripts, which are outside the
+  write scope. The Open Questions also list partial skips (`rocblas_hipblaslt/run_test.sh:220`).
 
 ## Required Reads Before Resuming
 
