@@ -102,6 +102,8 @@ class Omniprobe:
             Optional ECMAScript regex to limit which kernels are analysed.
         dispatches : str
             Which dispatches to capture (``"all"``, ``"random"``, or ``"1"``).
+            ``"random"`` captures each dispatch with probability 1/100, so a
+            kernel with few dispatches is often not captured at all.
 
         Returns
         -------

@@ -320,6 +320,25 @@ hsaInterceptor::~hsaInterceptor() {
                 summary << "  " << name << " (" << count << " dispatch" << (count == 1 ? "" : "es") << ")\n";
             }
         }
+        // -d random captures each eligible dispatch with probability
+        // 1/RANDOM_DISPATCH_DISTRIBUTION, so a kernel with few dispatches is
+        // usually not captured at all. Say so rather than end with no output.
+        {
+            std::ostringstream missed;
+            size_t n_missed = 0;
+            for (const auto& [name, draws] : random_draws_) {
+                if (draws.second == 0) {
+                    n_missed++;
+                    missed << "  " << name << " (" << draws.first << " dispatch"
+                           << (draws.first == 1 ? "" : "es") << ")\n";
+                }
+            }
+            if (n_missed)
+                summary << "omniprobe: WARNING: -d random captured no dispatch of " << n_missed
+                        << " kernel(s); each dispatch is captured with probability 1/"
+                        << RANDOM_DISPATCH_DISTRIBUTION << ". Use -d 1 or -d all for these:\n"
+                        << missed.str();
+        }
         if (kerneldb_failures_)
             summary << "omniprobe: ERROR: kernelDB failed on " << kerneldb_failures_
                     << " code object(s); their kernels have no source attribution (see the first ERROR above)\n";
@@ -920,7 +939,18 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                         else
                             filter_excluded_[it->second.name_]++;
                     }
-                    if (run_instrumented_ && filter_allows && dispatcher_.canDispatch(alt_kernel_object))
+                    // -k is applied first, so -d random draws only among the
+                    // dispatches the filter lets through.
+                    const bool eligible = run_instrumented_ && filter_allows;
+                    const bool capture = eligible && dispatcher_.canDispatch(alt_kernel_object);
+                    if (eligible && dispatcher_.isRandom()) {
+                        lock_guard<std::mutex> lock(uninstrumented_mutex_);
+                        auto& draws = random_draws_[it->second.name_];
+                        draws.first++;
+                        if (capture)
+                            draws.second++;
+                    }
+                    if (capture)
                     {
                         // Found an instrumented  kernel Vobject to use as an alternative
                         dispatch->kernel_object = alt_kernel_object;

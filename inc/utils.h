@@ -269,6 +269,7 @@ public:
     dispatchController();
     ~dispatchController();
     bool canDispatch(uint64_t kernel_object);
+    bool isRandom() const { return bRandomDispatch_; }
 private:
     bool bAllDispatch_;
     bool bRandomDispatch_;

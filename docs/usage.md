@@ -256,7 +256,7 @@ omniprobe -i -a MemoryAnalysis -d all -- ./my_app
 # Instrument only the first dispatch of each kernel
 omniprobe -i -a MemoryAnalysis -d 1 -- ./my_app
 
-# Randomly select one dispatch per kernel
+# Instrument each dispatch with probability 1/100
 omniprobe -i -a MemoryAnalysis -d random -- ./my_app
 ```
 
@@ -264,11 +264,16 @@ omniprobe -i -a MemoryAnalysis -d random -- ./my_app
 |-------|----------|
 | `all` | Instrument every dispatch (default) |
 | `1` | Only the first dispatch of each kernel |
-| `random` | Randomly select one dispatch per kernel |
+| `random` | Each dispatch independently, with probability 1/100 |
 
 Instrumenting all dispatches gives the most complete picture but adds overhead.
 For large workloads, `1` or `random` can significantly reduce runtime while
 still catching representative behavior.
+
+`random` samples: a kernel can be captured several times or not at all, and a
+kernel with only a few dispatches usually is not captured at all. With `-k`,
+only dispatches the filter matches are sampled. At the end of the run omniprobe
+lists the kernels `random` captured no dispatch of; use `-d 1` for those.
 
 Requires `-i`.
 
