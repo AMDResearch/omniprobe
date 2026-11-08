@@ -379,6 +379,10 @@ the script — open, unmerged, and no fix for upstream; it does not explain #124
 
 ## Recent Decisions
 
+- 2026-11-08 (third session close): leak-scan scanned 0f6b537..067bd2e (1 commit, 110 added
+  lines, 1 message, 471 tracked files), zero hits outside the baseline; exit 0. Every push this
+  session was gated on the scan; the commit carrying this entry is outside that range.
+
 - 2026-11-08 (second session close): leak-scan scanned 22c4d95..730a9ba (2 commits, 344 added
   lines, 2 messages, 463 tracked files), zero hits outside the baseline; exit 0. The commit
   carrying this entry is outside that range: re-derive the range when pushing.
