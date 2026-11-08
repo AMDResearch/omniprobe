@@ -22,21 +22,39 @@ THE SOFTWARE.
 #pragma once
 
 #include <Python.h>
+#include <cstdint>
 #include <iostream>
 #include <mutex>
 #include <stdexcept>
+#include <string>
 
+//! Calls functions in a user-supplied Python module for each message.
+//!
+//! The module must define handleAddressMessage(dict) and handleTimeMessage(dict);
+//! handleReport(dict) is optional and is called once per dispatch, after its last
+//! message. Every dict carries "kernel" and "dispatch_id".
+//!
+//! Every method may be called on a different thread (dispatch, dh_comms processing,
+//! completion), so each one takes the GIL itself. The interpreter is process-wide:
+//! it is started once, by the first handler if the host process has none, and is
+//! never finalized here, because handlers are created and destroyed per dispatch.
 class pythonMessageHandler {
 public:
-    pythonMessageHandler(std::string& module_name);
+    pythonMessageHandler(const std::string& module_name, const std::string& kernel = "",
+                         uint64_t dispatch_id = 0);
     ~pythonMessageHandler();
+    pythonMessageHandler(const pythonMessageHandler&) = delete;
+    pythonMessageHandler& operator=(const pythonMessageHandler&) = delete;
     void addressMessage(void *address);
     void timingMessage(uint64_t time);
+    void report();
 private:
+    void call(PyObject* func, const char* key, PyObject* value);
     std::string module_name_;
-    PyObject *pModule_;
-    PyObject *pAddressFunc_;
-    PyObject *pTimingFunc_;
-    static std::mutex global_mutex_;
+    PyObject *pModule_ = nullptr;
+    PyObject *pAddressFunc_ = nullptr;
+    PyObject *pTimingFunc_ = nullptr;
+    PyObject *pReportFunc_ = nullptr;   // optional
+    PyObject *pKernel_ = nullptr;
+    PyObject *pDispatchId_ = nullptr;
 };
-

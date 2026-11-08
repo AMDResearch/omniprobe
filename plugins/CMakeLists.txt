@@ -24,6 +24,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0")
 set(LOGGER_PLUGIN_NAME  "LogMessages64")
 set(BB_PLUGIN_NAME  "BasicBlocks64")
 set(MEM_ANALYSIS_PLUGIN_NAME  "MemAnalysis64")
+set(PYTHON_PLUGIN_NAME  "PythonHandler64")
 
 set ( PLUGIN_LIB "${DEFAULT_PLUGIN_NAME}" )
 
@@ -48,6 +49,13 @@ set(MEM_ANALYSIS_SRC
   ${PLUGIN_DIR}/memory_analysis_plugin.cc
 )
 
+# The Python bridge is the only component that links libpython; the core
+# library must not (a feature most consumers never use).
+set(PYTHON_PLUGIN_SRC
+  ${LIB_DIR}/pyHandler.cc
+  ${PLUGIN_DIR}/python_bridge_plugin.cc
+)
+
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 link_directories(${ROCM_ROOT_DIR}/lib $ENV{HOME}/.local/lib64 ${CMAKE_INSTALL_PREFIX}/lib)
@@ -55,6 +63,16 @@ add_library ( ${DEFAULT_PLUGIN_NAME} SHARED ${DEFAULT_PLUGIN_SRC})
 add_library ( ${LOGGER_PLUGIN_NAME} SHARED ${LOGGER_PLUGIN_SRC})
 add_library ( ${BB_PLUGIN_NAME} SHARED ${BB_PLUGIN_SRC})
 add_library ( ${MEM_ANALYSIS_PLUGIN_NAME} SHARED ${MEM_ANALYSIS_SRC})
+if (Python_Development_FOUND)
+  add_library ( ${PYTHON_PLUGIN_NAME} SHARED ${PYTHON_PLUGIN_SRC})
+  set_target_properties(${PYTHON_PLUGIN_NAME} PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+  target_include_directories(${PYTHON_PLUGIN_NAME} PRIVATE
+    ${LIB_DIR} ${ROCM_ROOT_DIR}/include ${ROOT_DIR} ${HSA_RUNTIME_INC_PATH} ${DH_COMMS_INCLUDE_DIR})
+  target_link_libraries(${PYTHON_PLUGIN_NAME} PRIVATE dh_comms Python::Python)
+  install(TARGETS ${PYTHON_PLUGIN_NAME} LIBRARY DESTINATION omniprobe/lib)
+else()
+  message(STATUS "Python development files not found: PythonHandler plugin not built")
+endif()
 
 set_target_properties(${DEFAULT_PLUGIN_NAME} ${LOGGER_PLUGIN_NAME} ${BB_PLUGIN_NAME} ${MEM_ANALYSIS_PLUGIN_NAME}
     PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
