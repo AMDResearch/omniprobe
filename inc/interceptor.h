@@ -148,6 +148,7 @@ public:
     friend void comms_runner(comms_mgr& mgr);
 
     bool hasPendingSignals();
+    void abandonPendingSignals();
     void shutdown();
 protected:
     bool shuttingdown();

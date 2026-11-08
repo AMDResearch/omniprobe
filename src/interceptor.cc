@@ -583,33 +583,62 @@ void cache_watcher()
     cerr << "Cache Watcher shutting down\n";
 }
 
+// Completes dispatches as their signals reach 0. After shutdown starts, it keeps
+// completing them, but a dispatch that has not completed SIGNAL_SHUTDOWN_GRACE
+// after the last one did (or after shutdown began) never will: its kernel
+// faulted, or its queue is dead. Those are abandoned, so the exit-time join
+// cannot hang.
 void signal_runner()
 {
+    using clock = std::chrono::steady_clock;
+    constexpr auto SIGNAL_SHUTDOWN_GRACE = std::chrono::seconds(3);
     hsaInterceptor *me = hsaInterceptor::getInstance();
-    //uint64_t count = 0;
-    while (!me->shuttingdown())
+    bool shutdown_seen = false;
+    clock::time_point last_progress;
+    while (true)
     {
-        std::vector<hsa_signal_t> curr_sigs;
-        if (me->getPendingSignals(curr_sigs))
+        if (me->shuttingdown() && !shutdown_seen)
         {
-            do{
-                auto size = curr_sigs.size();
-                for (unsigned long int i = 0; i < size; i++)
-                {
-                    assert(curr_sigs[i].handle);
-                    if (!me->signalWait(curr_sigs[i], 1))
-                    {
-                        me->signalCompleted(curr_sigs[i]);
-      //                  count++;
-                    }
-
-                }
-                curr_sigs.clear();
-            }while (me->getPendingSignals(curr_sigs));
+            shutdown_seen = true;
+            last_progress = clock::now();
+        }
+        std::vector<hsa_signal_t> curr_sigs;
+        if (!me->getPendingSignals(curr_sigs))
+        {
+            if (shutdown_seen)
+                break;
+            usleep(1);
+            continue;
+        }
+        for (auto sig : curr_sigs)
+        {
+            assert(sig.handle);
+            if (!me->signalWait(sig, 1))
+            {
+                me->signalCompleted(sig);
+                last_progress = clock::now();
+            }
+        }
+        if (shutdown_seen && clock::now() - last_progress > SIGNAL_SHUTDOWN_GRACE)
+        {
+            me->abandonPendingSignals();
+            break;
         }
         usleep(1);
     }
     cerr << "signal_runner is shutting down\n";
+}
+
+void hsaInterceptor::abandonPendingSignals()
+{
+    lock_guard<std::mutex> lock(mutex_);
+    std::cerr << "omniprobe: WARNING: " << pending_signals_.size()
+              << " dispatch(es) never completed (GPU fault or dead queue?); no analysis is reported for them:" << std::endl;
+    for (const auto& [sig, ki] : pending_signals_)
+        std::cerr << "  " << ki.name_ << std::endl;
+    // The comms objects are leaked on purpose: their buffers may hold a
+    // half-written message, and the process is exiting.
+    pending_signals_.clear();
 }
 
 bool hsaInterceptor::signalWait(hsa_signal_t sig, uint64_t timeout)
@@ -621,7 +650,7 @@ bool hsaInterceptor::signalWait(hsa_signal_t sig, uint64_t timeout)
 
 bool hsaInterceptor::getPendingSignals(std::vector<hsa_signal_t>& outSigs)
 {
-    lock_guard<std::mutex> lock(mutex);
+    lock_guard<std::mutex> lock(mutex_);   // was lock(mutex): a function declaration, so no lock at all
     for (const auto& pair : pending_signals_)
     {
         outSigs.push_back(pair.first);
