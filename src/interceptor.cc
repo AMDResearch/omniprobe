@@ -209,6 +209,7 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
                         {
                             kernel_filter_regex_ = std::regex(strFilter, std::regex_constants::ECMAScript);
                             has_kernel_filter_ = true;
+                            kernel_filter_ = strFilter;
                         }
                         catch (const std::regex_error& error)
                         {
@@ -303,6 +304,21 @@ hsaInterceptor::~hsaInterceptor() {
                     << "they are missing from the analysis:\n";
             for (const auto& [name, count] : uninstrumented_kernels_)
                 summary << "  " << name << " (" << count << " dispatch" << (count == 1 ? "" : "es") << ")\n";
+        }
+        // Not "no instrumented kernels": the kernels had clones, the -k filter
+        // turned every one of them away.
+        if (has_kernel_filter_ && filter_matched_ == 0 && !filter_excluded_.empty()) {
+            summary << "omniprobe: WARNING: no dispatched kernel matched the kernel filter -k '" << kernel_filter_
+                    << "', so none ran instrumented. The filter is an ECMAScript regex searched in the demangled "
+                       "name; the instrumented kernels dispatched were:\n";
+            size_t shown = 0;
+            for (const auto& [name, count] : filter_excluded_) {
+                if (shown++ == 10) {
+                    summary << "  ... and " << filter_excluded_.size() - 10 << " more\n";
+                    break;
+                }
+                summary << "  " << name << " (" << count << " dispatch" << (count == 1 ? "" : "es") << ")\n";
+            }
         }
         if (kerneldb_failures_)
             summary << "omniprobe: ERROR: kernelDB failed on " << kerneldb_failures_
@@ -897,6 +913,13 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                     const bool filter_allows = runKernelInstrumented(it->second.name_);
                     if (!filter_allows)
                         std::cerr << "Kernel filter excluded " << it->second.name_ << "; running uninstrumented" << std::endl;
+                    if (has_kernel_filter_) {
+                        lock_guard<std::mutex> lock(uninstrumented_mutex_);
+                        if (filter_allows)
+                            filter_matched_++;
+                        else
+                            filter_excluded_[it->second.name_]++;
+                    }
                     if (run_instrumented_ && filter_allows && dispatcher_.canDispatch(alt_kernel_object))
                     {
                         // Found an instrumented  kernel Vobject to use as an alternative

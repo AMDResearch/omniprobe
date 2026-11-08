@@ -175,6 +175,9 @@ private:
     std::thread cache_watcher_;
     std::mutex mutex_;
     unsigned kerneldb_failures_ = 0;   // guarded by uninstrumented_mutex_
+    std::string kernel_filter_;
+    uint64_t filter_matched_ = 0;                        // guarded by uninstrumented_mutex_
+    std::map<std::string, uint64_t> filter_excluded_;    // guarded by uninstrumented_mutex_
     logDuration log_;
     coCache kernel_cache_;
     bool run_instrumented_;
