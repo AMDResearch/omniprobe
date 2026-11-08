@@ -67,8 +67,9 @@ if (Python_Development_FOUND)
   add_library ( ${PYTHON_PLUGIN_NAME} SHARED ${PYTHON_PLUGIN_SRC})
   set_target_properties(${PYTHON_PLUGIN_NAME} PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
   target_include_directories(${PYTHON_PLUGIN_NAME} PRIVATE
-    ${LIB_DIR} ${ROCM_ROOT_DIR}/include ${ROOT_DIR} ${HSA_RUNTIME_INC_PATH} ${DH_COMMS_INCLUDE_DIR})
-  target_link_libraries(${PYTHON_PLUGIN_NAME} PRIVATE dh_comms Python::Python)
+    ${LIB_DIR} ${CMAKE_INSTALL_PREFIX}/include ${ROCM_ROOT_DIR}/include ${ROOT_DIR} ${HSA_RUNTIME_INC_PATH}
+    ${HSA_KMT_LIB_PATH}/.. ${DH_COMMS_INCLUDE_DIR})
+  target_link_libraries(${PYTHON_PLUGIN_NAME} PRIVATE dh_comms kernelDB64 Python::Python)
   install(TARGETS ${PYTHON_PLUGIN_NAME} LIBRARY DESTINATION omniprobe/lib)
 else()
   message(STATUS "Python development files not found: PythonHandler plugin not built")

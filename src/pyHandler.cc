@@ -68,6 +68,33 @@ std::string resolve_module(const std::string& spec)
     return stem;
 }
 
+// The attribute if the module defines it and it is callable; nullptr if it is
+// absent; nullptr and an error if it exists but cannot be called. Caller holds
+// the GIL.
+PyObject* optionalCallable(PyObject* module, const char* name, std::string& error)
+{
+    if (!PyObject_HasAttrString(module, name))
+        return nullptr;
+    PyObject* f = PyObject_GetAttrString(module, name);
+    if (!f || !PyCallable_Check(f)) {
+        Py_XDECREF(f);
+        if (error.empty())
+            error = std::string("'") + name + "' in the Python module is not callable";
+        return nullptr;
+    }
+    return f;
+}
+
+// d[key] = value, stealing value. Returns false if value is null.
+bool setItem(PyObject* d, const char* key, PyObject* value)
+{
+    if (!value)
+        return false;
+    PyDict_SetItemString(d, key, value);
+    Py_DECREF(value);
+    return true;
+}
+
 } // namespace
 
 pythonMessageHandler::pythonMessageHandler(const std::string& module_name, const std::string& kernel,
@@ -81,14 +108,13 @@ pythonMessageHandler::pythonMessageHandler(const std::string& module_name, const
     if (!pModule_) {
         error = "Failed to load Python module '" + module_name_ + "'";
     } else {
-        pAddressFunc_ = PyObject_GetAttrString(pModule_, "handleAddressMessage");
-        if (!pAddressFunc_ || !PyCallable_Check(pAddressFunc_))
-            error = "Python module '" + module_name_ + "' has no callable handleAddressMessage";
-        pTimingFunc_ = PyObject_GetAttrString(pModule_, "handleTimeMessage");
-        if (error.empty() && (!pTimingFunc_ || !PyCallable_Check(pTimingFunc_)))
-            error = "Python module '" + module_name_ + "' has no callable handleTimeMessage";
-        if (PyObject_HasAttrString(pModule_, "handleReport"))
-            pReportFunc_ = PyObject_GetAttrString(pModule_, "handleReport");
+        pAddressFunc_ = optionalCallable(pModule_, "handleAddressMessage", error);
+        pAddressWaveFunc_ = optionalCallable(pModule_, "handleAddressWave", error);
+        pTimingFunc_ = optionalCallable(pModule_, "handleTimeMessage", error);
+        pReportFunc_ = optionalCallable(pModule_, "handleReport", error);
+        if (error.empty() && !pAddressFunc_ && !pAddressWaveFunc_ && !pTimingFunc_)
+            error = "Python module '" + module_name_ + "' defines none of handleAddressWave, "
+                    "handleAddressMessage, handleTimeMessage";
     }
     if (error.empty()) {
         pKernel_ = PyUnicode_FromString(kernel.c_str());
@@ -99,7 +125,7 @@ pythonMessageHandler::pythonMessageHandler(const std::string& module_name, const
     if (!error.empty()) {
         if (PyErr_Occurred())
             PyErr_Print();
-        Py_CLEAR(pModule_); Py_CLEAR(pAddressFunc_); Py_CLEAR(pTimingFunc_);
+        Py_CLEAR(pModule_); Py_CLEAR(pAddressFunc_); Py_CLEAR(pAddressWaveFunc_); Py_CLEAR(pTimingFunc_);
         Py_CLEAR(pReportFunc_); Py_CLEAR(pKernel_); Py_CLEAR(pDispatchId_);
         throw std::runtime_error(error);
     }
@@ -111,6 +137,7 @@ pythonMessageHandler::~pythonMessageHandler()
         return;
     gil_lock gil;
     Py_CLEAR(pAddressFunc_);
+    Py_CLEAR(pAddressWaveFunc_);
     Py_CLEAR(pTimingFunc_);
     Py_CLEAR(pReportFunc_);
     Py_CLEAR(pModule_);
@@ -148,14 +175,100 @@ void pythonMessageHandler::call(PyObject* func, const char* key, PyObject* value
 
 void pythonMessageHandler::addressMessage(void *address)
 {
+    if (!pAddressFunc_)
+        return;
     gil_lock gil;
     call(pAddressFunc_, "address", PyLong_FromUnsignedLongLong(reinterpret_cast<uintptr_t>(address)));
 }
 
-void pythonMessageHandler::timingMessage(uint64_t time)
+// Calls func(dict) after adding "kernel" and "dispatch_id". Steals dict. Caller
+// holds the GIL.
+void pythonMessageHandler::callDict(PyObject* func, PyObject* dict)
 {
+    if (!dict) {
+        if (PyErr_Occurred())
+            PyErr_Print();
+        std::cerr << "pythonMessageHandler: failed to build the message dict" << std::endl;
+        return;
+    }
+    PyDict_SetItemString(dict, "kernel", pKernel_);
+    PyDict_SetItemString(dict, "dispatch_id", pDispatchId_);
+    PyObject* pValue = PyObject_CallFunctionObjArgs(func, dict, NULL);
+    if (!pValue) {
+        PyErr_Print();
+        std::cerr << "pythonMessageHandler: call into module '" << module_name_ << "' failed" << std::endl;
+    }
+    Py_XDECREF(pValue);
+    Py_DECREF(dict);
+}
+
+PyObject* pythonMessageHandler::waveDict(const pyWaveInfo& w)
+{
+    PyObject* d = PyDict_New();
+    if (!d)
+        return nullptr;
+    bool ok = setItem(d, "exec", PyLong_FromUnsignedLongLong(w.exec))
+        && setItem(d, "timestamp", PyLong_FromUnsignedLongLong(w.timestamp))
+        && setItem(d, "block_idx", Py_BuildValue("(III)", w.block_idx[0], w.block_idx[1], w.block_idx[2]))
+        && setItem(d, "wave_num", PyLong_FromUnsignedLong(w.wave_num))
+        && setItem(d, "xcc_id", PyLong_FromUnsignedLong(w.xcc_id))
+        && setItem(d, "se_id", PyLong_FromUnsignedLong(w.se_id))
+        && setItem(d, "cu_id", PyLong_FromUnsignedLong(w.cu_id))
+        && setItem(d, "source_file", PyUnicode_DecodeUTF8(w.source_file.data(), w.source_file.size(), "replace"))
+        && setItem(d, "line", PyLong_FromUnsignedLong(w.line))
+        && setItem(d, "column", PyLong_FromUnsignedLong(w.column));
+    if (!ok)
+        Py_CLEAR(d);
+    return d;
+}
+
+void pythonMessageHandler::addressWave(const pyAddressWave& w)
+{
+    if (!pAddressWaveFunc_)
+        return;
     gil_lock gil;
-    call(pTimingFunc_, "elapsed_time", PyLong_FromUnsignedLongLong(time));
+    PyObject* d = waveDict(w.wave);
+    PyObject* addresses = d ? PyList_New(w.addresses.size()) : nullptr;
+    PyObject* lanes = addresses ? PyList_New(w.lanes.size()) : nullptr;
+    bool ok = lanes != nullptr;
+    for (size_t i = 0; ok && i != w.addresses.size(); ++i) {
+        PyObject* v = PyLong_FromUnsignedLongLong(w.addresses[i]);
+        ok = v != nullptr;
+        if (ok)
+            PyList_SET_ITEM(addresses, i, v);   // steals v
+    }
+    for (size_t i = 0; ok && i != w.lanes.size(); ++i) {
+        PyObject* v = PyLong_FromUnsignedLong(w.lanes[i]);
+        ok = v != nullptr;
+        if (ok)
+            PyList_SET_ITEM(lanes, i, v);
+    }
+    if (ok)
+        ok = setItem(d, "addresses", addresses) && setItem(d, "lanes", lanes)
+            && setItem(d, "access_type", PyUnicode_FromString(w.access_type.c_str()))
+            && setItem(d, "memory_space", PyUnicode_FromString(w.memory_space.c_str()))
+            && setItem(d, "access_size", PyLong_FromUnsignedLong(w.access_size));
+    else {
+        Py_XDECREF(addresses);
+        Py_XDECREF(lanes);
+    }
+    if (!ok)
+        Py_CLEAR(d);
+    callDict(pAddressWaveFunc_, d);
+}
+
+void pythonMessageHandler::timingMessage(const pyTimeInterval& t)
+{
+    if (!pTimingFunc_)
+        return;
+    gil_lock gil;
+    PyObject* d = waveDict(t.wave);
+    if (d && !(setItem(d, "elapsed_time", PyLong_FromUnsignedLongLong(t.stop - t.start))
+               && setItem(d, "start", PyLong_FromUnsignedLongLong(t.start))
+               && setItem(d, "stop", PyLong_FromUnsignedLongLong(t.stop))
+               && setItem(d, "block_id", PyLong_FromUnsignedLong(t.block_id))))
+        Py_CLEAR(d);
+    callDict(pTimingFunc_, d);
 }
 
 void pythonMessageHandler::report()

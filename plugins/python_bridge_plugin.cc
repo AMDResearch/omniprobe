@@ -23,6 +23,7 @@ THE SOFTWARE.
 #include <cstdint>
 
 #include "plugin.h"
+#include "inc/kdb_message_handler_base.h"
 #include "inc/pyHandler.h"
 #include "inc/time_interval_handler.h"
 
@@ -38,27 +39,38 @@ THE SOFTWARE.
 
 namespace {
 
-class python_bridge_handler_t : public dh_comms::message_handler_base {
+class python_bridge_handler_t : public kdb_message_handler_base {
 public:
     python_bridge_handler_t(const std::string& module, const std::string& kernel, uint64_t dispatch_id)
         : py_(module, kernel, dispatch_id) {}
 
     bool handle(const dh_comms::message_t& message) override
     {
-        switch (message.wave_header().user_type) {
-        case dh_comms::message_type::address:
+        const auto& hdr = message.wave_header();
+        switch (hdr.user_type) {
+        case dh_comms::message_type::address: {
             if (message.data_item_size() != sizeof(uint64_t))
                 return false;
-            for (size_t i = 0; i != message.no_data_items(); ++i)
-                py_.addressMessage(reinterpret_cast<void*>(*static_cast<const uint64_t*>(message.data_item(i))));
+            if (py_.wantsAddressLanes())
+                for (size_t i = 0; i != message.no_data_items(); ++i)
+                    py_.addressMessage(reinterpret_cast<void*>(*static_cast<const uint64_t*>(message.data_item(i))));
+            if (py_.wantsAddressWaves())
+                py_.addressWave(addressWave(message));
             return true;
+        }
         case dh_comms::message_type::time_interval:
             if (message.data_item_size() != sizeof(dh_comms::time_interval))
                 return false;
-            for (size_t i = 0; i != message.no_data_items(); ++i) {
-                auto ti = *static_cast<const dh_comms::time_interval*>(message.data_item(i));
-                py_.timingMessage(ti.stop - ti.start);
-            }
+            if (py_.wantsTimeIntervals())
+                for (size_t i = 0; i != message.no_data_items(); ++i) {
+                    auto ti = *static_cast<const dh_comms::time_interval*>(message.data_item(i));
+                    pyTimeInterval t;
+                    t.wave = waveInfo(hdr);
+                    t.start = ti.start;
+                    t.stop = ti.stop;
+                    t.block_id = hdr.user_data;
+                    py_.timingMessage(t);
+                }
             return true;
         default:
             return false;
@@ -68,6 +80,47 @@ public:
     void report() override { py_.report(); }
 
 private:
+    pyWaveInfo waveInfo(const dh_comms::wave_header_t& hdr)
+    {
+        pyWaveInfo w;
+        w.exec = hdr.exec;
+        w.timestamp = hdr.timestamp;
+        w.block_idx[0] = hdr.block_idx_x;
+        w.block_idx[1] = hdr.block_idx_y;
+        w.block_idx[2] = hdr.block_idx_z;
+        w.wave_num = hdr.wave_num;
+        w.xcc_id = hdr.xcc_id;
+        w.se_id = hdr.se_id;
+        w.cu_id = hdr.cu_id;
+        w.source_file = sourceFileForHash(hdr.dwarf_fname_hash);
+        w.line = hdr.dwarf_line;
+        w.column = hdr.dwarf_column;
+        return w;
+    }
+
+    pyAddressWave addressWave(const dh_comms::message_t& message)
+    {
+        static const char* spaces[] = {"flat", "global", "gds", "shared", "constant", "scratch"};
+        static const char* kinds[] = {"undefined", "read", "write", "readwrite"};
+        const auto& hdr = message.wave_header();
+        pyAddressWave w;
+        w.wave = waveInfo(hdr);
+        for (size_t i = 0; i != message.no_data_items(); ++i)
+            w.addresses.push_back(*static_cast<const uint64_t*>(message.data_item(i)));
+        // Addresses come one per active lane in increasing lane order (see
+        // AddressLogger), so the i-th address belongs to the i-th set exec bit.
+        for (uint32_t lane = 0; lane != 64; ++lane)
+            if ((hdr.exec >> lane) & 1)
+                w.lanes.push_back(lane);
+        if (w.lanes.size() != w.addresses.size())
+            w.lanes.clear();   // not as documented: do not guess
+        uint32_t space = (hdr.user_data >> 2) & 0xf;
+        w.memory_space = space < 6 ? spaces[space] : "undefined";
+        w.access_type = kinds[hdr.user_data & 0b11];
+        w.access_size = (hdr.user_data >> 6) & 0xffff;
+        return w;
+    }
+
     pythonMessageHandler py_;
 };
 
