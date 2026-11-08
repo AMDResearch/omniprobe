@@ -57,6 +57,16 @@ foreach(_variant IN ITEMS "flat_access_test;-O2" "flat_access_O0_test;-O0")
 endforeach()
 set_source_files_properties(flat_access_test.cpp PROPERTIES LANGUAGE HIP)
 
+# BBInterval-instrumented loop (bf_bb-interval-dynamic-alloca)
+add_executable(bb_interval_loop_test bb_interval_loop_test.cpp)
+set_source_files_properties(bb_interval_loop_test.cpp PROPERTIES LANGUAGE HIP)
+target_compile_options(bb_interval_loop_test PRIVATE
+    ${TEST_KERNEL_COMPILE_FLAGS}
+    -fpass-plugin=${CMAKE_BINARY_DIR}/lib/plugins/libAMDGCNSubmitBBInterval-rocm.so
+)
+target_link_options(bb_interval_loop_test PRIVATE -fgpu-rdc)
+add_dependencies(bb_interval_loop_test copy_bitcode AMDGCNSubmitBBInterval-rocm)
+
 # A kernel that faults on the GPU (bf_faulted-dispatch-hang)
 add_executable(fault_test fault_test.cpp)
 set_source_files_properties(fault_test.cpp PROPERTIES LANGUAGE HIP)
@@ -216,4 +226,5 @@ file(GLOB _instrumented_test_sources CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/*.hip)
 set_property(SOURCE ${_instrumented_test_sources} APPEND PROPERTY OBJECT_DEPENDS
     ${INST_PLUGIN}
-    ${CMAKE_BINARY_DIR}/lib/plugins/libAMDGCNSubmitBBStart-rocm.so)
+    ${CMAKE_BINARY_DIR}/lib/plugins/libAMDGCNSubmitBBStart-rocm.so
+    ${CMAKE_BINARY_DIR}/lib/plugins/libAMDGCNSubmitBBInterval-rocm.so)

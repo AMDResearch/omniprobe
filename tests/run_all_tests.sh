@@ -153,6 +153,10 @@ run_suite "Faulted dispatch" "${SCRIPT_DIR}/test_faulted_dispatch.sh"
 # at -O2. Needs a GPU.
 run_suite "Flat-pointer accesses" "${SCRIPT_DIR}/test_flat_access.sh"
 
+# Suite 22: bf_bb-interval-dynamic-alloca — a BBInterval-instrumented loop runs
+# to completion with real (non-zero) intervals, one per block executed. Needs a GPU.
+run_suite "BBInterval loop" "${SCRIPT_DIR}/test_bb_interval.sh"
+
 # Summary
 echo ""
 echo "================================================================================"
