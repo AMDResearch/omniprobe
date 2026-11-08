@@ -225,4 +225,34 @@ else
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+################################################################################
+# Test 7: the target's stdout and stderr are forwarded to the matching streams
+#
+# capture_subprocess_output merged the child's stderr into its stdout and
+# re-emitted every line through logging.warning: the application's stdout
+# (and the analysis handlers' console reports) arrived on omniprobe's stderr,
+# and blank lines were dropped.
+################################################################################
+TESTS_RUN=$((TESTS_RUN + 1))
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} target_streams_preserved"
+
+STUB="$(mktemp)"
+printf '#!/bin/sh\necho "stream-check-out"\necho\necho "stream-check-out-2"\necho "stream-check-err" >&2\n' > "$STUB"
+chmod +x "$STUB"
+SO="$OUTPUT_DIR/exit_status_streams.out"
+SE="$OUTPUT_DIR/exit_status_streams.err"
+"$OMNIPROBE" -i -a MemoryAnalysis -- "$STUB" > "$SO" 2> "$SE"
+rm -f "$STUB"
+
+if grep -q '^stream-check-out$' "$SO" && grep -q '^stream-check-out-2$' "$SO" && \
+   ! grep -q 'stream-check-out' "$SE" && grep -q '^stream-check-err$' "$SE" && ! grep -q 'stream-check-err' "$SO" && \
+   [ "$(grep -A1 '^stream-check-out$' "$SO" | tail -1)" = "" ]; then
+    echo -e "  ${GREEN}✓ PASS${NC} - stdout lines (and the blank line) on stdout, stderr line on stderr"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - target output not forwarded stream-for-stream"
+    echo "  Output saved to: $SO and $SE"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
 print_summary

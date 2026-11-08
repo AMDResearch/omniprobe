@@ -137,62 +137,65 @@ def capture_subprocess_output(subprocess_args, handler=None, new_env=None):
     by a signal — or None if the child could not be started. The status is
     returned rather than acted on because get_local_isa() also calls this
     function; exiting from here would kill the interpreter during ISA detection.
+
+    A custom *handler(stream, mask)* is called once per line of the child's
+    stdout or stderr; ``stream.readline()`` returns that line.
     """
     console_debug("subprocess", subprocess_args)
     # Start subprocess
     # bufsize = 1 means output is line buffered
     # universal_newlines = True is required for line buffering
     try:
-        process = (
-            subprocess.Popen(
-                subprocess_args,
-                bufsize=1,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                universal_newlines=True,
-            )
-            if new_env == None
-            else subprocess.Popen(
-                subprocess_args,
-                bufsize=1,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                universal_newlines=True,
-                env=new_env,
-            )
+        # The child's stdout and stderr stay separate and are forwarded
+        # verbatim to ours: the application's (and the analysis handlers')
+        # stdout to stdout, its stderr to stderr. They used to be merged and
+        # re-emitted through logging.warning, which put everything on stderr
+        # and dropped blank lines.
+        process = subprocess.Popen(
+            subprocess_args,
+            bufsize=1,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            **({} if new_env is None else {"env": new_env}),
         )
-        # Create callback function for process output
-        buf = io.StringIO()
+        targets = {process.stdout: sys.stdout, process.stderr: sys.stderr}
+
+        class _OneLine:
+            """Stands in for the pipe in a custom handler: yields the line read."""
+            def __init__(self, line):
+                self._line = line
+
+            def readline(self):
+                line, self._line = self._line, ""
+                return line
 
         def handle_output(stream, mask):
-            # Because the process' output is line buffered, there's only ever one
-            # line to read when this function is called
-            line = stream.readline()
-            buf.write(line)
-            console_warning(line.rstrip())
+            target = targets[stream.source]
+            target.write(stream.readline())
+            target.flush()
 
         if handler == None:
             handler = handle_output
 
-
-        # Register callback for an "available for read" event from subprocess' stdout stream
         selector = selectors.DefaultSelector()
-        selector.register(process.stdout, selectors.EVENT_READ, handler)
+        selector.register(process.stdout, selectors.EVENT_READ)
+        selector.register(process.stderr, selectors.EVENT_READ)
 
-        # Loop until subprocess is terminated
-        while process.poll() is None:
-            # Wait for events and handle them with their registered callbacks
-            events = selector.select()
-            for key, mask in events:
-                callback = key.data
-                callback(key.fileobj, mask)
-
-        # Drain whatever the child wrote between the last poll and its exit
-        remaining = process.stdout.read()
-        if remaining:
-            buf.write(remaining)
-            for line in remaining.splitlines():
-                console_warning(line.strip())
+        # Read line by line until both pipes reach end of file (the child has
+        # exited or closed them), handing each line to the handler.
+        open_streams = 2
+        while open_streams:
+            for key, mask in selector.select():
+                line = key.fileobj.readline()
+                if line == "":
+                    selector.unregister(key.fileobj)
+                    open_streams -= 1
+                    continue
+                one = _OneLine(line)
+                one.source = key.fileobj
+                handler(one, mask)
+        process.wait()
 
         # Get process return code
         return process.returncode
