@@ -15,7 +15,9 @@ legacy fallback, the arch read from Triton's triple, gfx950 supported end to end
 (`memory-analysis`). Also: 16-byte LDS writes miscounted (fixed), clean-parallel-build ordering
 (fixed), `-d random` silent emptiness (now warned). Full suite: **27 suites** (`testing`).
 
-**Next gfx90a session:** run the full suite once on main (the final main ran on gfx950 only).
+**Final main `113d53b` verified on gfx90a (2026-11-08, fourth session):** 27/27 suites +
+module-load 3/3 from a fresh clone; suites 3-5 needed their gitignored driver binaries rebuilt
+(`testing`). Making those binaries a build target would let a fresh checkout pass unaided (not queued).
 
 **Known follow-ups, not packets:** 1-/2-byte LDS phases on gfx950 unmeasured; `-d random` sampling semantics (Rene, deferred); PythonHandler interpreter teardown ownership (interpreter is
 deliberately never finalized); PythonHandler inside a Python host (Triton) untested — possible

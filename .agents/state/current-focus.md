@@ -1,5 +1,15 @@
 # Current Focus
 
+## State after the fourth 2026-11-08 session — read first
+
+**Final main `113d53b` verified on gfx90a** (MI210 VM, 1 GPU): fresh clone built in /tmp, full suite
+27/27 and module-load 3/3. Suites 3-5 first failed `not found` because their driver binaries are
+gitignored and hand-built; rebuilt with ROCm 7.2.0 hipcc they pass (recipe in `testing`). Not
+queued: make those three binaries a CMake target so a fresh checkout or CI passes unaided.
+The gfx950 worktree `.untracked/wt-gfx950` is removed; its content is all in main (`mi350` code
+byte-identical; `mi350-prep`'s placeholder LDS model superseded by `f38429e`). Local branches
+`mi350`, `mi350-prep` are kept and can be deleted. No packet is active; the queue is done.
+
 ## State after the third 2026-11-08 session — read first
 
 **The supervisor's 2026-11-08 queue is done; no packet is active.** Completed this session:

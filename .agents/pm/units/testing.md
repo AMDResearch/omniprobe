@@ -193,6 +193,10 @@ an install tree). Four traps, each hit in one session:
   test_hipblaslt_transform`, `tests/rocblas_filter/test_rocblas_{scal,gemm}`). A fresh checkout
   fails three suites with `not found`. They link only ROCm's libraries, no omniprobe code, so
   copying them from the main checkout does not change what is tested.
+  Rebuilding them is one hipcc line each (measured 2026-11-08, all three suites then pass):
+  `hipcc --offload-arch=<arch> -Wl,-rpath,$ROCM/lib -L$ROCM/lib -o <bin> <bin>.cpp -l{hipblaslt|rocblas}`.
+  The main checkout's `test_rocblas_{scal,gemm}` were built with ROCm 7.1.0 (RUNPATH
+  `/opt/rocm-7.1.0/lib`); they still pass on 7.2.0, but a rebuild is the cleaner baseline.
 - **The local test-env script prepends the main repo's `build/` to `LD_LIBRARY_PATH`.** Every
   omniprobe library has the same soname in every tree, so testing another tree with it left on
   the path can load the main tree's libraries and pass. Strip it, and check the `Plugin:` line in
@@ -260,3 +264,5 @@ Workflows whose write scope reaches into `tests/`. State (= directory under `.ag
 2026-11-08 (18 suites; SKIP classifier fixed; library filter chain fails rather than skips; set -e lesson; full-suite tally not re-recorded in this unit)
 2026-11-08 (second session: 24 suites, what suites 19-24 pin, OBJECT_DEPENDS on plugins, Triton suite BUILD_DIR; verified against tests/run_all_tests.sh, tests/test_kernels/CMakeLists.txt and commits ad19235/f48753c at 22c4d95; per-node tallies above not re-measured)
 - 2026-11-08 (third session): suites 25-27 section.
+- 2026-11-08 (fourth session): final main `113d53b` on gfx90a (MI210 VM, 1 GPU, fuseblk), fresh clone
+  built in /tmp: 27/27 suites (3-5 after rebuilding the three driver binaries) + module-load 3/3.
