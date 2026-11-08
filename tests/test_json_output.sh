@@ -209,4 +209,41 @@ else
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+################################################################################
+# CSV files are CSV: no JSON rows, and only headers for the rows present.
+# AddressLogger used to interleave a JSON line after every CSV row, and
+# BasicBlockLogger wrote the address header followed by JSON rows only.
+################################################################################
+BB_COUNTS="${BUILD_DIR}/tests/test_kernels/bb_counts_test"
+for spec in "AddressLogger:$DUAL:ADDRESS_MESSAGE" "BasicBlockLogger:$BB_COUNTS:WAVE_MESSAGE"; do
+    IFS=: read -r a bin kind <<< "$spec"
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} ${a}_csv_is_csv"
+    f="$OUT/${a}.csv"; rm -f "$f"
+    op "$OUT/${a}_csv.log" -i -a "$a" -l "$f" -- "$bin"
+    verdict="$(python3 - "$f" "$kind" <<'PY'
+import csv, sys
+path, kind = sys.argv[1], sys.argv[2]
+rows = list(csv.reader(open(path)))
+if not rows:
+    print("BAD empty file"); sys.exit()
+json_rows = sum(1 for r in rows if r and r[0].lstrip().startswith("{"))
+other = sorted({r[0] for r in rows if r and r[0] != kind})
+headers = [r for r in rows if len(r) > 1 and r[1] == "timestamp"]
+data = [r for r in rows if r and r[0] == kind and r not in headers]
+if json_rows or other or not headers or not data:
+    print(f"BAD json rows {json_rows}, unexpected first fields {other}, headers {len(headers)}, {kind} rows {len(data)}")
+else:
+    print(f"OK {len(data)} {kind} rows, {len(headers)} header(s), no JSON")
+PY
+)"
+    if [[ "$verdict" == OK* ]]; then
+        echo -e "  ${GREEN}✓ PASS${NC} - $verdict"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - $verdict"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+done
+
 print_summary

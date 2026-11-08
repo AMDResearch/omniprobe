@@ -40,6 +40,7 @@ public:
     bool handle_address_message(const dh_comms::message_t& message, JSONHelper& json);
     bool handle_timeinterval_message(const dh_comms::message_t& message, JSONHelper& json);
     void handle_header(const dh_comms::message_t& message, JSONHelper& json);
+    void write_other_csv(const dh_comms::message_t& message);
 
 private:
     std::string strKernel_;
@@ -48,6 +49,7 @@ private:
     bool verbose_;
     bool format_csv_;
     std::ostream *log_file_;
-    // out iostream here
+    bool address_header_written_ = false;
+    bool other_header_written_ = false;
 };
 

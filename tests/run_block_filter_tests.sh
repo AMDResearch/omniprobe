@@ -46,6 +46,8 @@ run_filter_test() {
     echo "  Filters: X=${filter_x:-any} Y=${filter_y:-any} Z=${filter_z:-any}"
 
     local output_file="$OUTPUT_DIR/${test_name}.out"
+    # Messages as JSON lines (AddressLogger's default CSV output carries no JSON)
+    local json_file="$OUTPUT_DIR/${test_name}.jsonl"
 
     # Build omniprobe command with filter flags
     local filter_args=()
@@ -55,11 +57,11 @@ run_filter_test() {
 
     # Run omniprobe with filter CLI flags
     if ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
-       "$OMNIPROBE" -i -a AddressLogger "${filter_args[@]}" -- "$kernel" > "$output_file" 2>&1; then
+       "$OMNIPROBE" -i -a AddressLogger -t json -o "$json_file" "${filter_args[@]}" -- "$kernel" > "$output_file" 2>&1; then
 
         # Count JSON messages (grep -c returns 0 on no match with exit code 1)
         local actual_count
-        actual_count=$(grep -c '"block_idx_x":' "$output_file" 2>/dev/null || echo "0")
+        actual_count=$(grep -c '"block_idx_x":' "$json_file" 2>/dev/null || echo "0")
         # Ensure we have a single integer
         actual_count="${actual_count##*$'\n'}"
 
@@ -111,7 +113,7 @@ run_filter_test() {
                     validation_errors+="    block_idx_z=$bz not in range '$filter_z'\n"
                 fi
             fi
-        done < <(grep '"block_idx_x":' "$output_file")
+        done < <(grep '"block_idx_x":' "$json_file")
 
         if [ "$invalid_messages" -gt 0 ]; then
             echo -e "  ${RED}✗ FAIL${NC} - $invalid_messages messages with invalid block_idx values"

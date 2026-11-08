@@ -103,10 +103,11 @@ compile_with_scope() {
         2>"${output}.compile.log"
 }
 
-# Count JSON address messages in omniprobe output
+# Count address messages: one JSON line each in the -t json -o file written
+# beside <name>.out (AddressLogger's CSV output carries no JSON).
 count_messages() {
     local output_file="$1"
-    grep -c '"dwarf_line":' "$output_file" 2>/dev/null || echo "0"
+    grep -c '"dwarf_line":' "${output_file%.out}.jsonl" 2>/dev/null || echo "0"
 }
 
 # Run a scope filter test
@@ -137,7 +138,7 @@ run_scope_test() {
 
     # Run under omniprobe
     if ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
-       "$OMNIPROBE" -i -a AddressLogger -- "$output_binary" > "$output_file" 2>&1; then
+       "$OMNIPROBE" -i -a AddressLogger -t json -o "${output_file%.out}.jsonl" -- "$output_binary" > "$output_file" 2>&1; then
 
         local actual_count
         actual_count=$(count_messages "$output_file")
@@ -180,7 +181,7 @@ fi
 
 BASELINE_OUTPUT="$OUTPUT_DIR/scope_baseline.out"
 if ! ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
-   "$OMNIPROBE" -i -a AddressLogger -- "$BASELINE_BINARY" > "$BASELINE_OUTPUT" 2>&1; then
+   "$OMNIPROBE" -i -a AddressLogger -t json -o "${BASELINE_OUTPUT%.out}.jsonl" -- "$BASELINE_BINARY" > "$BASELINE_OUTPUT" 2>&1; then
     echo -e "${RED}ERROR: Baseline execution failed. Cannot run scope filter tests.${NC}"
     cat "$BASELINE_OUTPUT" 2>/dev/null | tail -20
     export TESTS_RUN TESTS_PASSED TESTS_FAILED
@@ -210,7 +211,7 @@ FULLPATH_PROBE_BINARY="$OUTPUT_DIR/scope_fullpath_probe"
 compile_with_scope "$FULLPATH_PROBE_BINARY" "$KERNEL_FULL_PATH" ""
 FULLPATH_PROBE_OUTPUT="$OUTPUT_DIR/scope_fullpath_probe.out"
 ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
-    "$OMNIPROBE" -i -a AddressLogger -- "$FULLPATH_PROBE_BINARY" > "$FULLPATH_PROBE_OUTPUT" 2>&1
+    "$OMNIPROBE" -i -a AddressLogger -t json -o "${FULLPATH_PROBE_OUTPUT%.out}.jsonl" -- "$FULLPATH_PROBE_BINARY" > "$FULLPATH_PROBE_OUTPUT" 2>&1
 FULLPATH_COUNT=$(count_messages "$FULLPATH_PROBE_OUTPUT")
 FULLPATH_COUNT="${FULLPATH_COUNT##*$'\n'}"
 echo "  Full-path scope message count: $FULLPATH_COUNT (baseline: $BASELINE_COUNT)"
@@ -239,7 +240,7 @@ if [ -n "$LINE_A" ] && [ -n "$LINE_B" ]; then
     if compile_with_scope "$RANGE_BINARY" "${KERNEL_FULL_PATH}:${LINE_A}:${RANGE_END}" ""; then
         RANGE_OUTPUT="$OUTPUT_DIR/scope_range_probe.out"
         if ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
-           "$OMNIPROBE" -i -a AddressLogger -- "$RANGE_BINARY" > "$RANGE_OUTPUT" 2>&1; then
+           "$OMNIPROBE" -i -a AddressLogger -t json -o "${RANGE_OUTPUT%.out}.jsonl" -- "$RANGE_BINARY" > "$RANGE_OUTPUT" 2>&1; then
             RANGE_COUNT=$(count_messages "$RANGE_OUTPUT")
             RANGE_COUNT="${RANGE_COUNT##*$'\n'}"
             echo "  Range message count: $RANGE_COUNT (baseline: $BASELINE_COUNT)"
@@ -260,7 +261,7 @@ if [ -n "$LINE_A" ]; then
     if compile_with_scope "$SINGLE_BINARY" "${KERNEL_FULL_PATH}:${LINE_A}" ""; then
         SINGLE_OUTPUT="$OUTPUT_DIR/scope_single_probe.out"
         if ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
-           "$OMNIPROBE" -i -a AddressLogger -- "$SINGLE_BINARY" > "$SINGLE_OUTPUT" 2>&1; then
+           "$OMNIPROBE" -i -a AddressLogger -t json -o "${SINGLE_OUTPUT%.out}.jsonl" -- "$SINGLE_BINARY" > "$SINGLE_OUTPUT" 2>&1; then
             SINGLE_COUNT=$(count_messages "$SINGLE_OUTPUT")
             SINGLE_COUNT="${SINGLE_COUNT##*$'\n'}"
             echo "  Single-line message count: $SINGLE_COUNT"

@@ -49,9 +49,6 @@ message_logger_t::message_logger_t(const std::string& strKernel, uint64_t dispat
         if (strFormat == "json")
             format_csv_ = false;
     }
-
-    if (format_csv_)
-        *log_file_ << "ADDRESS_MESSAGE,timestamp,kernel,src_line,dispatch,exec_mask,xcc_id,se_id,cu_id,kind,address" << std::endl;
 }
 
 message_logger_t::~message_logger_t()
@@ -68,13 +65,19 @@ bool message_logger_t::handle(const dh_comms::message_t &message)
         case dh_comms::message_type::address:
             handle_header(message, json);
             handle_address_message(message, json);
-            *log_file_ << json.getJSON() << std::endl;
+            if (!format_csv_)
+                *log_file_ << json.getJSON() << std::endl;
             break;
         case dh_comms::message_type::time_interval:
             break;
         default:
-            handle_header(message, json);
-            *log_file_ << json.getJSON() << std::endl;
+            if (format_csv_)
+                write_other_csv(message);
+            else
+            {
+                handle_header(message, json);
+                *log_file_ << json.getJSON() << std::endl;
+            }
             break;
     }
     return true;
@@ -95,6 +98,13 @@ bool message_logger_t::handle_address_message(const dh_comms::message_t& message
 
     if (format_csv_)
     {
+        // Header written with the first row of its kind, so a file holds only
+        // the headers of the rows it actually contains.
+        if (!address_header_written_)
+        {
+            *log_file_ << "ADDRESS_MESSAGE,timestamp,kernel,src_line,dispatch,exec_mask,xcc_id,se_id,cu_id,kind,address" << std::endl;
+            address_header_written_ = true;
+        }
         *log_file_ << "ADDRESS_MESSAGE," << std::dec << hdr.timestamp << ",\"" << strKernel_ << "\"," << hdr.dwarf_line << "," << dispatch_id_ << ",";
 
 
@@ -125,6 +135,22 @@ bool message_logger_t::handle_address_message(const dh_comms::message_t& message
 
     }
     return true;
+}
+
+// CSV row for messages other than address messages, e.g. BBStart basic-block
+// messages (user_data is the plugin's basic block number).
+void message_logger_t::write_other_csv(const dh_comms::message_t& message)
+{
+    auto hdr = message.wave_header();
+    if (!other_header_written_)
+    {
+        *log_file_ << "WAVE_MESSAGE,timestamp,kernel,src_line,src_column,dispatch,exec_mask,xcc_id,se_id,cu_id,user_type,user_data" << std::endl;
+        other_header_written_ = true;
+    }
+    *log_file_ << "WAVE_MESSAGE," << std::dec << hdr.timestamp << ",\"" << strKernel_ << "\"," << hdr.dwarf_line << ","
+               << hdr.dwarf_column << "," << dispatch_id_ << ",0x" << std::hex << std::setw(16) << std::setfill('0') << hdr.exec
+               << std::dec << std::setfill(' ') << "," << hdr.xcc_id << "," << hdr.se_id << "," << hdr.cu_id << ","
+               << hdr.user_type << "," << hdr.user_data << std::endl;
 }
 
 bool message_logger_t::handle_timeinterval_message(const dh_comms::message_t& message, JSONHelper& json)
