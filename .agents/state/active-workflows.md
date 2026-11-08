@@ -116,6 +116,7 @@ Note that two overlaps recorded above are still live and still matter on resume:
 | bf_logger-record-interleave | bugfix | 2026-11-08 |
 | bf_faulted-dispatch-hang | bugfix | 2026-11-08 |
 | bf_pyhandler-gil | bugfix | 2026-11-08 |
+| rf_triton-v3.9-bump | refactor | 2026-11-08 |
 
 ## Completed (migrated from KT)
 

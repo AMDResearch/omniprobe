@@ -9,8 +9,11 @@
 3. `rf_exact-arch-bitcode` + PR #38 — needs a gfx950 node (the supervisor switches the allocation
    near the end of the session; do the Triton bump first). Include
    the 2026-11-08 finding: for Triton modules the plugin sees no `target-cpu` ("target unknown")
-   and falls back to cdna2 bitcode.
-4. Triton v3.9.0 bump (owner D4: after the bug fixes).
+   and falls back to cdna2 bitcode. Still so on v3.9.0, but the module triple now carries the
+   arch (`amdgpu9.0a-amd-amdhsa`), so the plugin could derive it from there.
+4. ~~Triton v3.9.0 bump~~ done 2026-11-08 (`ecb9a4c`; packet `done/rf_triton-v3.9-bump`, risk
+   outcomes in its artifacts.md). Local env and `build/` now use the v3.9.0 tree. Toolchain image
+   CI rebuild was started by the push; check `gh run list` for "Build Toolchain Image".
 5. `ft_flat-address-classification` (seed: `.agents/workflows/seeds/ft_flat-address-classification.md`).
 6. **Last, per the owner:** real per-block timing via BBInterval. If it works, IntelliKit gets the
    plugin info and we test whether an agent uses it.
