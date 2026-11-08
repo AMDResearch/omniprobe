@@ -32,8 +32,8 @@
   **`ft_python-api-coverage` done 2026-11-08**: API for heatmap/address/BB traces, extended
   memory fields, `uninstrumented_kernels`, flat-access count; launcher keeps stdout/stderr apart;
   API installed. Suite count now **17**.
-  **Queue now:** `bf_plugin-dhcomms-cuid-duplicate` (multi-file -fgpu-rdc link error) →
-  zero-parameter kernels → split LDS entries → (flat-address runtime classification, scoped only) (new, standalone) →
+  **`bf_plugin-dhcomms-cuid-duplicate` done 2026-11-08** (multi-file -fgpu-rdc links).
+  **Queue now:** zero-parameter kernels → split LDS entries → (flat-address runtime classification, scoped only) (new, standalone) →
   IntelliKit Python API request → zero-param kernels, split LDS entries, flat-address warning →
   pyhandler-gil, faulted-dispatch-hang, exact-arch-bitcode + #38, Triton 3.9, intern-clone-name.
 

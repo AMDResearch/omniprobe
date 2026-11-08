@@ -110,6 +110,7 @@ Note that two overlaps recorded above are still live and still matter on resume:
 | bf_intern-clone-name | bugfix | 2026-11-08 |
 | bf_plugin-missing-bitcode-fatal | bugfix | 2026-11-08 |
 | ft_python-api-coverage | feature | 2026-11-08 |
+| bf_plugin-dhcomms-cuid-duplicate | bugfix | 2026-11-08 |
 
 ## Completed (migrated from KT)
 
