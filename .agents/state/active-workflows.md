@@ -106,6 +106,7 @@ Note that two overlaps recorded above are still live and still matter on resume:
 | ft_omniprobe-python-api | feature | 2026-07-20 |
 | bf_hip-duplicate-code-object-load | bugfix | 2026-09-08 |
 | bf_exit-status-not-propagated | bugfix | 2026-10-26 |
+| bf_json-output-integrity | bugfix | 2026-11-08 |
 
 ## Completed (migrated from KT)
 

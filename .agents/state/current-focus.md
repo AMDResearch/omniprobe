@@ -1,5 +1,17 @@
 # Current Focus
 
+## State after 2026-11-08 — read first
+
+- **Order for this run (owner decisions D1-D10, 2026-11-08; supervisor ordering):** D1 done
+  (2026-10-27 WIP committed; `scripts/leak-scan-baseline.txt`). `bf_json-output-integrity`
+  **done** (suite 12, "Output file integrity"; `-o`/`-l` files are now overwritten per run).
+  Next: PR #40 (dynamic LDS) → `bf_library-filter-chain-silent-pass` → `bf_bba-hardening` (new)
+  → `bf_pyhandler-gil` → `bf_faulted-dispatch-hang` (new) → `rf_exact-arch-bitcode` + PR #38
+  (gfx950) → Triton v3.9.0 → `bf_intern-clone-name` → PR #37. Survey with the evidence:
+  `.untracked/survey-2026-11-03/report.md` § H2-rev and § I. This supersedes the "Next" bullets
+  in the 2026-10-27 section below.
+- Full suite is now **12** suites.
+
 ## State after 2026-10-27 — read first
 
 - **Triton is now v3.8.0** (`7f18d4b`). Toolchain image and `build.yml` green against it; locally
