@@ -333,6 +333,11 @@ the script — open, unmerged, and no fix for upstream; it does not explain #124
 
 ## Recent Decisions
 
+- **2026-11-08 session-close leak scan:** scanned 42eba73..c23d955 (1 commit, 152 added lines, 1
+  message, 416 tracked files; 36 tree matches accepted by the baseline, zero findings), exit 0.
+  The commit carrying this entry is outside that range; re-derive the range at push time. Every
+  push during the 2026-11-08 run was gated on the scan's exit code.
+
 - **2026-10-26/27 — Triton v3.8.0 bump, #43/#44, branch protection.** Six decisions recorded in
   `.agents/pm/pm-decisions.md` (jq + outcome verification; two-stage image; fix #43 item 1 before
   merging #44; `isAMDGCN()` via parsed triple; branch protection + agent push; test env tracks pin).
