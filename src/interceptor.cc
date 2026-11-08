@@ -285,22 +285,39 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
 hsaInterceptor::~hsaInterceptor() {
     shutting_down_.store(true);
 
-    // A dispatch that found no instrumented clone ran its original and gave no
-    // analysis data; the per-dispatch log line is easy to miss in a long run.
-    {
-        lock_guard<std::mutex> lock(uninstrumented_mutex_);
-        if (!uninstrumented_kernels_.empty()) {
-            std::cerr << "omniprobe: WARNING: " << uninstrumented_kernels_.size()
-                      << " kernel(s) ran uninstrumented because no instrumented clone was found; "
-                      << "they are missing from the analysis:" << std::endl;
-            for (const auto& [name, count] : uninstrumented_kernels_)
-                std::cerr << "  " << name << " (" << count << " dispatch" << (count == 1 ? "" : "es") << ")" << std::endl;
-        }
-    }
-
     signal_runner_.join();
     cache_watcher_.join();
     comms_runner_.join();
+
+    // After the joins, and as one write: the runner threads print their own
+    // shutdown lines, and a summary streamed piecewise could be split by them
+    // or by other writers to the same file.
+    {
+        lock_guard<std::mutex> lock(uninstrumented_mutex_);
+        std::ostringstream summary;
+        // A dispatch that found no instrumented clone ran its original and gave no
+        // analysis data; the per-dispatch log line is easy to miss in a long run.
+        if (!uninstrumented_kernels_.empty()) {
+            summary << "omniprobe: WARNING: " << uninstrumented_kernels_.size()
+                    << " kernel(s) ran uninstrumented because no instrumented clone was found; "
+                    << "they are missing from the analysis:\n";
+            for (const auto& [name, count] : uninstrumented_kernels_)
+                summary << "  " << name << " (" << count << " dispatch" << (count == 1 ? "" : "es") << ")\n";
+        }
+        if (kerneldb_failures_)
+            summary << "omniprobe: ERROR: kernelDB failed on " << kerneldb_failures_
+                    << " code object(s); their kernels have no source attribution (see the first ERROR above)\n";
+        // One write(2): std::cerr can reach the file in pieces, and other
+        // writers (kernelDB's shutdown lines) then land between them.
+        const std::string text = summary.str();
+        std::cerr.flush();
+        for (size_t done = 0; done < text.size();) {
+            ssize_t n = ::write(STDERR_FILENO, text.data() + done, text.size() - done);
+            if (n <= 0)
+                break;
+            done += n;
+        }
+    }
 
     // Join signal processing thread here
     lock_guard<std::mutex> lock(mutex_);
@@ -377,6 +394,17 @@ void hsaInterceptor::restoreHsaApi() {
   apiTable_->amd_ext_->hsa_amd_queue_intercept_register_fn = hsa_amd_queue_intercept_register_fn;
   apiTable_->core_->hsa_executable_symbol_get_info_fn = hsa_executable_symbol_get_info_fn;
 
+}
+
+void hsaInterceptor::reportKernelDBFailure(const std::string& co_file, const std::string& what)
+{
+    std::lock_guard<std::mutex> lock(uninstrumented_mutex_);
+    if (kerneldb_failures_++ == 0)
+        std::cerr << "omniprobe: ERROR: kernelDB could not read " << co_file << ": " << what << "\n"
+                  << "omniprobe: ERROR: source attribution is missing for its kernels, so MemoryAnalysis and "
+                     "BasicBlockAnalysis report little or nothing for them. kernelDB runs "
+                     "$ROCM_PATH/llvm/bin/llvm-objdump (default /opt/rocm); set ROCM_PATH to your ROCm installation."
+                  << std::endl;
 }
 
 void hsaInterceptor::signalCompleted(const hsa_signal_t sig)
@@ -886,7 +914,17 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                             {
                                 CodeObjectRef coRef;
                                 if (kernel_cache_.getCodeObjectRef(queues_[queue], it->second.name_, coRef))
-                                    kdb->scanCodeObject(coRef.co_file);
+                                {
+                                    // A failed scan (e.g. llvm-objdump not found) used to escape
+                                    // to doPackets, which then dropped the dispatch: the kernel
+                                    // never ran. Report it and run the clone without source
+                                    // attribution instead.
+                                    try {
+                                        kdb->scanCodeObject(coRef.co_file);
+                                    } catch (const std::exception& e) {
+                                        reportKernelDBFailure(coRef.co_file, e.what());
+                                    }
+                                }
                             }
 
                             comms = comms_mgr_.checkoutCommsObject(queues_[queue], it->second.name_, it->second.kdb_name_, dispatch_id, kdb);
@@ -952,7 +990,16 @@ void hsaInterceptor::doPackets(hsa_queue_t *queue, const packet_t *packet, uint6
             if (getHeaderType(&packet[i]) == HSA_PACKET_TYPE_KERNEL_DISPATCH)
             {
                 uint64_t id = ++dispatch_count_;
-                hsa_kernel_dispatch_packet_t *dispatch = fixupPacket(reinterpret_cast<const hsa_kernel_dispatch_packet_t *>(&packet[i]), queue, id);
+                hsa_kernel_dispatch_packet_t *dispatch = nullptr;
+                // Whatever goes wrong while instrumenting, the dispatch itself must
+                // still be submitted: run it as the application wrote it.
+                try {
+                    dispatch = fixupPacket(reinterpret_cast<const hsa_kernel_dispatch_packet_t *>(&packet[i]), queue, id);
+                } catch (const exception& e) {
+                    std::cerr << "omniprobe: ERROR: instrumenting dispatch " << id << " failed (" << e.what()
+                              << "); running it uninstrumented" << std::endl;
+                    dispatch = nullptr;
+                }
                 if (dispatch)
                 {
                     writer(dispatch, 1);

@@ -149,6 +149,7 @@ public:
 
     bool hasPendingSignals();
     void abandonPendingSignals();
+    void reportKernelDBFailure(const std::string& co_file, const std::string& what);
     void shutdown();
 protected:
     bool shuttingdown();
@@ -173,6 +174,7 @@ private:
     std::thread signal_runner_;
     std::thread cache_watcher_;
     std::mutex mutex_;
+    unsigned kerneldb_failures_ = 0;   // guarded by uninstrumented_mutex_
     logDuration log_;
     coCache kernel_cache_;
     bool run_instrumented_;
