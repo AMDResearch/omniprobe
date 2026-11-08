@@ -138,6 +138,11 @@ run_suite "Python API end to end" "${SCRIPT_DIR}/test_python_api_e2e.sh"
 # overlapping dispatches. Needs a GPU.
 run_suite "Two-file application" "${SCRIPT_DIR}/test_two_file_app.sh"
 
+# Suite 19: regression coverage for bf_pyhandler-gil — a user Python module
+# (-a PythonHandler) receives every message of many and of concurrently
+# delivering dispatches, with exact counts, in one interpreter. Needs a GPU.
+run_suite "PythonHandler message handler" "${SCRIPT_DIR}/test_python_handler.sh"
+
 # Summary
 echo ""
 echo "================================================================================"
