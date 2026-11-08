@@ -14,7 +14,7 @@
 4. ~~Triton v3.9.0 bump~~ done 2026-11-08 (`ecb9a4c`; packet `done/rf_triton-v3.9-bump`, risk
    outcomes in its artifacts.md). Local env and `build/` now use the v3.9.0 tree. Toolchain image
    CI rebuild was started by the push; check `gh run list` for "Build Toolchain Image".
-5. `ft_flat-address-classification` (seed: `.agents/workflows/seeds/ft_flat-address-classification.md`).
+5. ~~`ft_flat-address-classification`~~ done 2026-11-08 (`e807927`..`3a5f88c`; packet in `done/`).
 6. **Last, per the owner:** real per-block timing via BBInterval. If it works, IntelliKit gets the
    plugin info and we test whether an agent uses it.
 
@@ -28,7 +28,7 @@ follow-up, build-tree bitcode, `bf_library-filter-chain-silent-pass`, `bf_bba-ha
 counts per BBStart block, no timing), `bf_intern-clone-name`, `bf_plugin-missing-bitcode-fatal`,
 `ft_python-api-coverage`, `bf_plugin-dhcomms-cuid-duplicate`, `bf_zero-param-kernel-match`,
 `bf_lds-split-entries`, `bf_source-attribution-gaps`, `bf_logger-record-interleave`, `bf_faulted-dispatch-hang`, `bf_pyhandler-gil`. GitHub: #40,
-#37 merged; #39 and issue #20 closed with comments; #42 untouched (deferred). Full suite: **20**
+#37 merged; #39 and issue #20 closed with comments; #42 untouched (deferred). Full suite: **21**
 suites. Pushes are gated on `scripts/leak-scan.sh` exiting 0.
 
 **Session history (no captures fabricated):**
