@@ -143,6 +143,7 @@ public:
 private:
   const std::map<std::string, access_size_and_type> instr_size_map;
   std::map<uint64_t, std::string> fname_hash_to_fname;
+  uint64_t unanalyzed_flat_ = 0;   // wave-level flat-address messages, not analyzed
   uint8_t observed_arch_ = 0;
 };
 } // namespace dh_comms

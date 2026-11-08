@@ -106,6 +106,7 @@ void memory_heatmap_t::report() {
     JSONHelper json;
     json.addField("kernel", kernel_, true, false);
     json.addField("dispatch_id", dispatch_id_);
+    json.addField("page_size", page_size_);
     std::vector<std::string> pages;
     for (const auto &[first_page_address, count] : page_counts_) {
         JSONHelper thisRange;

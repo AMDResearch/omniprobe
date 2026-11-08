@@ -237,6 +237,9 @@ bool memory_analysis_handler_t::handle(const message_t &message) {
   uint8_t mspace = (message.wave_header().user_data >> 2) & 0xf;
   switch (mspace) {
   case address_space::flat:
+    // A flat pointer's real address space is only known at run time; these
+    // accesses are not analyzed. Counted so the report can say so.
+    unanalyzed_flat_++;
     break;
   case address_space::global:
     return handle_cache_line_count_analysis(message);
@@ -656,6 +659,13 @@ void memory_analysis_handler_t::report() {
     }
   }
 
+  // Flat accesses are typical of -O0 builds and of pointers loaded from
+  // memory; without this line such a kernel just looks access-free.
+  if (unanalyzed_flat_)
+    fprintf(stderr, "omniprobe MemoryAnalysis: %s dispatch %lu: %lu flat-address access(es) not analyzed "
+            "(address space unknown at compile time; typical of -O0 builds and of pointers loaded from memory)\n",
+            kernel_.c_str(), (unsigned long)dispatch_id_, (unsigned long)unanalyzed_flat_);
+
   if (bFormatJson) {
     report_json();
   } else {
@@ -872,6 +882,7 @@ void memory_analysis_handler_t::report_json() {
   }
 
   json_output << "\n  ],\n";
+  json_output << "  \"unanalyzed_flat_accesses\": " << unanalyzed_flat_ << ",\n";
 
   // Metadata section
   json_output << "  \"metadata\": {\n";

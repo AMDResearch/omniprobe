@@ -176,9 +176,16 @@ void message_logger_t::handle_header(const dh_comms::message_t& message, JSONHel
     json.addField("cu_id", ((uint16_t)hdr.cu_id));
     json.addField("active_lane_count", (uint16_t)hdr.active_lane_count);
     json.addField("user_type", (uint16_t) hdr.user_type);
+    json.addField("source_file", sourceFileForHash(hdr.dwarf_fname_hash), true);
 
     if(hdr.user_type == dh_comms::message_type::address)
     {
+        // user_data packs rw kind (bits 0-1), address space (2-5) and the
+        // accessed type's size in bytes (6-21); see dh_comms v_submit_address.
+        static const char* spaces[] = {"flat", "global", "gds", "shared", "constant", "scratch"};
+        uint32_t space = (hdr.user_data >> 2) & 0xf;
+        json.addField("memory_space", std::string(space < 6 ? spaces[space] : "undefined"), true);
+        json.addField("access_size", (hdr.user_data >> 6) & 0xffff);
         switch(hdr.user_data & 0b11)
         {
             case dh_comms::memory_access::undefined:
@@ -196,7 +203,13 @@ void message_logger_t::handle_header(const dh_comms::message_t& message, JSONHel
         }
     }
     else
+    {
         json.addField("user_data", (uint16_t)hdr.user_data);
+        // BBStart messages: user_data is the plugin's basic block number, the
+        // same id BasicBlockAnalysis reports.
+        if (hdr.user_type == dh_comms::message_type::basic_block_start)
+            json.addField("basic_block_id", hdr.user_data);
+    }
     return;
 }
 

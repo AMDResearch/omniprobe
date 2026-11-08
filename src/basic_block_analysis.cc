@@ -288,42 +288,6 @@ bool basic_block_analysis::handle(const dh_comms::message_t &message)
     return true;
 }
 
-// Source file names for the hashes BBStart sends (std::hash of the path),
-// from the file names kernelDB recorded for this kernel's instructions.
-std::map<uint64_t, std::string> basic_block_analysis::resolveFileNames()
-{
-    std::map<uint64_t, std::string> names;
-    names[std::hash<std::string>{}("<unknown source file>")] = "<unknown>";
-    if (!kdb_p_)
-        return names;
-    try {
-        std::set<size_t> path_ids;
-        for (auto& block : kdb_p_->getKernel(kernel_name_).getBasicBlocks())
-            for (auto& inst : block->getInstructions())
-                path_ids.insert(inst.path_id_);
-        for (auto id : path_ids) {
-            if (id == 0 || id == (size_t)-1)
-                continue;
-            std::string name = kdb_p_->getFileName(kernel_name_, id);
-            if (!name.empty())
-                names[std::hash<std::string>{}(name)] = name;
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "omniprobe basic block analysis: no source file names for " << strKernel_ << ": " << e.what() << std::endl;
-    }
-    return names;
-}
-
-std::string basic_block_analysis::fileNameFor(const std::map<uint64_t, std::string>& names, uint64_t hash)
-{
-    auto it = names.find(hash);
-    if (it != names.end())
-        return it->second;
-    std::stringstream ss;
-    ss << "<unresolved 0x" << std::hex << hash << ">";
-    return ss.str();
-}
-
 void basic_block_analysis::setupLogger()
 {
     if (location_ == "console")
@@ -344,12 +308,11 @@ void basic_block_analysis::report()
     bool first_time = false, initialized = true;
     if (banner_displayed_.compare_exchange_strong(first_time, initialized))
         std::cerr << "omniprobe basic block analysis for kernel\n";
-    auto names = resolveFileNames();
     *log_file_ << "Kernel: " << strKernel_ << std::endl;
     *log_file_ << "Dispatch: " << dispatch_id_ << std::endl;
     *log_file_ << "basic_block_id,source_file,line,column,wave_visits,active_lanes\n";
     for (const auto& [id, bb] : blocks_)
-        *log_file_ << id << ",\"" << fileNameFor(names, bb.fname_hash) << "\"," << bb.line << "," << bb.column << ","
+        *log_file_ << id << ",\"" << sourceFileForHash(bb.fname_hash) << "\"," << bb.line << "," << bb.column << ","
                    << bb.wave_visits << "," << bb.active_lanes << "\n";
     log_file_->flush();
     if (location_ != "console")
@@ -397,14 +360,13 @@ void basic_block_analysis::report_json()
     json_output << "  \"dispatch_id\": " << dispatch_id_ << ",\n";
     json_output << "  \"basic_blocks\": [";
 
-    auto names = resolveFileNames();
     bool first_block = true;
     for (const auto& [id, bb] : blocks_) {
         json_output << (first_block ? "\n" : ",\n");
         first_block = false;
         json_output << "    {\n";
         json_output << "      \"basic_block_id\": " << id << ",\n";
-        json_output << "      \"source_file\": \"" << bb_json_escape(fileNameFor(names, bb.fname_hash)) << "\",\n";
+        json_output << "      \"source_file\": \"" << bb_json_escape(sourceFileForHash(bb.fname_hash)) << "\",\n";
         json_output << "      \"line\": " << bb.line << ",\n";
         json_output << "      \"column\": " << bb.column << ",\n";
         json_output << "      \"wave_visits\": " << bb.wave_visits << ",\n";

@@ -27,8 +27,11 @@ THE SOFTWARE.
 #include <fstream>
 #include "message_handlers.h"
 #include "json_helpers.h"
+#include "inc/kdb_message_handler_base.h"
 
-class message_logger_t : public dh_comms::message_handler_base
+// Derives from the kernelDB-aware base only to resolve source file names; it
+// works without a kernelDB too (file names are then "<unresolved ...>").
+class message_logger_t : public kdb_message_handler_base
 {
 public:
     message_logger_t(const std::string& strKernel, uint64_t dispatch_id, std::string& location, bool verbose = false);

@@ -141,8 +141,6 @@ public:
     void renderComputeResources(std::ostream& out, const std::string& format);
     void report_json();
 private:
-    std::map<uint64_t, std::string> resolveFileNames();
-    static std::string fileNameFor(const std::map<uint64_t, std::string>& names, uint64_t hash);
     uint64_t first_start_;
     uint64_t last_stop_;
     uint64_t total_time_;

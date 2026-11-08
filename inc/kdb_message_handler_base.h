@@ -23,6 +23,10 @@ THE SOFTWARE.
 
 #include "message_handlers.h"
 #include "kernelDB.h"
+#include <functional>
+#include <map>
+#include <set>
+#include <sstream>
 #include <string>
 
 /// Base class for Omniprobe message handlers that need access to KernelDB.
@@ -42,6 +46,44 @@ public:
   }
 
 protected:
+  /// Source file name for the std::hash of a path that the instrumentation
+  /// plugins put in wave_header_t::dwarf_fname_hash, resolved against the file
+  /// names kernelDB holds for this kernel. "<unknown>" for the plugins' own
+  /// no-location marker, "<unresolved 0x...>" if no known file matches.
+  std::string sourceFileForHash(uint64_t hash) {
+    if (!file_names_built_) {
+      file_names_built_ = true;
+      file_names_[std::hash<std::string>{}("<unknown source file>")] = "<unknown>";
+      if (kdb_p_) {
+        try {
+          std::set<size_t> path_ids;
+          for (auto &block : kdb_p_->getKernel(kernel_name_).getBasicBlocks())
+            for (auto &inst : block->getInstructions())
+              path_ids.insert(inst.path_id_);
+          for (auto id : path_ids) {
+            if (id == 0 || id == (size_t)-1)
+              continue;
+            std::string name = kdb_p_->getFileName(kernel_name_, id);
+            if (!name.empty())
+              file_names_[std::hash<std::string>{}(name)] = name;
+          }
+        } catch (const std::exception &) {
+          // No kernelDB entry for this kernel: every hash stays unresolved.
+        }
+      }
+    }
+    auto it = file_names_.find(hash);
+    if (it != file_names_.end())
+      return it->second;
+    std::stringstream ss;
+    ss << "<unresolved 0x" << std::hex << hash << ">";
+    return ss.str();
+  }
+
   kernelDB::kernelDB *kdb_p_ = nullptr;
   std::string kernel_name_;
+
+private:
+  bool file_names_built_ = false;
+  std::map<uint64_t, std::string> file_names_;
 };
