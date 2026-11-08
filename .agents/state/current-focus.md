@@ -33,7 +33,7 @@ follow-up, build-tree bitcode, `bf_library-filter-chain-silent-pass`, `bf_bba-ha
 counts per BBStart block, no timing), `bf_intern-clone-name`, `bf_plugin-missing-bitcode-fatal`,
 `ft_python-api-coverage`, `bf_plugin-dhcomms-cuid-duplicate`, `bf_zero-param-kernel-match`,
 `bf_lds-split-entries`, `bf_source-attribution-gaps`, `bf_logger-record-interleave`, `bf_faulted-dispatch-hang`, `bf_pyhandler-gil`. GitHub: #40,
-#37 merged; #39 and issue #20 closed with comments; #42 untouched (deferred). Full suite: **23**
+#37 merged; #39 and issue #20 closed with comments; #42 untouched (deferred). Full suite: **24**
 suites. Pushes are gated on `scripts/leak-scan.sh` exiting 0.
 
 **Session history (no captures fabricated):**
