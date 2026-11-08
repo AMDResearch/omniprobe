@@ -58,7 +58,7 @@ linked() { sed -n 's|^Linking device module from .*/\(dh_comms_dev_[^/]*\.bc\) i
 # Exact-arch file present: it is the one linked
 ################################################################################
 # Must match IdentifiedByDhComms in InstrumentationCommon.cpp
-IDENTIFIED="gfx906 gfx908 gfx90a gfx940 gfx941 gfx942"
+IDENTIFIED="gfx906 gfx908 gfx90a gfx940 gfx941 gfx942 gfx950"
 ARCH="$(rocminfo 2>/dev/null | sed -n 's/^ *Name: *\(gfx[0-9a-z]*\) *$/\1/p' | head -1)"
 : "${ARCH:=gfx90a}"
 TESTS_RUN=$((TESTS_RUN + 1))
@@ -94,17 +94,17 @@ for spec in gfx942:cdna3 gfx908:cdna2; do
 done
 
 ################################################################################
-# Architecture dh_comms does not identify (gfx950): legacy bucket + warning,
+# Architecture dh_comms does not identify (gfx900): legacy bucket + warning,
 # even if an exact-arch file exists
 ################################################################################
 TESTS_RUN=$((TESTS_RUN + 1))
-echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} unidentified_arch_gfx950_uses_cdna2"
-compile_for gfx950; rc=$?
-if [ "$rc" -eq 0 ] && [ "$(linked "$WORK/gfx950.log")" = "dh_comms_dev_cdna2_co6.bc " ] \
-   && grep -q "dh_comms does not identify gfx950; using cdna2" "$WORK/gfx950.log"; then
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} unidentified_arch_gfx900_uses_cdna2"
+compile_for gfx900; rc=$?
+if [ "$rc" -eq 0 ] && [ "$(linked "$WORK/gfx900.log")" = "dh_comms_dev_cdna2_co6.bc " ] \
+   && grep -q "dh_comms does not identify gfx900; using cdna2" "$WORK/gfx900.log"; then
     pass "linked dh_comms_dev_cdna2_co6.bc with a warning"
 else
-    fail "hipcc rc $rc; linked: $(linked "$WORK/gfx950.log"); $(grep -m1 -i 'warning: no device\|dh_comms does not' "$WORK/gfx950.log")" "$WORK/gfx950.log"
+    fail "hipcc rc $rc; linked: $(linked "$WORK/gfx900.log"); $(grep -m1 -i 'warning: no device\|dh_comms does not' "$WORK/gfx900.log")" "$WORK/gfx900.log"
 fi
 
 ################################################################################
@@ -126,9 +126,11 @@ define amdgpu_kernel void @k(ptr addrspace(1) %p) {
 EOF
     "$TRITON_LLVM/bin/opt" -load-pass-plugin="$TPLUGIN" -passes='default<O1>' \
         "$WORK/triton.ll" -o "$WORK/triton.bc" > "$WORK/triton.log" 2>&1; rc=$?
-    if [ "$rc" -eq 0 ] && [ "$(linked "$WORK/triton.log")" = "dh_comms_dev_gfx90a_co5.bc " ] \
+    want=dh_comms_dev_gfx90a_co5.bc # a build without gfx90a falls back to cdna2
+    [ -f "$BCDIR/$want" ] || want=dh_comms_dev_cdna2_co5.bc
+    if [ "$rc" -eq 0 ] && [ "$(linked "$WORK/triton.log")" = "$want " ] \
        && grep -q "Detected architecture: gfx90a (from target triple" "$WORK/triton.log"; then
-        pass "gfx90a from the triple, linked dh_comms_dev_gfx90a_co5.bc"
+        pass "gfx90a from the triple, linked $want"
     else
         fail "opt rc $rc; linked: $(linked "$WORK/triton.log"); $(grep -m1 -i 'architecture' "$WORK/triton.log")" "$WORK/triton.log"
     fi

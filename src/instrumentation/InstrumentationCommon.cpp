@@ -145,7 +145,7 @@ std::string getBitcodePath(const llvm::Module &M) {
   // message says "unsupported", which MemoryAnalysis skips without a word. Such
   // an architecture gets the legacy bucket even when an exact file exists.
   static const char *const IdentifiedByDhComms[] = {
-      "gfx906", "gfx908", "gfx90a", "gfx940", "gfx941", "gfx942"};
+      "gfx906", "gfx908", "gfx90a", "gfx940", "gfx941", "gfx942", "gfx950"};
   std::string Legacy =
       (arch == "gfx940" || arch == "gfx941" || arch == "gfx942") ? "cdna3"
                                                                  : "cdna2";
