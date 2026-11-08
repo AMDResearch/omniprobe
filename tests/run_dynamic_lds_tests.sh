@@ -21,9 +21,13 @@ check_omniprobe
 DYNAMIC_LDS_TEST="${BUILD_DIR}/tests/test_kernels/dynamic_lds_test"
 
 if [ ! -x "$DYNAMIC_LDS_TEST" ]; then
-    echo -e "\n${YELLOW}SKIP: Dynamic LDS tests (dynamic_lds_test not built)${NC}"
+    # Built by the default build, so its absence is a failure, not a skip: a
+    # skip here would let the whole handler suite pass without this check.
+    TESTS_RUN=$((TESTS_RUN + 1))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo -e "\n${RED}✗ FAIL${NC} - Dynamic LDS tests: $DYNAMIC_LDS_TEST not built"
     export TESTS_RUN TESTS_PASSED TESTS_FAILED
-    return 0 2>/dev/null || exit 0
+    return 0 2>/dev/null || exit 1
 fi
 
 echo ""
@@ -82,7 +86,13 @@ ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" \
     "$OMNIPROBE" -i -a Heatmap -- "$DYNAMIC_LDS_TEST" > "$OUTPUT_FILE" 2>&1 \
     && run_ok=true || run_ok=true
 
-if grep -q "dynamic_lds_test: PASS" "$OUTPUT_FILE"; then
+# Both conditions: without the clone swap the native kernel runs and passes
+# whatever fixupPacket does, so a correct result alone proves nothing.
+if ! grep -q "Found instrumented alternative for dynamic_lds_kernel" "$OUTPUT_FILE"; then
+    echo -e "  ${RED}✗ FAIL${NC} - Instrumented clone was not dispatched; the check would be vacuous"
+    echo "  Output saved to: $OUTPUT_FILE"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+elif grep -q "dynamic_lds_test: PASS" "$OUTPUT_FILE"; then
     echo -e "  ${GREEN}✓ PASS${NC} - Instrumented execution correct (dynamic LDS preserved)"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else

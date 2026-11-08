@@ -855,7 +855,10 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                                 arg_descriptor_t orig_args = {};
                                 uint32_t dynamic_lds = packet->group_segment_size;
                                 if (kernel_cache_.getArgDescriptor(queues_[queue], it->second.name_, orig_args, false))
-                                    dynamic_lds = packet->group_segment_size - orig_args.group_segment_size;
+                                    // A raw HSA caller may pass less than the descriptor's fixed size;
+                                    // clamp rather than let the unsigned subtraction wrap.
+                                    dynamic_lds = packet->group_segment_size > orig_args.group_segment_size
+                                        ? packet->group_segment_size - orig_args.group_segment_size : 0;
                                 dispatch->group_segment_size = args.group_segment_size + dynamic_lds;
                             }
                             // Store the new kernarg address so we can free it up at kernel completion
