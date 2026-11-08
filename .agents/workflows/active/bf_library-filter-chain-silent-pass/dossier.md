@@ -4,14 +4,14 @@
 
 - Workflow ID: bf_library-filter-chain-silent-pass
 - Workflow Type: bugfix
-- Lifecycle State: draft
-- Owner / Current Executor: unassigned
+- Lifecycle State: active
+- Owner / Current Executor: opimpl worker (supervised run, 2026-11-08)
 - Intended Write Scope:
 - Dependencies On Other Active Workflows: write-scope overlap with `bf_intern-clone-name` and
   `bf_pyhandler-gil`, which both declare all of `tests/`. Both append their own `run_suite` line to
   `tests/run_all_tests.sh`; this packet edits `run_suite` itself. Do not execute concurrently with
   either. Order is prescribed (owner): this packet runs before `bf_intern-clone-name`.
-- Base Commit: (unstamped — set at promotion)
+- Base Commit: 631e0866ff8acef5695f3bf7e756739ef61d2a4b
 
 ```write-scope
 tests/library_filter_chain/run_test.sh
