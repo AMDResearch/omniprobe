@@ -119,7 +119,9 @@ With `-t json`, one object per line with `kernel_name`, `dispatch_id`, `exec`,
 `active_lane_count`, `timestamp`, `block_idx_x/y/z`, `wave_num`, `xcc_id`,
 `se_id`, `cu_id`, `source_file`, `dwarf_line`, `dwarf_column`, `op_type`
 (`read`/`write`/`readwrite`), `memory_space` (`flat`, `global`, `shared`,
-`constant`, `scratch`, `gds`), `access_size` (bytes of the accessed type) and
+`constant`, `scratch`, `gds`; a flat access is reported as the space its
+wave's addresses were found in at run time, and as `flat` only when the lanes
+disagree), `access_size` (bytes of the accessed type) and
 `addresses` (one per active lane, in increasing lane order). The source
 location is the instruction's own: code inlined from a header (e.g. HIP's
 `blockDim`, a 2-byte `constant` read) points into that header. With CSV
@@ -297,12 +299,16 @@ a flat `accesses` array. Multiple dispatches are wrapped in a JSON array.
 | `cache_lines_needed`, `cache_lines_used` | Summed over executions; their difference is `excess_cache_lines` |
 | `ir_bytes`, `isa_bytes`, `isa_instruction` | Accessed type size, bytes the ISA instruction moves, and that instruction |
 
-Each dispatch object also has `unanalyzed_flat_accesses`: wave-level accesses
-through *flat* pointers, which are not analyzed because their address space is
-only known at run time. All accesses are flat at `-O0` (CMake's Debug
-default) and when a pointer is loaded from memory, so a kernel with no
-`accesses` but a non-zero count needs an optimized build (`-O1` or higher). A
-line on stderr reports the count per dispatch. Likewise `unattributed_accesses` counts global
+Accesses through *flat* pointers (all accesses at `-O0`, CMake's Debug default,
+and any access through a pointer loaded from memory) are classified at run
+time: the instrumentation checks, per wave, whether every active lane's address
+is in LDS, in scratch, or in neither (global), and the access is analyzed as
+such. So `-O0` and optimized builds give the same findings. Each dispatch
+object also has `unanalyzed_flat_accesses`: wave-level flat accesses whose
+lanes pointed into *different* address spaces, which are counted but not
+analyzed. A line on stderr reports the count per dispatch. (Binaries
+instrumented before this classification existed report all flat accesses
+here; re-instrument them.) Likewise `unattributed_accesses` counts global
 accesses dropped because no ISA instruction was found for their source line:
 all of them when the binary was built without `-g` (DWARF line info is how
 accesses are matched to instructions), so build with `-g`.

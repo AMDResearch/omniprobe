@@ -38,8 +38,9 @@ class KernelMemoryResult:
     """Memory analysis results for a single kernel dispatch.
 
     ``unanalyzed_flat_accesses`` counts wave-level accesses through flat
-    pointers, whose address space is unknown at compile time; they are not
-    analyzed. Typical of -O0 builds and of pointers loaded from memory.
+    pointers whose lanes pointed into different address spaces; they are not
+    analyzed. Other flat accesses (-O0 builds, pointers loaded from memory)
+    are classified at run time and analyzed like any other.
     ``unattributed_accesses`` counts wave-level global accesses dropped because
     no ISA instruction was found for their source line; all of them when the
     binary has no debug info (build with -g).
