@@ -182,6 +182,29 @@ def capture_subprocess_output(subprocess_args, handler=None, new_env=None):
         selector.register(process.stdout, selectors.EVENT_READ)
         selector.register(process.stderr, selectors.EVENT_READ)
 
+        if handler is handle_output:
+            # Forwarding: pass on what the child wrote, as it wrote it. Reading
+            # one line per select() alternated between the two pipes, so a
+            # stdout line could land inside a multi-line stderr write (seen as a
+            # split exit summary when both go to one file).
+            fds = {process.stdout.fileno(): sys.stdout, process.stderr.fileno(): sys.stderr}
+            for fd in fds:
+                selector.unregister(process.stdout if fd == process.stdout.fileno() else process.stderr)
+                selector.register(fd, selectors.EVENT_READ)
+            while fds:
+                for key, mask in selector.select():
+                    chunk = os.read(key.fd, 1 << 16)
+                    if not chunk:
+                        selector.unregister(key.fd)
+                        del fds[key.fd]
+                        continue
+                    target = fds[key.fd]
+                    target.flush()
+                    target.buffer.write(chunk)
+                    target.buffer.flush()
+            process.wait()
+            return process.returncode
+
         # Read line by line until both pipes reach end of file (the child has
         # exited or closed them), handing each line to the handler.
         open_streams = 2
@@ -241,13 +264,42 @@ def get_root_dir() -> str:
 def get_default_cache_location():
     return str(Path.home()) + "/.triton/cache"
 
+def _rocm_candidates():
+    """ROCm installations in order of preference."""
+    env_path = os.environ.get("ROCM_PATH")
+    if env_path:
+        yield env_path
+    # The ROCm the core library was linked against: the one that will run.
+    core = os.path.join(get_root_dir(), "lib", "liblogDuration64.so")
+    try:
+        out = subprocess.run(["ldd", core], capture_output=True, text=True, timeout=30).stdout
+        for line in out.splitlines():
+            if "libhsa-runtime64.so" in line and "=>" in line:
+                lib = os.path.realpath(line.split("=>")[1].split()[0])
+                yield os.path.dirname(os.path.dirname(lib))
+    except Exception:
+        pass
+    for tool in ("hipconfig", "rocminfo", "hipcc"):
+        exe = shutil.which(tool)
+        if not exe:
+            continue
+        if tool == "hipconfig":
+            try:
+                out = subprocess.run([exe, "--rocmpath"], capture_output=True, text=True, timeout=30).stdout.strip()
+                if out:
+                    yield out
+            except Exception:
+                pass
+        yield os.path.dirname(os.path.dirname(os.path.realpath(exe)))
+    yield from sorted(glob.glob("/opt/rocm-*"), reverse=True)
+    yield "/opt/rocm"
+
 def get_rocm_path():
-    tmp = shutil.which("rocminfo")
-    if tmp:
-        tmp = os.path.realpath(tmp)
-    nodes = tmp.split("/")
-    if len(nodes) > 2:
-        return "/".join(nodes[:len(nodes) - 2])
+    """The first candidate with llvm/bin/llvm-objdump (kernelDB needs it), else None."""
+    for path in _rocm_candidates():
+        if os.path.isfile(os.path.join(path, "llvm", "bin", "llvm-objdump")):
+            return os.path.normpath(path)
+    return None
 
 def get_omniprobe_home():
     tmp = os.path.dirname(__file__)
@@ -843,6 +895,31 @@ def parse_args():
     return parms
 
 
+def preflight(parms):
+    """Configuration errors that would otherwise surface late, or not at all."""
+    # kernelDB (source attribution for instrumented runs) runs
+    # $ROCM_PATH/llvm/bin/llvm-objdump and falls back to /opt/rocm. Point the
+    # child at a ROCm that has it.
+    rocm = get_rocm_path()
+    if rocm and os.environ.get("ROCM_PATH") != rocm:
+        if os.environ.get("ROCM_PATH"):
+            print(f"omniprobe: ROCM_PATH={os.environ['ROCM_PATH']} has no llvm/bin/llvm-objdump; using {rocm}")
+        os.environ["ROCM_PATH"] = rocm
+    if parms.instrumented and not rocm:
+        print("omniprobe: ERROR: no ROCm installation with llvm/bin/llvm-objdump found (tried ROCM_PATH, the "
+              "ROCm liblogDuration64.so links against, hipconfig/rocminfo/hipcc on PATH, /opt/rocm-*, /opt/rocm). "
+              "Instrumented runs need it for source attribution; set ROCM_PATH.")
+        sys.exit(1)
+    python_lib = analytics_config.get("PythonHandler", {}).get("lib_name")
+    if python_lib and any(os.path.basename(h) == python_lib for h in parms.handlers):
+        module = os.environ.get("OMNIPROBE_PYTHON_HANDLER", "")
+        if not module:
+            print("omniprobe: ERROR: -a PythonHandler needs OMNIPROBE_PYTHON_HANDLER set to a .py file or an importable module name.")
+            sys.exit(1)
+        if module.endswith(".py") and not os.path.isfile(module):
+            print(f"omniprobe: ERROR: OMNIPROBE_PYTHON_HANDLER={module}: no such file.")
+            sys.exit(1)
+
 def main():
     print("\nOmniprobe is developed by Advanced Micro Devices, Research and Advanced Development")
     print("Copyright (c) 2026 Advanced Micro Devices. All rights reserved.\n")
@@ -858,10 +935,17 @@ def main():
                     triton_config["LLVM_PASS_PLUGIN_PATH"] = os.path.join(plugin_dir, analytics_config[h]['llvm_plugin'])
                 handlers.append(os.path.join(handler_lib_dir, analytics_config[h]['lib_name']))
             else:
-                print(f"{h} is not a valid analyzer. Ignoring.")
+                # Ignoring it used to run the default handlers instead, with exit 0.
+                print(f"omniprobe: ERROR: '{h}' is not an analyzer. Valid: {', '.join(sorted(analytics_config))}, or a path to a handler plugin (.so).")
+                sys.exit(1)
         else:
-            handlers.append(h)
+            if not os.path.isfile(h):
+                print(f"omniprobe: ERROR: handler plugin '{h}' does not exist.")
+                sys.exit(1)
+            handlers.append(os.path.abspath(h))
     parms.handlers = handlers
+    if len(parms.remaining) != 0 and not parms.dump_env:
+        preflight(parms)
     if len(parms.remaining) != 0 and not parms.dump_env == True:
         new_env = setup_env(parms)
         # One run, one output file. Every handler appends (a run writes many
