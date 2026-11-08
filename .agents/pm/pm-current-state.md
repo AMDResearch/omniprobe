@@ -6,22 +6,33 @@ Omniprobe is a GPU kernel instrumentation toolkit for HIP/Triton. The project is
 development with a stable core (interceptor, handlers, instrumentation plugins) and ongoing
 refactors to improve naming consistency, architecture cleanliness, and test organization.
 
-## Active Work Areas (2026-11-08) — remaining queue, in supervisor order
+## Active Work Areas (2026-11-08, end of second session)
 
-1. `bf_pyhandler-gil` (active) — still the only packet blocking IntelliKit.
-2. `bf_faulted-dispatch-hang`.
-3. `rf_exact-arch-bitcode` (suspended) together with PR #38, on gfx950. Include the finding that
-   the plugin sees no `target-cpu` for Triton modules ("target unknown") and falls back to cdna2
-   bitcode — see `instrumentation`.
-4. Triton v3.9.0 bump (see Current Risks: not a repeat of v3.8.0).
-5. `ft_flat-address-classification` — seed in `.agents/workflows/seeds/`, scoped, not started.
-6. BBInterval real per-block timing — deliberately **last** (`pm-decisions`, BBA option 1).
+**No packet is active.** Of the supervisor's queue, all but one item is done; the remaining one is
+`rf_exact-arch-bitcode` (suspended), together with PR #38, on gfx950. It should include the
+finding that Triton modules reach the plugin with no `target-cpu` ("target unknown") and fall
+back to cdna2 bitcode, and that since v3.9.0 their triple carries the arch (`amdgpu9.0a-amd-amdhsa`)
+— see `instrumentation`, `build-system`.
 
-**Done 2026-11-08** (packets in `.agents/workflows/done/`): `bf_intern-clone-name`,
+**Done 2026-11-08, second session** (packets in `.agents/workflows/done/`):
+`bf_pyhandler-gil` (PythonHandler plugin — IntelliKit is no longer blocked by omniprobe),
+`bf_faulted-dispatch-hang`, `rf_triton-v3.9-bump` (pin now v3.9.0), `ft_flat-address-classification`,
+`bf_bb-interval-dynamic-alloca`, `iv_bb-interval-timing-spike` (outcome (c): BBInterval stays
+experimental, no timing analyzer), `ft_pythonhandler-wave-fields`, `bf_robustness-errors`,
+`bf_kernel-filter-search` (not reproduced; semantics pinned). Full suite is **24 suites**
+(`testing`).
+
+**Known follow-ups, not packets:** PythonHandler interpreter teardown ownership (interpreter is
+deliberately never finalized); PythonHandler inside a Python host (Triton) untested — possible
+GIL deadlock at completion; a `--python-handler` launcher flag; docs name `OMNIPROBE_*`
+environment variables where the code reads `LOGDUR_*` (noted on the suspended
+`rf_rename-logduration-to-omniprobe`).
+
+**Done 2026-11-08, first session:** `bf_intern-clone-name`,
 `bf_library-filter-chain-silent-pass`, `bf_json-output-integrity`, `bf_bba-hardening`,
 `bf_lds-split-entries`, `bf_logger-record-interleave`, `bf_plugin-dhcomms-cuid-duplicate`,
 `bf_plugin-missing-bitcode-fatal`, `bf_source-attribution-gaps`, `bf_zero-param-kernel-match`, and the feature `ft_python-api-coverage`.
-Full suite is 18 suites (`testing`). Leak scan now gates pushes (`build-system`).
+Leak scan gates pushes (`build-system`).
 
 **GitHub (2026-11-08):** PRs #40 and #37 merged with authorship intact, plus follow-up commits;
 PR #39 and issue #20 closed with comments; PR #42 untouched (deferred).
@@ -116,11 +127,15 @@ gfx90a — met with no code change once a gfx90a node was available.
   by PR #44 (`b12d7f0`): clones now get `workgroup_id_y/z` enabled. It affected the HIP path
   (2-D/3-D launches could collapse dh_comms sub-buffer indices); on Triton v3.8.0 it was latent,
   and #44 becomes live there when triton-lang/triton#10849 lands. See `instrumentation`.
-- **The next Triton bump is not a repeat of this one.** v3.8.0 lacks both #10849 and #11532
-  (subarch triples, pre-handled by `e6db747`); expect the Triton path to change behaviour. Validate
-  on a GPU node, with the test environment's Triton matched to the pin.
+- ~~**The next Triton bump is not a repeat of this one.**~~ **RESOLVED 2026-11-08** by the v3.9.0
+  bump: #10849 and #11532 both landed with instrumented output unchanged (method in
+  `build-system`). The general rule stands: validate a bump on a GPU node, with the test
+  environment's Triton matched to the pin.
 - **`-t json` without `-o` can collide**: two runs started in the same second share
   `results_<YYYY-mm-dd_HHMMSS>.json` in the cwd. Known, unfixed (`handler-pipeline`).
+- **dh_comms and kerneldb are submodules this project cannot push to.** Fixes that would belong
+  there (flat-address classification, kernelDB's `ROCM_PATH` default) were made on the omniprobe
+  side instead (`pm-decisions`). Revisit if submodule write access changes.
 - **CI cannot catch semantic breakage.** `build.yml` is build-only, `ubuntu-latest`, no GPU, no
   test invocation. A green CI run says the code compiles and nothing more. See `build-system`.
 
@@ -134,7 +149,8 @@ gfx90a — met with no code change once a gfx90a node was available.
 - `cleanroom-test` is a project-local skill (not from the agentic meta project template).
 - PM restructured (2026-04-27): `plugins` + `comms-mgr` merged into `handler-pipeline`;
   new `build-system` unit created from `architecture` + `instrumentation` extracts.
-- Triton pinned at **v3.8.0** (bumped 2026-10-26, `7f18d4b`; previously v3.7.1 from 2026-07-13).
+- Triton pinned at **v3.9.0** (bumped 2026-11-08, `ecb9a4c`; LLVM `b010a18d` = LLVM 24; see
+  `build-system`). Previously v3.8.0 (2026-10-26, `7f18d4b`), v3.7.1 (2026-07-13).
   jq is now a build prerequisite. LLVM `PassPlugin.h` lives at `llvm/Plugins/PassPlugin.h` in
   Triton's fork; instrumentation passes use `__has_include` for portability.
 - JSON output restructured (2026-07-20, ft_omniprobe-python-api): MemoryAnalysis and
@@ -185,6 +201,12 @@ gfx90a — met with no code change once a gfx90a node was available.
   ordinal, which does not match kernelDB's ISA blocks. Earlier timing-percentile schema
   statements are superseded (`handler-pipeline`, `omniprobe-cli`).
 - Handler console reports go to stdout, interceptor messages to stderr (`2f60d83`).
+- Configuration errors are fatal (2026-11-08): an unusable handler plugin, unknown analyzer or
+  unusable PythonHandler module exits 1 with `omniprobe: ERROR`; no silent fallback to the
+  default handlers. A dispatch is never dropped: kernelDB or instrumentation failures run it
+  without attribution or uninstrumented, with an error (`interceptor`, `handler-pipeline`).
+- Flat-pointer accesses are classified at run time (2026-11-08); `unanalyzed_flat_accesses`
+  now means mixed-space waves only (`instrumentation`, `memory-analysis`).
 
 ## Recommended Read Order
 

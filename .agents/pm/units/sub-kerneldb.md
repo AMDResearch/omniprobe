@@ -57,6 +57,12 @@ None (leaf submodule).
 - There is no `external/kerneldb/.agents/kt/` (only a `kt.archive/`). The submodule has its own
   Agentic Meta Project tree (`external/kerneldb/.agents/`, with PM under `.agents/pm/`) — read that.
 
+- **kernelDB reads `ROCM_PATH` once, at library load, and defaults to `/opt/rocm`** to find
+  `llvm/bin/llvm-objdump`. On nodes with only versioned `/opt/rocm-X.Y.Z` (this cluster) a scan
+  then fails with "Command failed". Not fixed in the submodule (no push rights); the launcher
+  resolves ROCm and exports `ROCM_PATH`, and the interceptor treats a scan failure as a loud,
+  non-fatal error (`omniprobe-cli`, `interceptor`). Reported by reading, 2026-11-08.
+
 ## Open Questions
 
 None.
@@ -66,3 +72,4 @@ None.
 2026-04-27 (removed transient workflow reference per pm-reflect)
 2026-09-08 (kernel_co_map_ is now populated for every kernel in an indexed code object, regardless of the -k filter, so a filtered run keeps DWARF correlation; previously the filter gated it and a dispatched kernel had to be sacrificed to prime the database)
 2026-10-27 (mechanical re-check only: every file path and code symbol named in this unit exists in the tree; prose claims not re-read; KT note replaced — the submodule has its own .agents/ tree)
+2026-11-08 (ROCM_PATH-at-load behaviour and the omniprobe-side workaround, from bf_robustness-errors; submodule source not re-read)

@@ -53,10 +53,18 @@ needed. For LDS: detects bank conflicts.
   gpu_info. Multi-dispatch output wrapped in JSON array by `finalize_json_output()` in CLI.
   *(Mechanism refined 2026-11-08: each record's `[`/`,` prefix comes from file emptiness via
   `inc/json_output.h`; the finalizer appends `]` — see `handler-pipeline`.)*
-- Per-dispatch JSON also carries `unanalyzed_flat_accesses` (flat-address-space pointers: all of
-  them at `-O0`, and pointers loaded from memory) and `unattributed_accesses` (no ISA instruction
+- Per-dispatch JSON also carries `unanalyzed_flat_accesses` and `unattributed_accesses` (no ISA instruction
   for the source line: all accesses when built without `-g`), each with a stderr line
-  (`dab6433`, `7f826d1`).
+  (`dab6433`, `7f826d1`). **Since 2026-11-08 `unanalyzed_flat_accesses` counts only waves whose
+  lanes mix address spaces**: flat pointers are classified at run time by the AddressMessages
+  plugin (`e807927`; see `instrumentation`), so `-O0` builds and pointers loaded from memory are
+  analyzed like statically typed accesses (480 excess cache lines / 992 bank conflicts at both
+  `-O0` and `-O2` in suite 21).
+- ISA match (`4cd6f48`, `src/memory_analysis_handler.cc`): the size table includes
+  `flat_load_*`/`flat_store_*`. Among ISA instructions at the same file/line/column the matcher
+  **prefers one as wide as the IR access**, else the first match. Needed because at `-O0` the
+  load of the pointer variable shares the access's line and column (an 8-byte
+  `flat_load_dwordx2` was taken for a 4-byte access: 448 instead of 480 excess lines).
 - LDS source files fall back to kernelDB names, so there are no split entries or
   `<unknown source file>`; an empty `source_file` on merged loads is fixed via the hash fallback.
 - Dynamic LDS size is preserved on the instrumented dispatch (PR #40 `e7ca202`, clamp `cd58bed`).
@@ -79,3 +87,4 @@ None.
 2026-07-20 (updated JSON schema documentation for ft_omniprobe-python-api)
 2026-10-27 (mechanical re-check only: every file path and code symbol named in this unit exists in the tree; prose claims not re-read; no corrections)
 2026-11-08 (new JSON counters, LDS name fallback, dynamic LDS; verified on gfx90a; cache-line and bank-conflict invariants not re-read)
+2026-11-08 (second session: unanalyzed_flat_accesses now mixed-space waves only; flat_* ISA sizes and width-preferring match; from e807927/4cd6f48 and the ft_flat-address-classification packet, not re-measured; other invariants not re-read)

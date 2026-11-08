@@ -38,7 +38,7 @@ N/A — LLVM pass plugins, no user-defined classes.
 |--------|-------------|----------------|-------------------|
 | AMDGCNSubmitAddressMessages | Load/Store | `v_submit_address()` | AddressLogger, Heatmap, MemoryAnalysis (default) |
 | AMDGCNSubmitBBStart | Basic blocks | `s_submit_wave_header()` | BasicBlockLogger, BasicBlockAnalysis |
-| AMDGCNSubmitBBInterval | BB timing | `s_submit_time_interval()` | (none - available but unused) |
+| AMDGCNSubmitBBInterval | BB timing (experimental) | `s_submit_time_interval()` | no analyzer; default time-interval handler, PythonHandler `handleTimeMessage` |
 
 ### Build System
 
@@ -57,6 +57,10 @@ Reads `INSTRUMENTATION_SCOPE` and `INSTRUMENTATION_SCOPE_FILE` environment varia
 | 1 | GLOBAL |
 | 3 | SHARED |
 | 4 | CONSTANT |
+| 5 | PRIVATE (scratch) |
+
+Since 2026-11-08 a **flat pointer is classified at run time** — see § Flat-pointer accesses.
+The space ID sent is then the run-time one; 0 means a wave whose lanes mix spaces.
 
 DWARF source location is encoded in messages for correlation with source code.
 
@@ -76,7 +80,8 @@ DWARF source location is encoded in messages for correlation with source code.
 
 - This was formerly a separate submodule (`instrument-amdgpu-kernels`). It was absorbed into `src/instrumentation/` on 2026-03-24. Do NOT treat it as a submodule or look for it under `external/`.
 - Default plugin is `libAMDGCNSubmitAddressMessages`. HIP mode requires manual compilation with `-fpass-plugin`; Triton mode sets `LLVM_PASS_PLUGIN_PATH` automatically.
-- `libAMDGCNSubmitBBInterval-triton.so` exists but no analyzer currently uses it.
+- `libAMDGCNSubmitBBInterval-*.so` has no analyzer, deliberately (see § BBInterval). Do not build
+  a per-block timing analyzer on it without new evidence.
 
 ## Negative Knowledge — clone naming under internal linkage
 
@@ -209,6 +214,52 @@ is semantic, not a compile error, and CI (`build.yml`, build-only, no GPU) canno
 - BBStart attributes a block to its first instruction with a line, walked through `inlinedAt`
   (see `handler-pipeline` § BasicBlockAnalysis semantics).
 
+## Flat-pointer accesses are classified at run time (2026-11-08, `e807927`)
+
+In `AMDGCNSubmitAddressMessages.cpp` (`classifyFlatAddressSpace`): for a pointer whose address
+space is still flat after `stripPointerCasts()`, the plugin emits per lane `llvm.amdgcn.is.shared`
+/ `llvm.amdgcn.is.private`, made wave-uniform with `llvm.amdgcn.ballot.i64` compared against
+`ballot(true)` (the active lanes), because `v_submit_address` sends one space per wave message.
+All active lanes shared → 3, all private → 5, none of either → 1, **mixed → 0** (stays
+unanalyzed). If the accessed pointer itself is non-flat (a cast from flat), its own space is used.
+
+- **No address conversion:** the static LDS path already submits the *flat* address of an LDS
+  location (aperture base + offset, e.g. `0x1000000000000`), so a flat pointer into LDS is
+  already in the form the bank-conflict analysis expects.
+- **Non-flat accesses emit exactly the code they did before** (measured: `bank_conflict_test.cpp`
+  `-O3`, identical device instruction stream, 8378 instructions).
+- Done in the plugin, not in dh_comms's `v_submit_address`, because dh_comms is a submodule this
+  project could not push to (`pm-decisions`). Both `-rocm` and `-triton` variants get it.
+- Effect: `-O0` builds and accesses through pointers loaded from memory get the same
+  MemoryAnalysis findings as optimized, statically typed ones (suite 21). Untested on
+  gfx942/gfx950 (generic AMDGPU intrinsics) and not exercised by the Triton suite.
+
+## BBInterval (2026-11-08: `dc9a6fe`, `ccb109f`; verdict in `iv_bb-interval-timing-spike`)
+
+- **One alloca in the entry block, reused by every block** (`dc9a6fe`). It used to `alloca` its
+  `[2 x i64]` buffer in every block; outside the entry block that is a *dynamic* alloca
+  (`.uses_dynamic_stack: true`), the stack grew 16 B/lane per block execution, and ROCm 7.2
+  codegen stored with a wave-scaled `soffset` but reloaded with an unscaled per-lane `offen`
+  offset [inf: LLVM codegen bug]. Symptoms: every non-entry interval read start=stop=0, and a
+  loop of >= 17 iterations faulted ("illegal memory access"). The entry alloca must be skipped
+  when picking the entry block's first instruction, or the module fails verification.
+- **Pinning** (`ccb109f`): `llvm.amdgcn.sched.barrier(0)` after the start clock and before the
+  stop clock, plus an empty side-effecting inline asm (`"v"` constraint) use, before the stop
+  clock, of every value the block defines for later blocks or PHIs (ints widened/split to 32/64
+  bits, pointers via ptrtoint, floats bitcast, vectors per element). Without it codegen moved the
+  block's work past the stop clock and hoisted loads above the start clock (~4–12 ticks per
+  interval regardless of work). With it a loop body reads 60 ticks/iteration, steady at 10 / 1000
+  / 100000 iterations.
+- **Verdict: experimental, not a per-block timing tool** (supervisor ruling, outcome (c)). On
+  PENNANT the numbers measure the instrumentation more than the code: each block inlines ~1000
+  instructions of submit code (cold instruction fetch; floor ~520 ticks per block), barrier/atomic
+  waits are inflated by other waves' instrumentation (gpuMain5: ~86% of all ticks vs 16.8% of
+  plain kernel time), `s_memtime` has no reliable tick→time conversion [inf], and intervals from
+  concurrent waves overlap (a latency, not exclusive cost). Top-block ranking within a kernel was
+  stable across runs; lower ranks swapped. Use BasicBlockAnalysis counts instead.
+- Block line attribution uses the block's first instruction **without** following `inlinedAt`
+  (often a header line) — unlike BBStart.
+
 ## Open Questions
 
 None.
@@ -220,3 +271,4 @@ None.
 2026-10-26 (AMDGPU attributor ordering and clone attribute inheritance, measured; validateAMDGPUTarget triple fragility)
 2026-10-27 (#44 merged, descriptor table re-measured in the linked build — workitem_id claim corrected; validateAMDGPUTarget fixed, triple history corrected from Triton source)
 2026-11-08 (bitcode-missing fatal, __hip_cuid_ internalization, Triton target-unknown fallback, clone-naming bug closed without renaming; attributor and triple sections not re-verified, resting on 2026-10-27)
+2026-11-08 (second session: run-time flat-pointer classification; BBInterval entry alloca, pinning and the (c) verdict; verified against e807927, dc9a6fe, ccb109f and grep of AMDGCNSubmitBBInterval.cpp at 22c4d95, numbers from the ft_flat-address-classification and iv_bb-interval-timing-spike packets, not re-measured; triple and attributor sections not re-read)

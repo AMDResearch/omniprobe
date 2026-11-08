@@ -98,7 +98,7 @@ The Python API (`omniprobe/api/`) wraps this: `Omniprobe.analyze_memory()` and `
 
 ## Negative Knowledge
 
-- `libAMDGCNSubmitBBInterval-triton.so` exists but no analyzer currently uses it. Do not wire it up without a corresponding analyzer.
+- `libAMDGCNSubmitBBInterval-*.so` has no analyzer, by decision (BBInterval is experimental; see `instrumentation`). Do not wire it up as a timing analyzer.
 - Requires `pyfiglet` for ASCII banner display. This is a runtime dependency of the script.
 
 ## The CLI propagates the target's exit status (fixed 2026-09-08, verified 2026-10-26)
@@ -130,6 +130,25 @@ silently, producing exit 0 with no output". It does nothing of the kind — it d
 and exits 139. The silence was this bug, observed through the CLI, and two phantom "known
 defects" were attributed to that misreading before it was caught. Both have been retracted.
 
+## Launcher configuration checks and ROCm resolution (2026-11-08, `149cf2c`)
+
+- **Configuration errors exit 1 before the target runs**: an unknown analyzer name (was
+  "Ignoring." and ran the defaults), a nonexistent `.so` path given to `-a`, and for
+  `-a PythonHandler` an unset `OMNIPROBE_PYTHON_HANDLER` or a missing `.py` file. Deeper module
+  problems are caught by the plugin's `omniprobeValidateHandlers` (see `handler-pipeline`).
+- **ROCm for kernelDB:** `get_rocm_path()` takes the first candidate that has
+  `llvm/bin/llvm-objdump`, in order: `ROCM_PATH`; the ROCm the core library links against
+  (`ldd liblogDuration64.so` → `libhsa-runtime64.so`); `hipconfig --rocmpath`; the install
+  prefix of `hipconfig`/`rocminfo`/`hipcc` on `PATH`; `/opt/rocm-*` (newest first);
+  `/opt/rocm`. It **exports `ROCM_PATH` to the child** (kernelDB reads it once at load, default
+  `/opt/rocm`, which this cluster lacks) and errors for `-i` if nothing is found. Without this,
+  dispatches were silently dropped (see `interceptor` § Failure handling).
+- **Child output is forwarded in raw chunks as written** (`os.read`, 64 KiB), stdout and stderr
+  kept separate. Line-by-line alternation between the two streams used to splice a stdout line
+  into the middle of the interceptor's stderr exit summary.
+- `-k` is a regex searched in the demangled name (see `interceptor`); anchoring with `^` misses
+  template kernels, whose demangled names begin with the return type (`void ...`).
+
 ## Open Questions
 
 None.
@@ -140,3 +159,4 @@ None.
 2026-09-08 (exit-status propagation; verified by reading and by running the CLI)
 2026-10-26 (exit-status propagation complete and verified on gfx90a; prior "always exits 0" section rewritten)
 2026-11-08 (Python API surface and BBA schema change from this session's commits; exit-status section not re-verified, resting on 2026-10-26)
+2026-11-08 (second session: configuration-error checks, ROCm resolution order and ROCM_PATH export, raw-chunk output forwarding; verified by reading omniprobe/omniprobe at 22c4d95 and bf_robustness-errors; exit-status section not re-read)

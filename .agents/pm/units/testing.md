@@ -29,6 +29,30 @@ GoogleTest are planned but disabled.
 13 build-tree bitcode (incl. missing-bitcode and two-file RDC link), 14 BBA robustness, 15 BBA
 counts (`bb_counts_test`, analytic expected counts), 16 internal-linkage + zero-param kernels,
 17 Python API end-to-end, 18 two-file non-RDC application.)*
+*(Superseded again 2026-11-08, second session: **24 suites**, all GPU-dispatching. Each new suite
+fails on the code before its fix:*
+- *19 PythonHandler (`test_python_handler.sh`, fixtures in `tests/python_handler/`, kernel
+  `python_handler_test.cpp`): exact per-dispatch message and distinct-address counts over 32
+  dispatches on 4 streams; a large-message run with a device barrier that forces concurrent
+  delivery (asserts >= 2 overlapping delivery intervals); one interpreter across dispatches;
+  per-wave `handleAddressWave` fields incl. partial exec; `handleTimeMessage` fields.*
+- *20 faulted dispatch (`fault_test.cpp`): a GPU-faulting kernel ends the run within 30 s with
+  the app's status (3) and a warning naming the kernel, timing and `-i` modes; `--no-fault` run
+  has no abandonment warning.*
+- *21 flat-pointer accesses (`flat_access_test.cpp` at `-O0` and `-O2`): same MemoryAnalysis
+  findings; mixed-space wave stays unanalyzed.*
+- *22 BBInterval loop (`bb_interval_loop_test.cpp`): 10 and 1000 iterations exit 0 with real
+  intervals; >= 30 ticks per loop iteration (pinning).*
+- *23 robustness: nonexistent `.so`, `.so` without `getMessageHandlers`, unknown analyzer,
+  unusable PythonHandler module → exit 1 with an error; no ROCm for kernelDB → no dropped
+  dispatches; exit summary in one piece under concurrent runs.*
+- *24 kernel filter names (`kernel_filter_names_test.cpp`): `-k` regex semantics on plain,
+  template, `.intern`, no-parameter, anonymous-namespace kernels; the no-match warning.)*
+
+**Instrumented test kernels depend on the instrumentation plugin files** (`OBJECT_DEPENDS` in
+`tests/test_kernels/CMakeLists.txt`, `ad19235`). `add_dependencies` only ordered the build, so a
+rebuilt plugin left instrumented test binaries stale and the suites silently tested the previous
+plugin. Any new instrumented kernel source in that directory is covered by the glob.
 
 **The suite is green, and the tally depends entirely on the node.** Measured 2026-09-08 on
 `k005-005.hpcfund` (MI210 / gfx90a) with `.untracked/test-env.sh` sourced: **10 run, 10 passed,
@@ -159,8 +183,8 @@ Needed whenever a change is tested from a worktree, or against a second build (a
 an install tree). Four traps, each hit in one session:
 
 - **Not every suite honours the overrides.** `tests/test_common.sh:10,14` honours `BUILD_DIR` and
-  `OMNIPROBE_ROOT`. `tests/triton/run_test.sh:18` hardcodes `BUILD_DIR` but honours
-  `OMNIPROBE_ROOT` — set both. `tests/library_filter_chain/run_test.sh` takes its instrumentation
+  `OMNIPROBE_ROOT`. `tests/triton/run_test.sh` honours both since `f48753c` (2026-11-08; it
+  used to hardcode `BUILD_DIR`, so a scratch-tree run tested `build/`'s plugin). `tests/library_filter_chain/run_test.sh` takes its instrumentation
   plugin from `../../build` (line 91) and gates Tests 2–5 on `${REPO_ROOT}/build` existing
   (line 155), ignoring both; if `build/` is missing it builds uninstrumented, skips four tests and
   **still reports PASSED**. Packet: `bf_library-filter-chain-silent-pass`. Until fixed, a
@@ -219,3 +243,4 @@ Workflows whose write scope reaches into `tests/`. State (= directory under `.ag
 2026-10-26 (11-suite green run on gfx90a; fuseblk finding; wrong-arch bullet mechanism corrected)
 2026-10-27 (11/11 on Triton v3.8.0, default env; testing-another-tree traps; library_filter_chain silent pass)
 2026-11-08 (18 suites; SKIP classifier fixed; library filter chain fails rather than skips; set -e lesson; full-suite tally not re-recorded in this unit)
+2026-11-08 (second session: 24 suites, what suites 19-24 pin, OBJECT_DEPENDS on plugins, Triton suite BUILD_DIR; verified against tests/run_all_tests.sh, tests/test_kernels/CMakeLists.txt and commits ad19235/f48753c at 22c4d95; per-node tallies above not re-measured)

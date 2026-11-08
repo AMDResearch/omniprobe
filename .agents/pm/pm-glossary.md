@@ -47,6 +47,12 @@ Project-specific terms, abbreviations, and parameters. Updated by `pm-update`.
 | Message Handler | Class that processes streamed messages |
 | Handler Chain | Ordered list of handlers; first match processes message |
 | Descriptor | `dh_comms_descriptor` struct with buffer pointers |
+| PythonHandler | Analyzer (`-a PythonHandler`, `libPythonHandler64.so`) that passes messages to a user Python module named by `OMNIPROBE_PYTHON_HANDLER` (`.py` path or importable module) |
+| `handleAddressWave` / `handleAddressMessage` / `handleTimeMessage` / `handleReport` | PythonHandler module functions: per wave, per lane, per time interval, per dispatch. API is versioned by function name |
+| `omniprobeValidateHandlers` | Optional handler-plugin export (`plugins/plugin.h`), called once after `dlopen`; returning false ends the run with exit 1 |
+| `SIGNAL_SHUTDOWN_GRACE` | 3 s: after shutdown starts, the signal runner abandons dispatches that have not completed this long after the last completion (faulted GPU dispatch) |
+| Flat classification | Run-time resolution of a flat pointer's address space per wave (`is.shared`/`is.private` + ballots) in the AddressMessages plugin; mixed waves stay space 0 (unanalyzed) |
+| BBInterval pinning | `sched.barrier(0)` around a block's clocks plus inline-asm uses of its live-outs, so the block's work stays between start and stop clock |
 
 ## Message Types
 

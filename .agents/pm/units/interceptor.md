@@ -58,12 +58,48 @@ instrumented version with modified kernel arguments.
 7. If instrumented: `fixupPacket()` + `fixupKernArgs()` add `dh_comms` descriptor; logs source library paths.
 8. Signal runner thread processes completed kernels, invokes handler reports.
 
+### Failure handling on the dispatch path (2026-11-08)
+
+- **`-k` semantics:** `runKernelInstrumented()` is `std::regex_search(name, kernel_filter_regex_)`
+  on the **demangled** name (`src/interceptor.cc`; same at index time in `src/utils.cc`
+  `coCache::addFile`). Substring search, so `gpuMain` matches `gpuMain2<4>`; template kernels'
+  demangled names begin with the return type (`void gpuMain2<4>(...)`), so `^gpuMain` misses
+  them. A reported "-k gpuMain stopped matching" regression was **not reproduced** at HEAD or at
+  `13ca707`; the observed failure was a kernelDB/ROCM_PATH environment difference
+  (`bf_kernel-filter-search`). Suite 24 pins the semantics.
+- **No-match warning** (`b71927b`): at exit, if a `-k` filter matched none of the dispatched
+  instrumented-capable kernels, stderr says `omniprobe: WARNING: no dispatched kernel matched the
+  kernel filter -k '...'` and lists them — distinct from the "ran uninstrumented because no
+  instrumented clone was found" summary.
+- **A kernelDB scan failure no longer drops dispatches** (`c8e81c6`). Before, `scanCodeObject`
+  threw inside `fixupPacket`, `doPackets`' catch skipped writing the packet, and the
+  instrumented dispatch silently never ran (wrong results, exit 0). Now the scan failure is
+  caught at the scan, reported once (`omniprobe: ERROR: kernelDB could not read ...`), counted in
+  the exit summary, and the clone runs without source attribution. **Per-packet safety net:** any
+  other exception while instrumenting a dispatch submits the original packet ("running it
+  uninstrumented") instead of dropping it.
+- **Faulted dispatches cannot hang exit** (`bf_faulted-dispatch-hang`). `signal_runner` used to
+  loop on pending signals without checking `shuttingdown()`; a faulted kernel's completion signal
+  never reaches 0, so `~hsaInterceptor`'s join blocked forever. Now, once shutdown starts, it
+  keeps completing dispatches but **abandons the rest 3 s (`SIGNAL_SHUTDOWN_GRACE`) after the
+  last completion** (or after shutdown began), with a warning naming each kernel. Abandoned
+  dispatches get no report and their comms objects are leaked on purpose (buffers may hold a
+  half-written message; the process is exiting). `getPendingSignals` now actually locks
+  (`lock(mutex)` had declared a function).
+- **Exit summary is one `write(2)`** after the thread joins. The observed split summaries were
+  actually caused by the launcher interleaving stdout/stderr line by line (see `omniprobe-cli`);
+  both fixes kept.
+- kernelDB (submodule, unchanged) reads `ROCM_PATH` once at load and defaults to `/opt/rocm`; on
+  nodes with only versioned `/opt/rocm-X.Y.Z` it fails unless `ROCM_PATH` is set — the launcher
+  now sets it (`omniprobe-cli`).
+
 ## Invariants
 
 - Singleton pattern (`hsaInterceptor::getInstance()`).
 - Original HSA API preserved and callable via saved table.
 - Signal runner thread waits on kernel completion signals.
-- Shutdown sequence: set `shutting_down_` flag, join threads, cleanup.
+- Shutdown sequence: set `shutting_down_` flag, join threads (signal runner gives up on pending dispatches after a 3 s grace), cleanup.
+- A dispatch is never dropped: it runs instrumented, or uninstrumented with an error/warning.
 
 ## Dependencies
 
@@ -117,3 +153,4 @@ None.
 2026-09-08 (lookup-key scheme and its dependence on demangler success; measured)
 2026-10-27 (mechanical re-check only: every file path and code symbol named in this unit exists in the tree; prose claims not re-read; no corrections)
 2026-11-08 (demangler-key defects fixed; kernelDBName; uninstrumented-kernel summary; data-flow steps not re-read)
+2026-11-08 (second session: -k regex semantics and no-match warning, kernelDB-failure and per-packet fallbacks, faulted-dispatch grace, one-write exit summary; verified by reading src/interceptor.cc signal_runner/abandonPendingSignals/runKernelInstrumented at 22c4d95 and the bf_* packets; data-flow steps 1-7 not re-read)
