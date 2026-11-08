@@ -54,11 +54,13 @@ flavour_case() {
     fi
     local hash
     hash="$(strings "$bin" | grep -o 'intern\.[0-9a-f]\{16\}' | sort -u | head -1 | cut -d. -f2)"
+    # Lets the packet's acceptance gate prove this guard fires (AC-5).
+    [ -n "${AC_FORCE_NO_INTERN:-}" ] && hash=""
     if [ -z "$hash" ]; then
         fail "no .intern.<hash> symbol in $bin; the fixture no longer tests anything"
         return
     elif [[ "$hash" =~ ^$class ]]; then
-        pass "hash $hash is $flavour-leading"
+        pass "symbol suffix .intern.$hash is $flavour-leading"
     else
         fail "hash $hash is not $flavour-leading; adjust the -cuid in tests/test_kernels/CMakeLists.txt"
         return
@@ -67,6 +69,9 @@ flavour_case() {
     rm -f "$json"
     ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" "$OMNIPROBE" -i -a MemoryAnalysis -t json -o "$json" \
         -- "$bin" > "$log" 2>&1
+
+    # omniprobe's own resolution lines, verbatim (the packet gate reads them)
+    grep -E '^(Found|No) instrumented alternative' "$log"
 
     TESTS_RUN=$((TESTS_RUN + 1))
     echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} intern_${flavour}_all_kernels_instrumented"
