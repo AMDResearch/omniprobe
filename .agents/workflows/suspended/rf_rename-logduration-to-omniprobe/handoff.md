@@ -15,3 +15,12 @@ Open questions need user input before starting.
 
 ## Proposed Spec Changes
 None.
+
+
+## Note added 2026-11-08 (supervisor request; not fixed)
+
+`docs/usage.md` § Environment variables documents `OMNIPROBE_*` names (`OMNIPROBE_INSTRUMENTED`,
+`OMNIPROBE_HANDLERS`, `OMNIPROBE_LOG_FORMAT`, ...), but the code reads `LOGDUR_*`
+(`src/utils.cc` getLogDurConfig; the CLI sets `LOGDUR_*`). The table's note says they "will be
+renamed"; until this packet runs, the table describes variables that do nothing. Fix the docs and
+the code together here.
