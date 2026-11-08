@@ -15,11 +15,13 @@
    outcomes in its artifacts.md). Local env and `build/` now use the v3.9.0 tree. Toolchain image
    CI rebuild was started by the push; check `gh run list` for "Build Toolchain Image".
 5. ~~`ft_flat-address-classification`~~ done 2026-11-08 (`e807927`..`3a5f88c`; packet in `done/`).
-6. **Last, per the owner:** real per-block timing via BBInterval. 2026-11-08: the fault and
-   zero intervals are fixed (`bf_bb-interval-dynamic-alloca`, suite 22). Meaningful timings still
-   need code-motion pinning + a host-side analyzer (~1-1.5 weeks est.; prototype and measurements
-   in that packet's artifacts.md) — awaiting a decision. If it works, IntelliKit gets the
-   plugin info and we test whether an agent uses it.
+6. ~~Real per-block timing via BBInterval~~ 2026-11-08: crash fixed (`bf_bb-interval-dynamic-alloca`),
+   pinning landed, spike says **no** for PENNANT-like code -> outcome (c) per supervisor ruling:
+   documented as experimental, no analyzer (`done/iv_bb-interval-timing-spike`).
+7. Next (supervisor, 2026-11-08): PythonHandler per-wave message fields (ikimpl spec); then a
+   robustness packet: unusable PythonHandler module -> error; silent `[]` when llvm-objdump is not
+   found; exit-summary print race (`src/interceptor.cc:285-298`); `-a <nonexistent .so>` hang.
+   Also: confirm a Build CI run used the v3.9.0 toolchain image.
 
 Known, not queued: `-t json` without `-o` writes `results_<YYYY-mm-dd_HHMMSS>.json` in the
 working directory, so two runs started in the same second in the same directory share (and
