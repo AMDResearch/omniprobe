@@ -1,5 +1,25 @@
 # Current Focus
 
+## State after the second 2026-11-08 session — read first
+
+**Next:** `rf_exact-arch-bitcode` + PR #38 on a gfx950 (MI350) node — the supervisor moves the
+allocation there. Facts for it: Triton modules still get no `target-cpu` ("Could not determine
+target architecture, defaulting to cdna2"), but since Triton v3.9.0 the module triple carries the
+arch (`amdgpu9.0a-amd-amdhsa`). Everything else in the queue below is done.
+
+**Open, not queued:** check that the first `Build` CI run after the v3.9.0 toolchain image
+completes ran on that image (`build.yml` pulls `omniprobe-toolchain:latest-rocm7.2`); pnimpl's
+`-k gpuMain` report awaits their command/env/log (not reproduced, see `done/bf_kernel-filter-search`);
+PythonHandler follow-ups (interpreter teardown, Python hosts such as Triton untested,
+`--python-handler` flag); `OMNIPROBE_*` vs `LOGDUR_*` env-var docs (noted in
+`rf_rename-logduration-to-omniprobe`).
+
+**Done this session** (packets in `workflows/done/`, each fix with a check that fails before it):
+`bf_pyhandler-gil`, `bf_faulted-dispatch-hang`, `rf_triton-v3.9-bump`,
+`ft_flat-address-classification`, `bf_bb-interval-dynamic-alloca`, `iv_bb-interval-timing-spike`
+(outcome (c): BBInterval experimental), `ft_pythonhandler-wave-fields`, `bf_robustness-errors`,
+`bf_kernel-filter-search`. Full suite: 24 suites. Details in PM (`pm-current-state.md`).
+
 ## State after 2026-11-08 — read first
 
 **Remaining queue, in this order (supervisor, 2026-11-08):**
