@@ -76,11 +76,19 @@ bool AMDGCNSubmitBBInterval::runOnModule(Module &M) {
     Value *bufferPtr = &*NF->arg_end() - 1;
     // Instrument each basic block in the cloned kernel NF:
     unsigned bbIndex = 0;
+    // One static alloca in the entry block, reused by every block.
+    // An alloca in a non-entry block is a *dynamic* alloca: it bumps the
+    // stack pointer each time the block executes (never restored), and
+    // AMDGPU codegen addresses it inconsistently (wave-scaled soffset for
+    // the stores, unscaled VGPR offset for the loads).
+    IRBuilder<> EntryBuilder(&*NF->getEntryBlock().getFirstInsertionPt());
+    AllocaInst *timeIntervalAlloca = EntryBuilder.CreateAlloca(
+        ArrayType::get(EntryBuilder.getInt64Ty(), 2), nullptr, "timeInterval");
     for (auto BB = NF->begin(); BB != NF->end(); ++BB) {
       Instruction *firstInst = nullptr;
       if (!BB->empty()) {
         for (auto &Inst : *BB) {
-          if (!isa<PHINode>(Inst)) {
+          if (!isa<PHINode>(Inst) && &Inst != timeIntervalAlloca) {
             firstInst = &Inst;
             break;
           }
@@ -97,9 +105,6 @@ bool AMDGCNSubmitBBInterval::runOnModule(Module &M) {
       CallInst *startCall = BuilderStart.CreateCall(sClock64Func, {});
       // Allocate a 2-element array for timestamps and get pointer with proper
       // GEP
-      AllocaInst *timeIntervalAlloca = BuilderStart.CreateAlloca(
-          ArrayType::get(BuilderStart.getInt64Ty(), 2), nullptr,
-          "timeInterval");
       Value *zero32 = BuilderStart.getInt32(0);
       Value *startPtr = BuilderStart.CreateInBoundsGEP(
           timeIntervalAlloca->getAllocatedType(), timeIntervalAlloca,
