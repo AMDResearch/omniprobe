@@ -30,3 +30,23 @@
 - Side finding (unverified against the ISA PDF): CDNA4 LDS reportedly has 64 banks;
   `memory_analysis_handler.cc:39` hardcodes 32. Notes in
   `.untracked/rf_exact-arch-bitcode/gfx950-lds-banks.md`. Not in this packet's scope.
+
+## 2026-11-08, later (supervisor ruling: Rene chose option C; LDS banks "verify and fix now")
+
+- PR #38 comment posted (approved text).
+- Prep for the MI350 run, all on local branch `mi350-prep` in `.untracked/wt-gfx950` (not pushed):
+  dh_comms gfx950 commit `9551a41` on local submodule branch `gfx950` (not pushed); gfx950 joins
+  the plugin's exact-arch list; MemoryAnalysis LDS model per architecture (gfx950 placeholder:
+  64 banks, 64-lane phases for <=4 B, 32-lane for 8 B, to be set by measurement); suite 26.
+- Measured on gfx90a: SQ_LDS_BANK_CONFLICT per wave per instruction equals the handler's
+  conflict count exactly (b32 stride 2 -> 2, stride 32/64 -> 62, b64 stride 2 -> 4, stride 16
+  -> 60, all controls 0, reads and writes alike). Omniprobe equals it for all 26 pattern kernels.
+  The three hypotheses (32 banks/32-lane, 64/32-lane, 64/64-lane) each differ on >=1 pattern.
+- Bug caught on the way: the first per-arch version used function-local statics; omniprobe
+  then died with SIGSEGV at exit and lost the last dispatch (rc 139, 25 of 26 in the JSON;
+  main: rc 0, 26). Never-destroyed models: 5/5 clean. Which of init race
+  (-fno-threadsafe-statics) or destruction at exit caused it was not isolated.
+- Worktree has build_gfx950 and build_gfx90a (both from mi350-prep), `build` symlinks to one.
+  Branch suite on gfx90a: 23/26 in the first run; the 3 failures were prebuilt, gitignored
+  rocBLAS/hipBLASLt test binaries absent from the worktree (copied; 3/3 then pass).
+- `.untracked/gfx950-validation/run.sh` rewritten: LDS suite first, then full suite.
