@@ -2,9 +2,16 @@
 
 from .omniprobe import Omniprobe
 from .results import (
+    AddressRecord,
+    AddressTrace,
     BasicBlock,
     BasicBlockResult,
+    BasicBlockTrace,
+    BBRecord,
+    HeatmapPage,
+    HeatmapResult,
     KernelBBResult,
+    KernelHeatmap,
     KernelMemoryResult,
     MemoryAccess,
     MemoryAnalysisResult,
@@ -12,9 +19,16 @@ from .results import (
 
 __all__ = [
     "Omniprobe",
+    "AddressRecord",
+    "AddressTrace",
     "BasicBlock",
     "BasicBlockResult",
+    "BasicBlockTrace",
+    "BBRecord",
+    "HeatmapPage",
+    "HeatmapResult",
     "KernelBBResult",
+    "KernelHeatmap",
     "KernelMemoryResult",
     "MemoryAccess",
     "MemoryAnalysisResult",

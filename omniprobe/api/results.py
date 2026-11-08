@@ -3,9 +3,21 @@
 from dataclasses import dataclass, field
 
 
+# Every top-level result carries ``uninstrumented_kernels``: kernel name ->
+# number of dispatches that ran without an instrumented clone (from omniprobe's
+# end-of-run summary). Those kernels are missing from the analysis; a non-empty
+# dict means the result is partial.
+
+
 @dataclass
 class MemoryAccess:
-    """A single memory access observation at a source location."""
+    """A single memory access observation at a source location.
+
+    ``cache_lines_needed`` / ``cache_lines_used`` are summed over the
+    ``execution_count`` wave-level executions (global accesses); their
+    difference is ``excess_cache_lines``. ``ir_bytes`` is the accessed type's
+    size in the IR, ``isa_bytes`` the size the ISA instruction moves.
+    """
     source_file: str
     line: int
     column: int
@@ -14,20 +26,32 @@ class MemoryAccess:
     memory_space: str = ""
     access_type: str = ""
     execution_count: int = 0
+    cache_lines_needed: int = 0
+    cache_lines_used: int = 0
+    isa_instruction: str = ""
+    ir_bytes: int = 0
+    isa_bytes: int = 0
 
 
 @dataclass
 class KernelMemoryResult:
-    """Memory analysis results for a single kernel dispatch."""
+    """Memory analysis results for a single kernel dispatch.
+
+    ``unanalyzed_flat_accesses`` counts wave-level accesses through flat
+    pointers, whose address space is unknown at compile time; they are not
+    analyzed. Typical of -O0 builds and of pointers loaded from memory.
+    """
     kernel_name: str
     dispatch_id: int
     accesses: list[MemoryAccess] = field(default_factory=list)
+    unanalyzed_flat_accesses: int = 0
 
 
 @dataclass
 class MemoryAnalysisResult:
     """Top-level result from memory analysis."""
     kernels: list[KernelMemoryResult] = field(default_factory=list)
+    uninstrumented_kernels: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -60,3 +84,99 @@ class KernelBBResult:
 class BasicBlockResult:
     """Top-level result from basic block analysis."""
     kernels: list[KernelBBResult] = field(default_factory=list)
+    uninstrumented_kernels: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
+class HeatmapPage:
+    """Accesses to one page (``end_address`` is inclusive)."""
+    start_address: int
+    end_address: int
+    accesses: int
+
+
+@dataclass
+class KernelHeatmap:
+    """Per-page access counts for a single kernel dispatch."""
+    kernel_name: str
+    dispatch_id: int
+    page_size: int
+    pages: list[HeatmapPage] = field(default_factory=list)
+
+
+@dataclass
+class HeatmapResult:
+    """Top-level result from the Heatmap analyzer."""
+    kernels: list[KernelHeatmap] = field(default_factory=list)
+    uninstrumented_kernels: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
+class AddressRecord:
+    """One instrumented memory instruction executed by one wave.
+
+    ``addresses`` has one entry per active lane, in increasing lane order
+    (``len(addresses) == active_lane_count``). ``source_file``/``line``/
+    ``column`` are the instruction's own debug location, which for code
+    inlined from a header (e.g. HIP's ``blockDim``) is the header.
+    ``access_size`` is the accessed type's size in bytes.
+    """
+    kernel_name: str
+    dispatch_id: int
+    timestamp: int
+    exec_mask: int
+    active_lane_count: int
+    block_idx: tuple[int, int, int]
+    wave_num: int
+    xcc_id: int
+    se_id: int
+    cu_id: int
+    op_type: str
+    memory_space: str
+    access_size: int
+    source_file: str
+    line: int
+    column: int
+    addresses: list[int] = field(default_factory=list)
+
+
+@dataclass
+class AddressTrace:
+    """Records from the AddressLogger analyzer.
+
+    ``truncated`` is True when ``max_records`` stopped the parse before the
+    end of the trace.
+    """
+    records: list[AddressRecord] = field(default_factory=list)
+    truncated: bool = False
+    uninstrumented_kernels: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
+class BBRecord:
+    """One wave entering one basic block (BasicBlockLogger, BBStart binary).
+
+    ``basic_block_id`` is the same id BasicBlockAnalysis reports.
+    """
+    kernel_name: str
+    dispatch_id: int
+    timestamp: int
+    exec_mask: int
+    active_lane_count: int
+    block_idx: tuple[int, int, int]
+    wave_num: int
+    xcc_id: int
+    se_id: int
+    cu_id: int
+    basic_block_id: int
+    source_file: str
+    line: int
+    column: int
+
+
+@dataclass
+class BasicBlockTrace:
+    """Records from the BasicBlockLogger analyzer."""
+    records: list[BBRecord] = field(default_factory=list)
+    truncated: bool = False
+    uninstrumented_kernels: dict[str, int] = field(default_factory=dict)

@@ -76,6 +76,16 @@ target_compile_options(bb_counts_test PRIVATE
 target_link_options(bb_counts_test PRIVATE -fgpu-rdc)
 add_dependencies(bb_counts_test copy_bitcode AMDGCNSubmitBBStart-rocm)
 
+# Same kernel with AddressMessages: its 1-in-4-lanes store gives divergent
+# address records (test_python_api_e2e.sh)
+add_executable(bb_counts_am_test bb_counts_test.cpp)
+target_compile_options(bb_counts_am_test PRIVATE
+    ${TEST_KERNEL_COMPILE_FLAGS}
+    -fpass-plugin=${INST_PLUGIN}
+)
+target_link_options(bb_counts_am_test PRIVATE -fgpu-rdc)
+add_dependencies(bb_counts_am_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
+
 # Internal-linkage kernels under -fgpu-rdc (test_intern_linkage.sh). The
 # .intern.<hash> suffix is derived from the compilation unit ID; fixing -cuid
 # makes the hash deterministic. cuid "a" -> letter-leading hash, "c" ->

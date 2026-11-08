@@ -128,6 +128,11 @@ run_suite "BasicBlockAnalysis counts" "${SCRIPT_DIR}/test_bba_counts.sh"
 # the end-of-run summary of kernels without an instrumented clone. Needs a GPU.
 run_suite "Internal-linkage kernels" "${SCRIPT_DIR}/test_intern_linkage.sh"
 
+# Suite 17: ft_python-api-coverage — the Python API end to end on real
+# instrumented binaries (heatmap, address and basic-block traces, extended
+# memory fields, flat-access count, uninstrumented kernels). Needs a GPU.
+run_suite "Python API end to end" "${SCRIPT_DIR}/test_python_api_e2e.sh"
+
 # Summary
 echo ""
 echo "================================================================================"
