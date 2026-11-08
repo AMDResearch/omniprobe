@@ -21,6 +21,7 @@ Packet directories follow the pattern: `.agents/workflows/<state>/<workflow-id>/
 | rf_test-organization | refactor | suspended | unassigned | tests/ | None | Design decisions needed | 2026-08-25 |
 | ft_whitepaper-omniprobe | feature | suspended | unassigned | ~/repos/whitepaper_omniprobe/ | None (outside omniprobe repo) | Awaiting user review | 2026-08-25 |
 | bf_intern-clone-name | bugfix | active | unassigned | src/utils.cc, src/instrumentation/InstrumentationCommon.cpp, src/instrumentation/include/InstrumentationCommon.h, tests/ | Overlaps rf_exact-arch-bitcode (same InstrumentationCommon.cpp) — that packet is suspended, so not a live collision; do not run both at once | None | 2026-09-08 |
+| bf_bba-hardening | bugfix | active | opimpl (2026-11-08) | src/basic_block_analysis.cc, inc/basic_block_analysis.h, src/message_logger.cc, omniprobe/, tests/ | Appends a run_suite line to tests/run_all_tests.sh | Phase 2 scope awaiting supervisor decision | 2026-11-08 |
 | bf_pyhandler-gil | bugfix | active | unassigned | src/pyHandler.cc, inc/pyHandler.h, plugins/, omniprobe/config/analytics.py, tests/ | Shares tests/run_all_tests.sh with the two above — append-only. Needs a GPU and an arch-matched build | None | 2026-09-08 |
 
 ### rf_lazy-kerneldb-loading's premise is invalidated — read this before resuming it
