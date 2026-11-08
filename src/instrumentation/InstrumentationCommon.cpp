@@ -28,6 +28,7 @@ THE SOFTWARE.
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Linker/Linker.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -163,25 +164,46 @@ bool validateAMDGPUTarget(const llvm::Module &M) {
   }
 }
 
+static std::string targetArch(const llvm::Module &M) {
+  if (auto *cpuMD =
+          llvm::cast_or_null<llvm::MDString>(M.getModuleFlag("target-cpu")))
+    return cpuMD->getString().str();
+  for (const auto &F : M)
+    if (F.hasFnAttribute("target-cpu"))
+      return F.getFnAttribute("target-cpu").getValueAsString().str();
+  return "unknown";
+}
+
+// Without the dh_comms device bitcode the pass cannot instrument anything.
+// Stop the compilation: carrying on (as this used to) produced a binary with no
+// instrumented clones and a successful exit, which omniprobe can only report
+// at run time, kernel by kernel.
+[[noreturn]] static void bitcodeFailure(const llvm::Module &M,
+                                        const std::string &What,
+                                        const std::string &BitcodePath) {
+  llvm::report_fatal_error(
+      llvm::Twine("omniprobe instrumentation plugin: ") + What + " '" +
+          BitcodePath + "' (target " + targetArch(M) +
+          "). The plugin looks for device bitcode in ../bitcode next to "
+          "itself; use a complete omniprobe build or install tree.",
+      /*gen_crash_diag=*/false);
+}
+
 std::unique_ptr<llvm::Module> loadAndLinkBitcode(llvm::Module &M) {
   std::string BitcodePath = getBitcodePath(M);
 
-  if (!llvm::sys::fs::exists(BitcodePath)) {
-    llvm::errs() << "Error: Bitcode file not found at " << BitcodePath << "\n";
-    return nullptr;
-  }
+  if (BitcodePath.empty() || !llvm::sys::fs::exists(BitcodePath))
+    bitcodeFailure(M, "device bitcode file not found:", BitcodePath);
 
   auto Buffer = MemoryBuffer::getFile(BitcodePath);
-  if (!Buffer) {
-    llvm::errs() << "Error loading bitcode file: " << BitcodePath << "\n";
-    return nullptr;
-  }
+  if (!Buffer)
+    bitcodeFailure(M, "cannot read device bitcode file", BitcodePath);
 
   auto DeviceModuleOrErr =
       parseBitcodeFile(Buffer->get()->getMemBufferRef(), M.getContext());
   if (!DeviceModuleOrErr) {
-    llvm::errs() << "Error parsing bitcode file: " << BitcodePath << "\n";
-    return nullptr;
+    llvm::consumeError(DeviceModuleOrErr.takeError());
+    bitcodeFailure(M, "cannot parse device bitcode file", BitcodePath);
   }
 
   std::unique_ptr<llvm::Module> DeviceModule =
@@ -189,11 +211,8 @@ std::unique_ptr<llvm::Module> loadAndLinkBitcode(llvm::Module &M) {
 
   llvm::errs() << "Linking device module from " << BitcodePath
                << " into GPU module\n";
-  if (llvm::Linker::linkModules(M, CloneModule(*DeviceModule))) {
-    llvm::errs() << "Error linking device function module into instrumented "
-                    "module!\n";
-    return nullptr;
-  }
+  if (llvm::Linker::linkModules(M, CloneModule(*DeviceModule)))
+    bitcodeFailure(M, "cannot link device bitcode from", BitcodePath);
 
   return DeviceModule;
 }

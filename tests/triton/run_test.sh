@@ -206,6 +206,33 @@ fi
 rm -rf "$SCOPE_CACHE"
 
 ################################################################################
+# Test 6: a Triton plugin that cannot find its device bitcode fails the JIT
+# compile loudly (bf_plugin-missing-bitcode-fatal) instead of running the
+# kernel uninstrumented. The plugin is copied to a directory with no bitcode.
+################################################################################
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="triton_missing_bitcode_fails"
+echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} $TEST_NAME"
+OUTPUT_FILE="$OUTPUT_DIR/${TEST_NAME}.out"
+NOBC_DIR="$(mktemp -d)"
+mkdir -p "$NOBC_DIR/lib/plugins" "$NOBC_DIR/cache"
+cp "${OMNIPROBE_ROOT}/lib/plugins/libAMDGCNSubmitAddressMessages-triton.so" "$NOBC_DIR/lib/plugins/"
+ROCR_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES" TRITON_CACHE_DIR="$NOBC_DIR/cache" TRITON_ALWAYS_COMPILE=1 \
+    TRITON_HIP_LLD_PATH="${ROCM_PATH:-/opt/rocm-7.2.0}/llvm/bin/ld.lld" \
+    LLVM_PASS_PLUGIN_PATH="$NOBC_DIR/lib/plugins/libAMDGCNSubmitAddressMessages-triton.so" \
+    python "$VECTOR_ADD" > "$OUTPUT_FILE" 2>&1 && rc=0 || rc=$?
+if [ "$rc" -ne 0 ] && grep -q "omniprobe instrumentation plugin: device bitcode file not found" "$OUTPUT_FILE"; then
+    echo -e "  ${GREEN}✓ PASS${NC} - JIT compile failed (rc $rc) naming the missing bitcode"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+    echo -e "  ${RED}✗ FAIL${NC} - rc $rc; expected a non-zero exit naming the missing bitcode"
+    echo "  Output saved to: $OUTPUT_FILE"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$NOBC_DIR"
+
+################################################################################
 # Summary
 ################################################################################
 
