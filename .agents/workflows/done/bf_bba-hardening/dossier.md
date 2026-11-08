@@ -4,13 +4,26 @@
 
 - Workflow ID: bf_bba-hardening
 - Workflow Type: bugfix
-- Lifecycle State: active
+- Lifecycle State: done
 - Owner / Current Executor: opimpl worker (supervised run, 2026-11-08)
 - Intended Write Scope: see the `write-scope` block below (canonical)
 - Dependencies On Other Active Workflows: appends one `run_suite` line to `tests/run_all_tests.sh`
 - Base Commit: c2dd8404da4f344a4262a093dea6f2b5a03c4e58
 
 ```write-scope
+src/instrumentation/AMDGCNSubmitBBStart.cpp
+src/memory_analysis_handler.cc
+src/memory_heatmap.cc
+inc/message_logger.h
+omniprobe/api/
+docs/usage.md
+tests/test_python_api.py
+tests/test_bba_counts.sh
+tests/test_json_output.sh
+tests/test_kernels/
+tests/run_block_filter_tests.sh
+tests/run_scope_filter_tests.sh
+tests/triton/run_test.sh
 src/basic_block_analysis.cc
 inc/basic_block_analysis.h
 src/message_logger.cc
@@ -73,7 +86,19 @@ Phase 1 (done):
   and warns "block index 7 out of range … (4 blocks known)". Unfixed: rc 139.
 - **AC-4**: full suite passes.
 
-Phase 2 (pending decision — see handoff): (c) semantics, (d) logger CSV, analyzer/plugin check.
+Phase 2 (supervisor ruling 2026-11-08: option 1 — key by BBStart's number, file/line from
+the header, counts, no timing unless opt-in with an overhead-naming field; done without timing):
+- **AC-5** (c): on \`bb_counts_test\` (1024 threads; store taken by 1 in 4 lanes; non-unrolled
+  loop, runtime trip count), per-block (wave_visits, active_lanes) at the marked source lines are
+  entry (E, 1024), quarter (E, 256), loop (trips·E, trips·1024), for trips 5 and 3, and the
+  source file resolves to the test source. Suite 15. Fails on the phase-1 code.
+- **AC-6** (c): two identical runs give identical (id, file, line, column, visits, lanes). Suite 15.
+- **AC-7**: no field containing "cycles" is reported. Suite 15.
+- **AC-8** (d): AddressLogger and BasicBlockLogger \`-l f.csv\` contain only CSV rows of their kind
+  plus headers, no JSON. Suite 12 (2 new checks); both fail on the phase-1 code.
+- **AC-9** (mismatch): MemoryAnalysis and Heatmap on a BBStart binary warn once naming the needed
+  plugin; BBA on an AddressMessages binary warns once (AC-1).
+- **AC-10**: full suite 15/15; Python API unit tests pass.
 
 ## Non-Goals
 
