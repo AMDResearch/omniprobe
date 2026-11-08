@@ -15,7 +15,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-BUILD_DIR="${REPO_ROOT}/build"
+BUILD_DIR="${BUILD_DIR:-${REPO_ROOT}/build}"
 OMNIPROBE_ROOT="${OMNIPROBE_ROOT:-${BUILD_DIR}}"
 OMNIPROBE="${OMNIPROBE:-${OMNIPROBE_ROOT}/bin/omniprobe}"
 TRITON_CACHE="${HOME}/.triton/cache"
