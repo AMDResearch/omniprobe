@@ -144,6 +144,20 @@ else:
 }
 
 patch_triton_source() {
+    # Triton v3.9.0's TritonAMDMIRDAG calls llvm::createMIRParser but links only
+    # LLVMCodeGen. Against Triton's static prebuilt LLVM that goes unnoticed; against
+    # our shared-library LLVM (BUILD_SHARED_LIBS=ON) every tool linking it fails with
+    # undefined llvm::MIRParser symbols. Add the missing library.
+    local mirdag="third_party/amd/lib/Target/MIRDAG/CMakeLists.txt"
+    if [ -f "$mirdag" ] && ! grep -q "LLVMMIRParser" "$mirdag"; then
+        sed -i 's/^\([[:space:]]*\)LLVMCodeGen$/\1LLVMCodeGen\n\1LLVMMIRParser/' "$mirdag"
+        if grep -q "LLVMMIRParser" "$mirdag"; then
+            log_info "Patched ${mirdag}: link LLVMMIRParser"
+        else
+            log_warn "Could not patch ${mirdag} — the Triton build may fail to link"
+        fi
+    fi
+
     # Patch the assertion that fails when instrumentation clones kernels.
     # The file location changed across Triton versions:
     #   Old: python/triton/backends/amd/compiler.py
