@@ -21,6 +21,8 @@ THE SOFTWARE.
 *******************************************************************************/
 #include "InstrumentationCommon.h"
 
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/CallingConv.h"
@@ -44,6 +46,47 @@ using namespace llvm;
 
 namespace instrumentation {
 namespace common {
+
+// "gfx<N>" from an AMDGPU triple's subarchitecture, which LLVM spells
+// amdgpu<major>.<two characters> for a single processor: amdgpu9.0a -> gfx90a,
+// amdgpu9.50 -> gfx950, amdgpu11.00 -> gfx1100. Empty for a plain
+// amdgcn/amdgpu triple and for family-level names such as amdgpu9.4.
+static std::string archFromTriple(const std::string &TripleStr) {
+  StringRef Name = StringRef(TripleStr).split('-').first;
+  if (!Name.consume_front("amdgpu"))
+    return "";
+  auto [Major, Minor] = Name.split('.');
+  if (Major.empty() || Minor.size() != 2 ||
+      !llvm::all_of(Major, [](char C) { return isDigit(C); }) ||
+      !llvm::all_of(Minor, [](char C) { return isAlnum(C); }))
+    return "";
+  return ("gfx" + Major + Minor).str();
+}
+
+// Target processor of a device module: the "target-cpu" module flag, else a
+// function's "target-cpu" attribute, else the triple (Triton modules carry no
+// target-cpu; since Triton v3.9.0 the triple names the processor). Empty if
+// none of them does. *Source, if given, says which one answered.
+static std::string moduleArch(const llvm::Module &M,
+                              std::string *Source = nullptr) {
+  auto from = [&](const char *What, std::string Arch) {
+    if (Source)
+      *Source = What;
+    return Arch;
+  };
+  if (auto *cpuMD =
+          llvm::cast_or_null<llvm::MDString>(M.getModuleFlag("target-cpu")))
+    return from("target-cpu module flag", cpuMD->getString().str());
+  for (const auto &F : M)
+    if (F.hasFnAttribute("target-cpu"))
+      return from("target-cpu attribute",
+                  F.getFnAttribute("target-cpu").getValueAsString().str());
+  std::string TripleStr = llvm::Triple(M.getTargetTriple()).str();
+  std::string Arch = archFromTriple(TripleStr);
+  if (!Arch.empty())
+    return from(("target triple " + TripleStr).c_str(), Arch);
+  return "";
+}
 
 std::string getBitcodePath(const llvm::Module &M) {
   Dl_info dl_info;
@@ -83,52 +126,46 @@ std::string getBitcodePath(const llvm::Module &M) {
   std::string CodeObjectVersion =
       (PluginPath.find("triton") != std::string::npos) ? "_co5" : "_co6";
 
-  // Determine CDNAVersion based on architecture
-  std::string CDNAVersion;
-  // Try to get the target-cpu from the module flag
-  std::string arch;
-  if (auto *cpuMD =
-          llvm::cast_or_null<llvm::MDString>(M.getModuleFlag("target-cpu"))) {
-    arch = cpuMD->getString().str();
-  } else {
-    // Fallback: try to get from a kernel function attribute
-    for (const auto &F : M) {
-      if (F.hasFnAttribute("target-cpu")) {
-        arch = F.getFnAttribute("target-cpu").getValueAsString().str();
-        break;
-      }
-    }
-  }
-
-  if (arch != "") {
-    llvm::errs() << "Detected architecture: " << arch << "\n";
-  } else {
+  std::string Source;
+  std::string arch = moduleArch(M, &Source);
+  if (arch.empty()) {
     llvm::errs() << "Warning: Could not determine target architecture, "
                     "defaulting to cdna2.\n";
     arch = "unknown";
-  }
-
-  // Architecture -> bitcode suffix mapping. Must match the bitcode
-  // variants emitted by dh_comms (see dh_comms/CMakeLists.txt):
-  //   gfx94x      -> _cdna3 (legacy bundled bitcode)
-  //   gfx90a      -> _cdna2 (legacy bundled bitcode)
-  //   other gfx*  -> _<arch> per-arch bitcode (e.g. gfx908 -> _gfx908)
-  //   unknown     -> warn and best-effort fall back to _cdna2
-  if (arch == "gfx940" || arch == "gfx941" || arch == "gfx942") {
-    CDNAVersion = "_cdna3";
-  } else if (arch == "gfx90a") {
-    CDNAVersion = "_cdna2";
-  } else if (arch.size() >= 3 && arch.substr(0, 3) == "gfx") {
-    CDNAVersion = "_" + arch;
   } else {
-    llvm::errs() << "Warning: architecture '" << arch
-                 << "' has no matching bitcode. "
-                 << "Falling back to cdna2.\n";
-    CDNAVersion = "_cdna2";
+    llvm::errs() << "Detected architecture: " << arch << " (from " << Source
+                 << ")\n";
   }
 
-  std::string BitcodePath =
-      BitcodeDir + "/dh_comms_dev" + CDNAVersion + CodeObjectVersion + ".bc";
+  // Exact-architecture bitcode (dh_comms_dev_<arch>_coN.bc) exists for the
+  // architectures in CMAKE_HIP_ARCHITECTURES. Without it, fall back to the
+  // legacy two-bucket files: cdna3 for gfx94x, cdna2 for everything else.
+  // dh_comms_dev.h fills the message header's gcnarch from __gfx<N>__ macros;
+  // for an architecture it does not list it compiles without error and every
+  // message says "unsupported", which MemoryAnalysis skips without a word. Such
+  // an architecture gets the legacy bucket even when an exact file exists.
+  static const char *const IdentifiedByDhComms[] = {
+      "gfx906", "gfx908", "gfx90a", "gfx940", "gfx941", "gfx942"};
+  std::string Legacy =
+      (arch == "gfx940" || arch == "gfx941" || arch == "gfx942") ? "cdna3"
+                                                                 : "cdna2";
+  auto pathFor = [&](const std::string &Variant) {
+    return BitcodeDir + "/dh_comms_dev_" + Variant + CodeObjectVersion + ".bc";
+  };
+
+  if (llvm::is_contained(IdentifiedByDhComms, arch)) {
+    std::string Exact = pathFor(arch);
+    if (llvm::sys::fs::exists(Exact))
+      return Exact;
+    llvm::errs() << "Warning: no device bitcode for " << arch << " (" << Exact
+                 << " not found); using " << Legacy << " bitcode instead.\n";
+  } else if (arch != "unknown") {
+    llvm::errs() << "Warning: dh_comms does not identify " << arch
+                 << "; using " << Legacy
+                 << " bitcode (messages report a cdna architecture).\n";
+  }
+
+  std::string BitcodePath = pathFor(Legacy);
 
   return BitcodePath;
 }
@@ -178,13 +215,8 @@ bool validateAMDGPUTarget(const llvm::Module &M) {
 }
 
 static std::string targetArch(const llvm::Module &M) {
-  if (auto *cpuMD =
-          llvm::cast_or_null<llvm::MDString>(M.getModuleFlag("target-cpu")))
-    return cpuMD->getString().str();
-  for (const auto &F : M)
-    if (F.hasFnAttribute("target-cpu"))
-      return F.getFnAttribute("target-cpu").getValueAsString().str();
-  return "unknown";
+  std::string Arch = moduleArch(M);
+  return Arch.empty() ? "unknown" : Arch;
 }
 
 // Without the dh_comms device bitcode the pass cannot instrument anything.

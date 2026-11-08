@@ -167,6 +167,12 @@ run_suite "Robustness" "${SCRIPT_DIR}/test_robustness.sh"
 # namespace kernels; "no kernel matched -k" is its own warning. Needs a GPU.
 run_suite "Kernel filter names" "${SCRIPT_DIR}/test_kernel_filter_names.sh"
 
+# Suite 25: rf_exact-arch-bitcode — the plugins link exact-arch dh_comms bitcode,
+# fall back to the cdna2/cdna3 bucket with a warning when it is missing or when
+# dh_comms does not identify the architecture, and read the architecture from a
+# Triton module's triple. Compiles only; no GPU needed.
+run_suite "Bitcode selection" "${SCRIPT_DIR}/test_bitcode_selection.sh"
+
 # Summary
 echo ""
 echo "================================================================================"
