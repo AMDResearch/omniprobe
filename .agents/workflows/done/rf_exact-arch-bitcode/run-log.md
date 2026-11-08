@@ -64,3 +64,21 @@
   Suite 27 fails before (captured=0, warned=0). Full suite 27/27, pushed with `9fc83ea`.
 - MI350 branch is now `mi350` (`21764ce`, on main): dh_comms 9551a41 + gfx950 exact-arch +
   cdna4_lds placeholder. Dry run on gfx90a: 27/27. run.sh step (0) runs the conflict-set sweep.
+
+## 2026-11-08, MI350 node (gfx950, 1 GPU VM, fuseblk /work1; ROCR_VISIBLE_DEVICES=0)
+
+- run.sh first pass: conflict-set sweep OK (spot checks equal); suite 26 failed under the
+  placeholder (14/32 differ); faulted-dispatch failed (bare fault_test itself exits 141 here).
+- Measured gfx950 map: b32 r/w halves, 32 banks; b64 read halves, 64 banks; b64 write 16-lane x4,
+  32 banks; b128 read {0..3,12..15,20..27},{4..11,16..19,28..31},(+32), 64 banks; b128 write
+  8-lane x8, 32 banks. -> cdna4_lds; suite 26 on gfx950: 32/32 equal the hardware counter.
+- HW_ID on gfx950: xcc 0..7, se 0..3, 8 CUs per (xcc,se) (cu_id 0..8, one id absent per SE),
+  256 distinct = rocminfo's 256 CUs / 32 SEs.
+- Full suite on gfx950: 24 passed, 0 failed, 3 skipped = rocBLAS/hipBLASLt suites, N/A on gfx950
+  (gfx90a-only instrumented libraries). Triton on gfx950 links dh_comms_dev_gfx950_co5.bc
+  (arch from triple amdgpu9.50).
+- dh_comms 0c8a363..9551a41 pushed to AMDResearch/dh_comms main. omniprobe main: 825928d,
+  f38429e, 9666303 (tree identical to the validated mi350 branch).
+- Not run on gfx90a: the final main (gfx950 model + dh_comms gfx950 + fault-test change). gfx90a
+  evidence is 27/27 at 9fc83ea/mi350-21764ce, i.e. this code minus the measured cdna4_lds and the
+  fault-test change; both only affect gfx950 or keep gfx90a's assertions (bare status 3).

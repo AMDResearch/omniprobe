@@ -15,7 +15,7 @@ Packet directories follow the pattern: `.agents/workflows/<state>/<workflow-id>/
 | Workflow ID | Type | State | Owner | Intended Write Scope | Dependencies / Overlap Notes | Blocker Status | Last Update |
 |-------------|------|-------|-------|----------------------|------------------------------|----------------|-------------|
 | rf_lazy-kerneldb-loading | refactor | suspended | unassigned | src/interceptor.cc | Overlaps with rf_rename-logduration (same file) | None | 2026-08-25 |
-| rf_exact-arch-bitcode | refactor | active | opimpl worker | src/instrumentation/InstrumentationCommon.cpp, tests/test_bitcode_selection.sh, tests/gfx950_runtime_validation.sh, tests/run_all_tests.sh, external/dh_comms (needs go-ahead) | PR #38 folded in (D2) | gfx950 runtime validation needs an MI350 node | 2026-11-08 |
+
 | rf_rename-logduration-to-omniprobe | refactor | suspended | unassigned | src/, inc/, plugins/, omniprobe/, CMakeLists.txt, containers/, .github/ | Broad scope — overlaps with most other refactors | Open questions need user input | 2026-08-25 |
 | rf_clang-format-consistency | refactor | suspended | unassigned | .clang-format, CMakeLists.txt, scripts/git-hooks/ | None | Team coordination needed | 2026-08-25 |
 | rf_test-organization | refactor | suspended | unassigned | tests/ | None | Design decisions needed | 2026-08-25 |
@@ -123,6 +123,7 @@ Note that two overlaps recorded above are still live and still matter on resume:
 | ft_pythonhandler-wave-fields | feature | 2026-11-08 |
 | bf_robustness-errors | bugfix | 2026-11-08 |
 | bf_kernel-filter-search | bugfix | 2026-11-08 |
+| rf_exact-arch-bitcode | refactor | 2026-11-08 |
 
 ## Completed (migrated from KT)
 

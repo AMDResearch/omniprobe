@@ -4,7 +4,7 @@
 
 - Workflow ID: rf_exact-arch-bitcode
 - Workflow Type: refactor
-- Lifecycle State: active
+- Lifecycle State: done
 - Owner / Current Executor: opimpl worker (supervised run, 2026-11-08)
 - Created: 2026-04-16 (migrated from KT); resumed 2026-11-08
 - Base Commit: 003af80
