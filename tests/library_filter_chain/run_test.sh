@@ -86,16 +86,17 @@ cd "$BUILD_DIR"
 CMAKE_ARGS=()
 
 if [ "$NO_INSTRUMENT" = false ]; then
-    # Find instrumentation plugin from main omniprobe build
-    # Look for it in common locations
-    OMNIPROBE_BUILD="${SCRIPT_DIR}/../../build"
-    INST_PLUGIN="${OMNIPROBE_BUILD}/lib/plugins/libAMDGCNSubmitAddressMessages-rocm.so"
+    # Instrument with the plugin of the tree under test, so the libraries and
+    # the omniprobe that runs them always come from the same tree. A missing
+    # plugin is a failure: without it Tests 2-5 test nothing.
+    INST_PLUGIN="${OMNIPROBE_ROOT}/lib/plugins/libAMDGCNSubmitAddressMessages-rocm.so"
 
     if [ -f "$INST_PLUGIN" ]; then
         CMAKE_ARGS+=("-DINST_PLUGIN=${INST_PLUGIN}")
     else
-        log_warn "Instrumentation plugin not found at: $INST_PLUGIN"
-        log_warn "Building without instrumentation. Run omniprobe build first for instrumented builds."
+        log_error "Instrumentation plugin not found at: $INST_PLUGIN"
+        log_error "Build omniprobe, or point OMNIPROBE_ROOT at a build or install tree."
+        exit 1
     fi
 fi
 
@@ -146,16 +147,19 @@ fi
 
 log_info "=== Test 2: Run under omniprobe (instrumented) ==="
 
-# Check omniprobe exists
+if [ "$NO_INSTRUMENT" = true ]; then
+    # The libraries were built uninstrumented on request, so Tests 2-5 have
+    # nothing to observe. Say so plainly; never let them report a pass.
+    log_info "Tests 2-5 not run: --no-instrument built the test libraries without the plugin"
+    exit 0
+fi
+
 if [ ! -x "$OMNIPROBE" ]; then
-    log_warn "omniprobe not found at $OMNIPROBE - skipping omniprobe tests"
-    log_warn "To run omniprobe tests, ensure the repo's omniprobe script exists"
+    log_error "omniprobe not found at $OMNIPROBE"
+    log_error "Build omniprobe, or point OMNIPROBE_ROOT at a build or install tree."
+    exit 1
 else
-    # Check if omniprobe build exists
-    if [ ! -d "$OMNIPROBE_BUILD_DIR" ]; then
-        log_warn "omniprobe build directory not found at $OMNIPROBE_BUILD_DIR - skipping omniprobe tests"
-        log_warn "Build omniprobe first: cd ${REPO_ROOT}/build && cmake --build ."
-    else
+    {
         "$OMNIPROBE" \
             -a MemoryAnalysis \
             -i \
@@ -168,7 +172,9 @@ else
             if grep -q "Found instrumented alternative for static_head_kernel\|Found instrumented alternative for static_mid_kernel\|Found instrumented alternative for static_tail_kernel" "${TEST_OUTPUT_DIR}/run_with_omniprobe.log"; then
                 log_info "  Static library kernels: INSTRUMENTED (expected)"
             else
-                log_warn "  Static library kernels: NOT INSTRUMENTED (unexpected)"
+                log_error "Test 2 FAILED: static library kernels were not instrumented"
+                echo "  Output saved to: ${TEST_OUTPUT_DIR}/run_with_omniprobe.log"
+                exit 1
             fi
 
             log_info "Test 2 PASSED: omniprobe ran successfully"
@@ -331,7 +337,7 @@ EOF
             exit 1
         fi
 
-    fi
+    }
 fi
 
 ################################################################################

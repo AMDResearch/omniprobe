@@ -56,7 +56,11 @@ run_suite() {
         echo -e "${RED}Suite FAILED: ${name}${NC}"
         SUITES_FAILED=$((SUITES_FAILED + 1))
         FAILED_SUITES="${FAILED_SUITES}  - ${name}\n"
-    elif echo "$output" | grep -q "SKIP"; then
+    # Skipped only on a skip notice at the start of a line ("SKIP: <reason>",
+    # colour codes stripped), the form the suites print when they cannot run.
+    # A bare substring match counted any incidental "SKIP" in passing output
+    # as a skipped suite, and missed lowercase "skipping" notices entirely.
+    elif echo "$output" | sed 's/\x1b\[[0-9;]*m//g' | grep -qE '^[[:space:]]*SKIP:'; then
         echo -e "${YELLOW}Suite SKIPPED: ${name}${NC}"
         SUITES_SKIPPED=$((SUITES_SKIPPED + 1))
     else
