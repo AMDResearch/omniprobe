@@ -163,6 +163,22 @@ if(DEFINED TRITON_LLVM)
     )
 endif()
 
+# The plugins look for device bitcode in ../bitcode relative to themselves
+# (InstrumentationCommon.cpp getBitcodePath), so the build tree needs
+# build/lib/bitcode/ just as the install tree has <prefix>/omniprobe/lib/bitcode/.
+# Part of the default build, not the tests, so a build tree configured without
+# INTERCEPTOR_BUILD_TESTING can compile instrumented code. Same file list as
+# dh_comms installs: the legacy cdna2/cdna3 files and the exact-arch ones.
+get_directory_property(DH_COMMS_BITCODE_FILES
+    DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/external/dh_comms
+    DEFINITION DH_COMMS_BITCODE_FILES)
+add_custom_target(copy_bitcode ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/lib/bitcode
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DH_COMMS_BITCODE_FILES} ${CMAKE_BINARY_DIR}/lib/bitcode/
+    DEPENDS dh_comms_bc
+    COMMENT "Copying device bitcode to build/lib/bitcode/"
+)
+
 # Set target and root/lib/test directory
 set(TARGET_NAME "${INTERCEPTOR_TARGET}")
 set(DEFAULT_PLUGIN_NAME "defaultMessageHandlers64")

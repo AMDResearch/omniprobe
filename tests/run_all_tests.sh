@@ -106,6 +106,10 @@ run_suite "Exit status propagation" "${SCRIPT_DIR}/test_exit_status.sh"
 # the same file), and -o/-l files are replaced, not appended to. Needs a GPU.
 run_suite "Output file integrity" "${SCRIPT_DIR}/test_json_output.sh"
 
+# Suite 13: the build tree's plugins find their device bitcode (build/lib/bitcode
+# holds every .bc dh_comms builds). Compiles only; needs no GPU.
+run_suite "Build-tree device bitcode" "${SCRIPT_DIR}/test_build_tree_bitcode.sh"
+
 # Summary
 echo ""
 echo "================================================================================"

@@ -13,24 +13,7 @@ set(TEST_KERNEL_COMPILE_FLAGS
 # Path to instrumentation plugin in build directory
 set(INST_PLUGIN "${CMAKE_BINARY_DIR}/lib/plugins/libAMDGCNSubmitAddressMessages-rocm.so")
 
-# Copy bitcode files from dh_comms to build/lib/bitcode/ and to plugin dirs.
-# build/lib/bitcode/ is the canonical location; plugin dirs are for backward
-# compatibility with getBitcodePath() until it is updated to look in ../bitcode/.
-set(DH_COMMS_LIB_DIR "${CMAKE_BINARY_DIR}/external/dh_comms/lib")
-set(BITCODE_DIR "${CMAKE_BINARY_DIR}/lib/bitcode")
-
-# Copy all bitcode files to build/lib/bitcode/
-add_custom_target(copy_bitcode ALL
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${BITCODE_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna2_co5.bc
-        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna3_co5.bc
-        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna2_co6.bc
-        ${DH_COMMS_LIB_DIR}/dh_comms_dev_cdna3_co6.bc
-        ${BITCODE_DIR}/
-    DEPENDS dh_comms_bc
-    COMMENT "Copying bitcode files to build/lib/bitcode/"
-)
+# copy_bitcode (build/lib/bitcode/) is defined in the top-level CMakeLists.txt.
 
 # Simple heatmap test kernel
 add_executable(simple_heatmap_test simple_heatmap_test.cpp)
