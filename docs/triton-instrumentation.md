@@ -83,16 +83,18 @@ environments).
 ```bash
 git clone https://github.com/triton-lang/triton.git ~/repos/sandbox/triton
 cd ~/repos/sandbox/triton
-git checkout v3.7.1  # or your desired version
+git checkout v3.9.0  # or your desired version
 ```
 
 **2. Clone the LLVM submodule at the correct commit:**
 
-The required LLVM commit hash is in `cmake/llvm-hash.txt`:
+The required LLVM commit hash is in `cmake/llvm-info.json` (Triton v3.8.0 and
+later; `cmake/llvm-hash.txt` before that). Clone Triton's LLVM fork, not mainline
+LLVM: the pinned commit may exist only there.
 
 ```bash
-LLVM_HASH=$(cat cmake/llvm-hash.txt)
-git clone https://github.com/llvm/llvm-project.git ~/repos/sandbox/triton/llvm-project
+LLVM_HASH=$(jq -r .llvm_hash cmake/llvm-info.json)
+git clone https://github.com/triton-lang/llvm-project.git ~/repos/sandbox/triton/llvm-project
 cd ~/repos/sandbox/triton/llvm-project
 git checkout $LLVM_HASH
 ```
@@ -120,6 +122,10 @@ ROCM_PATH=/opt/rocm-7.2.0 /path/to/omniprobe/containers/triton_install.sh \
 
 The script clones from the local repo (no network), uses the pre-populated
 `llvm-project/` directory, and installs wheels from the `wheels/` subdirectory.
+From Triton v3.9.0 the Triton build itself still needs the network: it downloads
+a prebuilt AMD code-generation library (`libtriton_amd_codegen`, with its own
+pinned LLVM) unless `TRITON_AMD_CODEGEN_PATH` points at one, and pip installs the
+build requirements (`nanobind`, `cmake`, `ninja`) from PyPI.
 
 ## Step 2: Build Omniprobe with Triton support
 

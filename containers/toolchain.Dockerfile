@@ -19,7 +19,7 @@
 # value two lines and silently fails the check. That is not hypothetical; the first
 # draft of this very comment did it.
 ARG ROCM_VERSION=7.2
-ARG TRITON_VERSION=v3.8.0
+ARG TRITON_VERSION=v3.9.0
 
 FROM rocm/dev-ubuntu-24.04:${ROCM_VERSION} AS llvm
 ARG ROCM_VERSION
@@ -102,8 +102,10 @@ RUN git clone https://github.com/triton-lang/triton.git /app/triton && \
 # Separate STAGE from LLVM, not merely a separate layer. The workflow builds
 # `--target llvm` first so that stage's cache is exported even if this one fails;
 # a retry then resumes here instead of rebuilding LLVM. This stage is the fragile
-# one: Triton v3.8.0 downloads the NVIDIA toolchain (CUPTI) during its CMake
-# configure, with COMMAND_ERROR_IS_FATAL ANY, so a CDN blip fails the build.
+# one: Triton downloads the NVIDIA toolchain (CUPTI) during its CMake configure,
+# with COMMAND_ERROR_IS_FATAL ANY, so a CDN blip fails the build; from v3.9.0 it
+# also downloads the prebuilt AMD codegen library (libtriton_amd_codegen, its own
+# pinned LLVM) from Triton's blob store.
 # Uses triton_install.sh --skip-llvm to reuse the already-built LLVM.
 FROM llvm AS toolchain
 ARG ROCM_VERSION
