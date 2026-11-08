@@ -72,6 +72,17 @@ target_compile_options(dual_kernel_test PRIVATE
 target_link_options(dual_kernel_test PRIVATE -fgpu-rdc)
 add_dependencies(dual_kernel_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
 
+# Same two kernels, instrumented with BBStart, so BasicBlockAnalysis has the
+# block-index messages it expects (used by test_json_output.sh)
+add_executable(dual_kernel_bbstart_test dual_kernel_test.cpp)
+set_source_files_properties(dual_kernel_test.cpp PROPERTIES LANGUAGE HIP)
+target_compile_options(dual_kernel_bbstart_test PRIVATE
+    ${TEST_KERNEL_COMPILE_FLAGS}
+    -fpass-plugin=${CMAKE_BINARY_DIR}/lib/plugins/libAMDGCNSubmitBBStart-rocm.so
+)
+target_link_options(dual_kernel_bbstart_test PRIVATE -fgpu-rdc)
+add_dependencies(dual_kernel_bbstart_test copy_bitcode AMDGCNSubmitBBStart-rocm)
+
 # Block filter test kernel
 add_executable(block_filter_test block_filter_test.cpp)
 set_source_files_properties(block_filter_test.cpp PROPERTIES LANGUAGE HIP)

@@ -24,6 +24,7 @@
 
 #include "gpu_arch_constants.h"
 #include "utils.h"
+#include "inc/json_output.h"
 
 #include <cassert>
 #include <set>
@@ -786,19 +787,9 @@ static std::string json_escape(const std::string &s) {
 void memory_analysis_handler_t::report_json() {
   std::stringstream json_output;
 
-  // Check if this is the first dispatch to write the opening bracket
-  bool is_first_dispatch = (dispatch_id_ == 1);
-  bool is_console_output = (location_ == "console");
-
-  // For kernel filtering, we may have uninitialized dispatch_id_ or only one dispatch
-  // Check if we have any data to output
-  bool has_data = !global_accesses.empty() || !lds_accesses.empty();
-
-  // Write opening bracket for first dispatch (but not for console output)
-  // Also handle case where dispatch_id_ is uninitialized (0) but we have data
-  if (!is_console_output && (is_first_dispatch || (dispatch_id_ == 0 && has_data))) {
-    json_output << "[\n";
-  } else if (!is_first_dispatch && dispatch_id_ > 0) {
+  if (location_ != "console") {
+    json_output << json_array_separator(location_);
+  } else if (dispatch_id_ > 1) {
     json_output << ",\n";
   }
 
@@ -912,7 +903,7 @@ void memory_analysis_handler_t::report_json() {
   json_output << "}";
 
   // Add newline for console output (for readability)
-  if (is_console_output) {
+  if (location_ == "console") {
     json_output << "\n";
   }
 

@@ -101,6 +101,11 @@ run_suite "Kernel filter DWARF survival" "${SCRIPT_DIR}/test_kernel_filter_seman
 # every target is a /bin/sh stub — so this one suite runs on any node.
 run_suite "Exit status propagation" "${SCRIPT_DIR}/test_exit_status.sh"
 
+# Suite 12: regression coverage for bf_json-output-integrity — every analyzer's
+# -t json -o file parses (two kernels, -k excluding the first, a second run to
+# the same file), and -o/-l files are replaced, not appended to. Needs a GPU.
+run_suite "Output file integrity" "${SCRIPT_DIR}/test_json_output.sh"
+
 # Summary
 echo ""
 echo "================================================================================"

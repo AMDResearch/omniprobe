@@ -25,6 +25,7 @@ import argparse
 import os
 import sys
 import io
+import json
 import selectors
 import shutil
 import glob
@@ -70,6 +71,11 @@ def finalize_json_output(location, handlers):
                         # Append closing bracket to complete the JSON array
                         with open(location, "a") as f:
                             f.write("\n]")
+                        try:
+                            with open(location, "r") as f:
+                                json.load(f)
+                        except ValueError as e:
+                            print(f"WARNING: JSON output in {location} does not parse: {e}")
                     elif content.startswith("{") and not content.endswith("]"):
                         # Handle single JSON object case (like with kernel filtering)
                         # Wrap it in an array for consistency
@@ -672,6 +678,7 @@ def add_general_group(parser):
              "\texcess_cache_lines, and bank_conflicts.\n"
              "\tBasicBlockAnalysis JSON: per-block objects with basic_block_id, source_file,\n"
              "\tline, timing percentiles (p25-p99), min/max cycles, and wave_count.\n"
+             "\tHeatmap and AddressLogger JSON: one object per line (JSON Lines).\n"
              "\tUse with -o to specify an output file, or a timestamped file is\n"
              "\tgenerated automatically. Use -l for CSV output location.\n"
              "\tSee also: omniprobe.api Python module for programmatic access."
@@ -689,7 +696,7 @@ def add_general_group(parser):
         help="\tOutput file for JSON results. Only used when -t json is active.\n"
              "\tIf -t json is used without -o, a timestamped file\n"
              "\t(results_yyyy-mm-dd_hhmmss.json) is generated automatically.\n"
-             "\tIgnored when -t csv."
+             "\tAn existing file is overwritten. Ignored when -t csv."
     )
 
     general_group.add_argument (
@@ -700,7 +707,8 @@ def add_general_group(parser):
         dest="log_location",
         required=False,
         default="console",
-        help="\tThe location where all of your data should be logged. By default it will be to the console."
+        help="\tThe location where all of your data should be logged. By default it will be to the console.\n"
+             "\tAn existing file is overwritten."
     )
     
     general_group.add_argument (
@@ -852,7 +860,16 @@ def main():
             handlers.append(h)
     parms.handlers = handlers
     if len(parms.remaining) != 0 and not parms.dump_env == True:
-        returncode = capture_subprocess_output(parms.remaining[1:], new_env=setup_env(parms))
+        new_env = setup_env(parms)
+        # One run, one output file. Every handler appends (a run writes many
+        # dispatches), so without this a second run to the same -o/-l file
+        # would add to the first one's output, and JSON would no longer parse.
+        if parms.log_location and parms.log_location != "console":
+            try:
+                open(parms.log_location, "w").close()
+            except OSError as e:
+                print(f"WARNING: Could not truncate {parms.log_location}: {e}")
+        returncode = capture_subprocess_output(parms.remaining[1:], new_env=new_env)
         # Finalize JSON output if needed. This happens before exiting on a failed
         # run, so that a target which died partway still leaves parseable output.
         log_location = parms.log_location if parms.log_location else "console"

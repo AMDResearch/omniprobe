@@ -25,6 +25,7 @@ THE SOFTWARE.
 #include <set>
 #include "inc/basic_block_analysis.h"
 #include "inc/time_interval_handler.h"
+#include "inc/json_output.h"
 #include <iomanip>
 #include <fstream>
 #include <cstdint>
@@ -454,8 +455,10 @@ static std::string bb_json_escape(const std::string &s) {
 
 void basic_block_analysis::report_json()
 {
-    setupLogger();
     std::stringstream json_output;
+    if (location_ != "console")
+        json_output << json_array_separator(location_);
+    setupLogger();
 
     json_output << "{\n";
     json_output << "  \"kernel\": \"" << bb_json_escape(strKernel_) << "\",\n";
