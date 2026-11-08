@@ -189,6 +189,41 @@ void InjectBufferInstrumentationFunction(const BasicBlock::iterator &I,
   LocationCounter++;
 }
 
+// A flat pointer's address space is only known at run time. Classify it there:
+// llvm.amdgcn.is.shared / is.private per lane, made wave-uniform with ballots,
+// because v_submit_address sends one address space per wave message. All
+// active lanes shared -> 3 (LDS), all private -> 5 (scratch), none of either
+// -> 1 (global); a wave whose lanes disagree keeps 0 (flat), so it is still
+// counted as unanalyzed rather than misfiled. The address itself needs no
+// conversion: for an LDS location the flat address is what the static LDS
+// path submits as well (aperture base + offset).
+static Value *classifyFlatAddressSpace(IRBuilder<> &Builder, Module &M,
+                                       Value *FlatPtr) {
+  auto &CTX = M.getContext();
+  Type *I1 = Type::getInt1Ty(CTX);
+  Type *I64 = Type::getInt64Ty(CTX);
+  FunctionType *PredFT = FunctionType::get(I1, {FlatPtr->getType()}, false);
+  FunctionCallee IsShared = M.getOrInsertFunction("llvm.amdgcn.is.shared", PredFT);
+  FunctionCallee IsPrivate = M.getOrInsertFunction("llvm.amdgcn.is.private", PredFT);
+  FunctionCallee Ballot = M.getOrInsertFunction(
+      "llvm.amdgcn.ballot.i64", FunctionType::get(I64, {I1}, false));
+
+  Value *Shared = Builder.CreateCall(IsShared, {FlatPtr});
+  Value *Private = Builder.CreateCall(IsPrivate, {FlatPtr});
+  Value *Exec = Builder.CreateCall(Ballot, {Builder.getTrue()});
+  Value *SharedMask = Builder.CreateCall(Ballot, {Shared});
+  Value *PrivateMask = Builder.CreateCall(Ballot, {Private});
+
+  Value *AllShared = Builder.CreateICmpEQ(SharedMask, Exec);
+  Value *AllPrivate = Builder.CreateICmpEQ(PrivateMask, Exec);
+  Value *NoneSpecial = Builder.CreateICmpEQ(
+      Builder.CreateOr(SharedMask, PrivateMask), Builder.getInt64(0));
+  Value *Space = Builder.CreateSelect(NoneSpecial, Builder.getInt8(1),
+                                      Builder.getInt8(0));
+  Space = Builder.CreateSelect(AllPrivate, Builder.getInt8(5), Space);
+  return Builder.CreateSelect(AllShared, Builder.getInt8(3), Space);
+}
+
 template <typename LoadOrStoreInst>
 void InjectInstrumentationFunction(const BasicBlock::iterator &I,
                                    const Function &F, llvm::Module &M,
@@ -225,7 +260,14 @@ void InjectInstrumentationFunction(const BasicBlock::iterator &I,
   Value *DbgColumnVal = Builder.getInt32(DL != nullptr ? DL->getColumn() : 0);
   Value *Op = LSI->getPointerOperand()->stripPointerCasts();
   uint32_t AddrSpace = cast<PointerType>(Op->getType())->getAddressSpace();
-  Value *AddrSpaceVal = Builder.getInt8(AddrSpace);
+  // A cast from flat to a specific space is stripped above; the accessed
+  // pointer's own space is then the precise one.
+  uint32_t AccessAddrSpace = cast<PointerType>(Addr->getType())->getAddressSpace();
+  if (AccessAddrSpace != 0)
+    AddrSpace = AccessAddrSpace;
+  Value *AddrSpaceVal = AddrSpace == 0
+                            ? classifyFlatAddressSpace(Builder, M, Addr)
+                            : Builder.getInt8(AddrSpace);
   uint16_t PointeeTypeSize = M.getDataLayout().getTypeStoreSize(PointeeType);
   Value *PointeeTypeSizeVal = Builder.getInt16(PointeeTypeSize);
 
