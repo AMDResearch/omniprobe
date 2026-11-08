@@ -1291,26 +1291,36 @@ void handlerManager::getMessageHandlers(const std::string& strKernel, uint64_t d
         it.second(strKernel, dispatch_id, outHandlers);
 }
 
+// A handler plugin that cannot be used is a configuration error the user must
+// fix, so it ends the run instead of silently falling back to the default
+// handlers. _exit, not exit: this runs while the interceptor is being
+// constructed, and exit's handlers (rocprofiler's finalizer calls back into
+// the interceptor) deadlocked on the lock held during construction.
+[[noreturn]] static void fatalHandlerError(const std::string& msg)
+{
+    std::cerr << "omniprobe: ERROR: " << msg << std::endl;
+    std::cout.flush();
+    std::cerr.flush();
+    _exit(1);
+}
+
 bool handlerManager::setHandlers(const std::vector<std::string>& handlers)
 {
     for (auto lib : handlers)
     {
         void *handle = dlopen(lib.c_str(),RTLD_NOW | RTLD_GLOBAL | RTLD_NODELETE);
-        std::cerr << "handlerManager: Opened" << lib.c_str() << std::endl;
         if (!handle)
-        {
-            std::cerr << "dlopen failed: " <<  dlerror() << std::endl;
-            std::cerr << "ERROR: " << errno << " while trying to load " << lib << std::endl;
-            exit(1);
-        }
-        else
-        {
-            getMessageHandlers_t func = reinterpret_cast<getMessageHandlers_t>(dlsym(handle, "getMessageHandlers"));
-            if (func)
-            {
-                plugins_[handle] = func;
-            }
-        }
+            fatalHandlerError("cannot load handler plugin " + lib + ": " + dlerror());
+        std::cerr << "handlerManager: Opened " << lib << std::endl;
+        getMessageHandlers_t func = reinterpret_cast<getMessageHandlers_t>(dlsym(handle, "getMessageHandlers"));
+        if (!func)
+            fatalHandlerError(lib + " is not an omniprobe handler plugin: it has no getMessageHandlers");
+        // Optional: lets a plugin check its own configuration before anything runs.
+        auto validate = reinterpret_cast<validateHandlers_t>(dlsym(handle, "omniprobeValidateHandlers"));
+        std::string error;
+        if (validate && !validate(error))
+            fatalHandlerError(lib + ": " + error);
+        plugins_[handle] = func;
     }
     return true;
 }

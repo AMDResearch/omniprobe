@@ -33,4 +33,12 @@ extern "C"{
 
 }
 
+// Optional second entry point. If a plugin exports it, omniprobe calls it once,
+// right after loading the plugin and before any kernel runs; returning false
+// (with a message in error) ends the run with that error.
+extern "C" {
+    PUBLIC_API bool omniprobeValidateHandlers(std::string& error);
+}
+typedef bool (*validateHandlers_t)(std::string& error);
+
 typedef void (*getMessageHandlers_t)(const std::string& kernel, uint64_t dispatch_id, std::vector<dh_comms::message_handler_base *>& outHandlers);

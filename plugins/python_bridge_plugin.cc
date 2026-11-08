@@ -127,17 +127,34 @@ private:
 } // namespace
 
 extern "C"{
-    PUBLIC_API void getMessageHandlers(const std::string& kernel, uint64_t dispatch_id, std::vector<dh_comms::message_handler_base *>& outHandlers)
+    // Called once when omniprobe loads this plugin, before any kernel runs: a
+    // module that cannot be used ends the run with an error, instead of every
+    // dispatch silently falling back to the default handlers (exit status 0).
+    PUBLIC_API bool omniprobeValidateHandlers(std::string& error)
     {
         const char* module = std::getenv("OMNIPROBE_PYTHON_HANDLER");
         if (module == NULL || *module == '\0') {
-            std::cerr << "PythonHandler: set OMNIPROBE_PYTHON_HANDLER to a .py file or a module name; no Python handler installed" << std::endl;
-            return;
+            error = "PythonHandler: set OMNIPROBE_PYTHON_HANDLER to a .py file or an importable module name";
+            return false;
         }
         try {
-            outHandlers.push_back(new python_bridge_handler_t(module, kernel, dispatch_id));
+            pythonMessageHandler probe(module);   // imports the module and checks its functions
         } catch (const std::exception& e) {
-            std::cerr << "PythonHandler: " << e.what() << "; no Python handler installed" << std::endl;
+            error = std::string("PythonHandler: ") + e.what();
+            return false;
+        }
+        return true;
+    }
+
+    PUBLIC_API void getMessageHandlers(const std::string& kernel, uint64_t dispatch_id, std::vector<dh_comms::message_handler_base *>& outHandlers)
+    {
+        // Validated at load time; a failure here is unexpected, so say so loudly.
+        const char* module = std::getenv("OMNIPROBE_PYTHON_HANDLER");
+        try {
+            outHandlers.push_back(new python_bridge_handler_t(module ? module : "", kernel, dispatch_id));
+        } catch (const std::exception& e) {
+            std::cerr << "omniprobe: ERROR: PythonHandler: " << e.what() << "; dispatch " << dispatch_id
+                      << " of " << kernel << " gets no Python handler" << std::endl;
         }
     }
 }
