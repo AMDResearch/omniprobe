@@ -120,6 +120,8 @@ Note that two overlaps recorded above are still live and still matter on resume:
 | ft_flat-address-classification | feature | 2026-11-08 |
 | bf_bb-interval-dynamic-alloca | bugfix | 2026-11-08 |
 | iv_bb-interval-timing-spike | investigation | 2026-11-08 |
+| ft_pythonhandler-wave-fields | feature | 2026-11-08 |
+| bf_robustness-errors | bugfix | 2026-11-08 |
 
 ## Completed (migrated from KT)
 

@@ -18,10 +18,10 @@
 6. ~~Real per-block timing via BBInterval~~ 2026-11-08: crash fixed (`bf_bb-interval-dynamic-alloca`),
    pinning landed, spike says **no** for PENNANT-like code -> outcome (c) per supervisor ruling:
    documented as experimental, no analyzer (`done/iv_bb-interval-timing-spike`).
-7. Next (supervisor, 2026-11-08): PythonHandler per-wave message fields (ikimpl spec); then a
-   robustness packet: unusable PythonHandler module -> error; silent `[]` when llvm-objdump is not
-   found; exit-summary print race (`src/interceptor.cc:285-298`); `-a <nonexistent .so>` hang.
-   Also: confirm a Build CI run used the v3.9.0 toolchain image.
+7. ~~PythonHandler per-wave fields~~ (`ft_pythonhandler-wave-fields`) and ~~robustness bundle~~
+   (`bf_robustness-errors`: plugin-load hang, silent fallbacks, dropped dispatches without
+   ROCM_PATH, split exit summary) done 2026-11-08. Still open: confirm a Build CI run used the
+   v3.9.0 toolchain image.
 
 Known, not queued: `-t json` without `-o` writes `results_<YYYY-mm-dd_HHMMSS>.json` in the
 working directory, so two runs started in the same second in the same directory share (and
@@ -33,7 +33,7 @@ follow-up, build-tree bitcode, `bf_library-filter-chain-silent-pass`, `bf_bba-ha
 counts per BBStart block, no timing), `bf_intern-clone-name`, `bf_plugin-missing-bitcode-fatal`,
 `ft_python-api-coverage`, `bf_plugin-dhcomms-cuid-duplicate`, `bf_zero-param-kernel-match`,
 `bf_lds-split-entries`, `bf_source-attribution-gaps`, `bf_logger-record-interleave`, `bf_faulted-dispatch-hang`, `bf_pyhandler-gil`. GitHub: #40,
-#37 merged; #39 and issue #20 closed with comments; #42 untouched (deferred). Full suite: **22**
+#37 merged; #39 and issue #20 closed with comments; #42 untouched (deferred). Full suite: **23**
 suites. Pushes are gated on `scripts/leak-scan.sh` exiting 0.
 
 **Session history (no captures fabricated):**
