@@ -235,3 +235,11 @@ set_property(SOURCE ${_instrumented_test_sources} APPEND PROPERTY OBJECT_DEPENDS
     ${INST_PLUGIN}
     ${CMAKE_BINARY_DIR}/lib/plugins/libAMDGCNSubmitBBStart-rocm.so
     ${CMAKE_BINARY_DIR}/lib/plugins/libAMDGCNSubmitBBInterval-rocm.so)
+# Those files are produced by the plugin targets, so every target here must be
+# ordered after all three; ordering after its own plugin only made a clean
+# parallel build fail with "No rule to make target lib/plugins/...so".
+get_property(_test_kernel_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_t IN LISTS _test_kernel_targets)
+    add_dependencies(${_t} AMDGCNSubmitAddressMessages-rocm
+        AMDGCNSubmitBBStart-rocm AMDGCNSubmitBBInterval-rocm)
+endforeach()
