@@ -117,7 +117,7 @@ void time_interval_handler_t::report() {
 }
 
 void time_interval_handler_t::clear() {
-  first_start_ = 0;
+  first_start_ = 0xffffffffffffffff;   // as in the constructors: "no interval seen yet"
   last_stop_ = 0;
   total_time_ = 0;
   no_intervals_ = 0;
