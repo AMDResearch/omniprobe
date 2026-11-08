@@ -167,7 +167,13 @@ std::string getInstrumentedName(const std::string& func_decl) {
     std::string result = func_decl;
     size_t pos = result.find_last_of(')');
     if (pos != std::string::npos) {
-        result.replace(pos, 1, ", void*)");
+        // The pass appends "Pv" to the mangled name. For a kernel without
+        // parameters that is "_Z1kv" + "Pv", which demangles as k(void, void*),
+        // not k(void*): the "v" marking the empty list stays.
+        if (pos > 0 && result[pos - 1] == '(')
+            result.replace(pos, 1, "void, void*)");
+        else
+            result.replace(pos, 1, ", void*)");
         pos = result.find_first_of(" ");
         size_t ret_type = result.find_first_of("(");
         // If pos > ret_type this means that there's no return type in the kernel name

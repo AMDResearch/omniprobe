@@ -1,7 +1,8 @@
 #!/bin/bash
 ################################################################################
 # Internal-linkage kernels under -fgpu-rdc are instrumented and analyzed like
-# external ones, for both flavours of the ".intern.<hash>" suffix.
+# external ones, for both flavours of the ".intern.<hash>" suffix; so are
+# kernels without parameters (bf_zero-param-kernel-match).
 #
 # Regression test for bf_intern-clone-name. A static or anonymous-namespace
 # kernel compiled with -fgpu-rdc gets a symbol ending in ".intern.<hash>".
@@ -76,13 +77,13 @@ flavour_case() {
     TESTS_RUN=$((TESTS_RUN + 1))
     echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} intern_${flavour}_all_kernels_instrumented"
     local missing=""
-    for k in kernel_external kernel_static kernel_anon; do
+    for k in kernel_external kernel_static kernel_anon kernel_noargs kernel_static_noargs; do
         grep -q "Found instrumented alternative for .*$k" "$log" || missing="$missing $k"
     done
     if [ -n "$missing" ] || grep -q "No instrumented alternative found" "$log"; then
         fail "not instrumented:${missing:- (see 'No instrumented alternative' in $log)}"
     else
-        pass "all three kernels ran their instrumented clones"
+        pass "all five kernels ran their instrumented clones"
     fi
 
     TESTS_RUN=$((TESTS_RUN + 1))
@@ -95,7 +96,7 @@ try:
 except Exception as e:
     print(f"BAD output unusable: {e}"); sys.exit()
 bad = []
-for k in ("kernel_external", "kernel_static", "kernel_anon"):
+for k in ("kernel_external", "kernel_static", "kernel_anon", "kernel_noargs(", "kernel_static_noargs"):
     entries = [d for d in data if k in d.get("kernel", "")]
     acc = [a for d in entries for a in d.get("accesses", [])]
     if not acc or any(os.path.basename(a.get("source_file", "")) != "intern_linkage_test.cpp" for a in acc):
