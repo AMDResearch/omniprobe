@@ -375,6 +375,9 @@ bool memory_analysis_handler_t::handle_cache_line_count_analysis(const message_t
     if (verbose_) {
       printf("No instruction found in ISA for source line in IR, may have been combined with other instructions.\n");
     }
+    // Dropped, but counted: without debug info (-g) this is every message,
+    // and the report would otherwise just look empty.
+    unattributed_++;
     return true;
   }
   bool data_size_corrected = false;
@@ -442,6 +445,14 @@ bool memory_analysis_handler_t::handle_cache_line_count_analysis(const message_t
 
   auto line = message.wave_header().dwarf_line;
   auto column = message.wave_header().dwarf_column;
+  // No exact file/line/column match in the ISA (e.g. the column moved): the
+  // access is still counted at the location the plugin recorded, so take the
+  // file from its hash instead of leaving it empty.
+  if (dwarf_info.fname.empty()) {
+    dwarf_info.fname = sourceFileForHash(message.wave_header().dwarf_fname_hash);
+    if (dwarf_info.fname.rfind("<unresolved", 0) == 0 || dwarf_info.fname == "<unknown>")
+      dwarf_info.fname = "<unknown source file>";
+  }
   const auto &fname = dwarf_info.fname;
   auto &accesses = global_accesses[fname][line][column]; // reference to std::vector of global_accesses_t
 
@@ -679,6 +690,11 @@ void memory_analysis_handler_t::report() {
             "(address space unknown at compile time; typical of -O0 builds and of pointers loaded from memory)\n",
             kernel_.c_str(), (unsigned long)dispatch_id_, (unsigned long)unanalyzed_flat_);
 
+  if (unattributed_)
+    fprintf(stderr, "omniprobe MemoryAnalysis: %s dispatch %lu: %lu access(es) not analyzed: no ISA instruction "
+            "found for their source line (no debug info? compile with -g)\n",
+            kernel_.c_str(), (unsigned long)dispatch_id_, (unsigned long)unattributed_);
+
   if (bFormatJson) {
     report_json();
   } else {
@@ -896,6 +912,7 @@ void memory_analysis_handler_t::report_json() {
 
   json_output << "\n  ],\n";
   json_output << "  \"unanalyzed_flat_accesses\": " << unanalyzed_flat_ << ",\n";
+  json_output << "  \"unattributed_accesses\": " << unattributed_ << ",\n";
 
   // Metadata section
   json_output << "  \"metadata\": {\n";

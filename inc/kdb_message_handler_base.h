@@ -28,6 +28,7 @@ THE SOFTWARE.
 #include <set>
 #include <sstream>
 #include <string>
+#include <vector>
 
 /// Base class for Omniprobe message handlers that need access to KernelDB.
 ///
@@ -56,9 +57,14 @@ protected:
       file_names_[std::hash<std::string>{}("<unknown source file>")] = "<unknown>";
       if (kdb_p_) {
         try {
+          // Through the line map, the lookup MemoryAnalysis's attribution uses:
+          // the instruction copies held by basic blocks do not carry file ids
+          // in every build (measured: non-RDC, two source files).
           std::set<size_t> path_ids;
-          for (auto &block : kdb_p_->getKernel(kernel_name_).getBasicBlocks())
-            for (auto &inst : block->getInstructions())
+          std::vector<uint32_t> lines;
+          kdb_p_->getKernelLines(kernel_name_, lines);
+          for (auto line : lines)
+            for (auto &inst : kdb_p_->getInstructionsForLine(kernel_name_, line))
               path_ids.insert(inst.path_id_);
           for (auto id : path_ids) {
             if (id == 0 || id == (size_t)-1)

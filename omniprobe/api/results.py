@@ -40,11 +40,15 @@ class KernelMemoryResult:
     ``unanalyzed_flat_accesses`` counts wave-level accesses through flat
     pointers, whose address space is unknown at compile time; they are not
     analyzed. Typical of -O0 builds and of pointers loaded from memory.
+    ``unattributed_accesses`` counts wave-level global accesses dropped because
+    no ISA instruction was found for their source line; all of them when the
+    binary has no debug info (build with -g).
     """
     kernel_name: str
     dispatch_id: int
     accesses: list[MemoryAccess] = field(default_factory=list)
     unanalyzed_flat_accesses: int = 0
+    unattributed_accesses: int = 0
 
 
 @dataclass

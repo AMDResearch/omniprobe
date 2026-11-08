@@ -271,7 +271,10 @@ through *flat* pointers, which are not analyzed because their address space is
 only known at run time. All accesses are flat at `-O0` (CMake's Debug
 default) and when a pointer is loaded from memory, so a kernel with no
 `accesses` but a non-zero count needs an optimized build (`-O1` or higher). A
-line on stderr reports the count per dispatch.
+line on stderr reports the count per dispatch. Likewise `unattributed_accesses` counts global
+accesses dropped because no ISA instruction was found for their source line:
+all of them when the binary was built without `-g` (DWARF line info is how
+accesses are matched to instructions), so build with `-g`.
 
 #### BasicBlockAnalysis JSON schema
 
@@ -552,7 +555,7 @@ if none exists.
 
 **`analyze_memory(...)`** → `MemoryAnalysisResult`: per kernel dispatch
 (`KernelMemoryResult`: `kernel_name`, `dispatch_id`, `accesses`,
-`unanalyzed_flat_accesses`), each `MemoryAccess` with `source_file`, `line`,
+`unanalyzed_flat_accesses`, `unattributed_accesses`), each `MemoryAccess` with `source_file`, `line`,
 `column`, `memory_space`, `access_type`, `execution_count`,
 `excess_cache_lines`, `bank_conflicts`, `cache_lines_needed`,
 `cache_lines_used`, `isa_instruction`, `ir_bytes`, `isa_bytes`.
