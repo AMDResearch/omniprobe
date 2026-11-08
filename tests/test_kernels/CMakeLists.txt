@@ -45,6 +45,16 @@ target_compile_options(python_handler_test PRIVATE
 target_link_options(python_handler_test PRIVATE -fgpu-rdc)
 add_dependencies(python_handler_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
 
+# A kernel that faults on the GPU (bf_faulted-dispatch-hang)
+add_executable(fault_test fault_test.cpp)
+set_source_files_properties(fault_test.cpp PROPERTIES LANGUAGE HIP)
+target_compile_options(fault_test PRIVATE
+    ${TEST_KERNEL_COMPILE_FLAGS}
+    -fpass-plugin=${INST_PLUGIN}
+)
+target_link_options(fault_test PRIVATE -fgpu-rdc)
+add_dependencies(fault_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
+
 # Bank conflict test kernel - LDS bank conflicts via unpadded matrix transpose
 add_executable(bank_conflict_test bank_conflict_test.cpp)
 set_source_files_properties(bank_conflict_test.cpp PROPERTIES LANGUAGE HIP)

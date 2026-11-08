@@ -143,6 +143,11 @@ run_suite "Two-file application" "${SCRIPT_DIR}/test_two_file_app.sh"
 # delivering dispatches, with exact counts, in one interpreter. Needs a GPU.
 run_suite "PythonHandler message handler" "${SCRIPT_DIR}/test_python_handler.sh"
 
+# Suite 20: regression coverage for bf_faulted-dispatch-hang — a kernel that
+# faults on the GPU ends the run with the application's status instead of
+# hanging at exit. Needs a GPU.
+run_suite "Faulted dispatch" "${SCRIPT_DIR}/test_faulted_dispatch.sh"
+
 # Summary
 echo ""
 echo "================================================================================"
