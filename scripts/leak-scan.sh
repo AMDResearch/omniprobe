@@ -160,10 +160,14 @@ while IFS= read -r commit; do
 
   # -- touched paths and added lines --------------------------------------
   #
-  # -m shows a merge against each parent rather than nothing at all, so content
-  # introduced by a conflict resolution is scanned. A merge's lines are then
-  # counted once per parent; the census is a measure of how much was read, not
-  # a diff statistic.
+  # A merge is shown against its first parent rather than nothing at all, so
+  # content introduced by a conflict resolution is scanned. (omniprobe change,
+  # 2026-11-08: the framework's -m also diffs against the *other* parents, which
+  # for a merge of an old branch reports everything the mainline gained since
+  # the branch point as "added" by the merge — 10 false findings on the PR #40
+  # merge, all already-published, baselined lines. What the merge brings in
+  # from the side branch is still scanned: those commits are in the range, or
+  # their lines show up in the first-parent diff.)
   while IFS=$'\t' read -r _added _deleted path; do
     [ -z "${path:-}" ] && continue
 
@@ -175,14 +179,14 @@ while IFS= read -r commit; do
     # as matching *contents*. Scanning the whole commit's diff in one pass and
     # attributing hits to a filename column would report exactly that false
     # positive, and the two call for different fixes: an edit versus a rename.
-    added="$(git show --format= --unified=0 --no-renames -m "$commit" -- "$path" \
+    added="$(git show --format= --unified=0 --no-renames --diff-merges=first-parent "$commit" -- "$path" \
              | grep '^+' | grep -v '^+++')"
     [ -z "$added" ] && continue
     n_lines=$((n_lines + $(printf '%s\n' "$added" | wc -l)))
     if printf '%s\n' "$added" | grep -qiE -e "$AMP_DEC6_PATTERN"; then
       add_finding "$short" "added-line" "$path" "commit $commit added-line $path"
     fi
-  done < <(git show --format= --numstat --no-renames -m "$commit")
+  done < <(git show --format= --numstat --no-renames --diff-merges=first-parent "$commit")
 done <<EOF
 $commits
 EOF
