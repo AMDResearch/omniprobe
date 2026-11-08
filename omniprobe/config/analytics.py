@@ -6,7 +6,7 @@
     },
     {
         "name": "BasicBlockLogger",
-        "description": "Log raw timestamps from every basic block",
+        "description": "Log one record per wave per basic block entered (needs a BBStart-instrumented binary)",
         "lib_name": "libLogMessages64.so",
         "llvm_plugin": "libAMDGCNSubmitBBStart-triton.so" 
     },
@@ -22,7 +22,7 @@
     },
     {
         "name": "BasicBlockAnalysis",
-        "description": "Analyze memory access efficiency",
+        "description": "Count wave entries and active lanes per basic block (needs a BBStart-instrumented binary)",
         "lib_name": "libBasicBlocks64.so",
         "llvm_plugin": "libAMDGCNSubmitBBStart-triton.so" 
     }

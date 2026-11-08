@@ -118,6 +118,11 @@ run_suite "Build-tree device bitcode" "${SCRIPT_DIR}/test_build_tree_bitcode.sh"
 # binary it cannot interpret warns and exits 0 instead of crashing. Needs a GPU.
 run_suite "BasicBlockAnalysis robustness" "${SCRIPT_DIR}/test_bba_robustness.sh"
 
+# Suite 15: bf_bba-hardening phase 2 — BasicBlockAnalysis counts and source
+# lines match the analytic answer for known control flow; identical runs give
+# identical blocks. Needs a GPU.
+run_suite "BasicBlockAnalysis counts" "${SCRIPT_DIR}/test_bba_counts.sh"
+
 # Summary
 echo ""
 echo "================================================================================"

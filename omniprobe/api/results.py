@@ -32,18 +32,20 @@ class MemoryAnalysisResult:
 
 @dataclass
 class BasicBlock:
-    """Timing and location data for a single basic block."""
+    """Execution counts and source location for one basic block.
+
+    bb_id is the BBStart plugin's number for the block (its position in the
+    instrumented kernel), stable for a given binary. wave_visits counts how
+    often a wave entered the block; active_lanes sums the active lanes over
+    those entries, so active_lanes / wave_visits is the mean lane occupancy.
+    There is no timing: per-block durations are not measured (see docs/usage.md).
+    """
     bb_id: int
     source_file: str
     line: int
-    min_cycles: float
-    max_cycles: float
-    p25: float = 0.0
-    p50: float = 0.0
-    p75: float = 0.0
-    p95: float = 0.0
-    p99: float = 0.0
-    wave_count: int = 0
+    column: int = 0
+    wave_visits: int = 0
+    active_lanes: int = 0
 
 
 @dataclass

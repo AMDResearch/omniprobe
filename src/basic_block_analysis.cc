@@ -33,6 +33,7 @@ THE SOFTWARE.
 #include <algorithm>
 
 std::atomic<bool> basic_block_analysis::banner_displayed_ = false;
+std::atomic<bool> basic_block_analysis::warned_wrong_type_ = false;
 
 double calculatePercentile(std::vector<double>& data, double percentile) {
     if (data.empty()) return 0.0;
@@ -256,108 +257,71 @@ void basic_block_analysis::renderComputeResources(std::ostream& out, const std::
 
 bool basic_block_analysis::handle(const dh_comms::message_t &message)
 {
-    if (!kdb_p_)
-        return true;
-
-    bool bReturn = true;
     auto hdr = message.wave_header();
-    // Only BBStart messages carry a basic-block index in user_data. Anything
-    // else (e.g. address messages from an AddressMessages-instrumented binary,
-    // whose user_data packs access kind and size) used as an index walked off
-    // the end of the block table and crashed.
+    // Only BBStart messages describe basic blocks. Anything else (address
+    // messages from an AddressMessages-instrumented binary, time intervals from
+    // BBInterval) is ignored, with one warning per process.
     if (hdr.user_type != dh_comms::message_type::basic_block_start) {
-        if (!warned_wrong_type_) {
+        bool expected = false;
+        if (warned_wrong_type_.compare_exchange_strong(expected, true))
             std::cerr << "omniprobe basic block analysis: ignoring messages of type " << hdr.user_type
                       << " for " << strKernel_ << "; BasicBlockAnalysis needs a binary instrumented with "
                       << "the BBStart plugin (libAMDGCNSubmitBBStart-*.so)" << std::endl;
-            warned_wrong_type_ = true;
-        }
         return true;
     }
     message_count_++;
-    waveIdentifier_t wave = {hdr.block_idx_x, hdr.block_idx_y, hdr.block_idx_z, hdr.wave_num};
     updateComputeResources(hdr);
 
-    try
-    {
-        uint32_t block_idx = hdr.user_data;
-        auto& thisKernel = kdb_p_->getKernel(kernel_name_);
-        const auto& blocks = thisKernel.getBasicBlocks();
-        if (block_idx >= blocks.size()) {
-            if (!warned_bad_index_) {
-                std::cerr << "omniprobe basic block analysis: block index " << block_idx << " out of range for "
-                          << strKernel_ << " (" << blocks.size() << " blocks known); ignoring such messages"
-                          << std::endl;
-                warned_bad_index_ = true;
-            }
-            return true;
-        }
-        kernelDB::basicBlock *thisBlock = blocks[block_idx].get();
-        auto& instructions = thisBlock->getInstructions();
-        if (instructions.size())
-        {
-            std::set<kernelDB::basicBlock *> blocks;
-            for (auto& in : instructions)
-                blocks_seen_.insert(in.block_);
-            auto biit = block_info_.find(thisBlock);
-            if (hdr.user_type == dh_comms::message_type::time_interval)
-            {
-                assert(false); // Should not be getting here
-                dh_comms::time_interval ti = *(const dh_comms::time_interval *)message.data_item(0);
-                if (biit != block_info_.end())
-                {
-                    biit->second.count_++;
-                    biit->second.thread_count_ += countSetBits(hdr.exec);
-                    biit->second.duration_ += ti.stop - ti.start;
-                }
-                else
-                {
-                    block_info_[thisBlock] = {countSetBits(hdr.exec), 1, ti.stop - ti.start, hdr.dwarf_line};
-                }
-            }
-            else
-            {
-                auto wsit = wave_states_.find(wave);
-                if (wsit != wave_states_.end())
-                {
-                    biit = block_info_.find(wsit->second.current_block_);
-                    double sample_duration = static_cast<double>(hdr.timestamp - wsit->second.start_time_);
-                    if (biit != block_info_.end())
-                    {
-                        biit->second.count_+= wsit->second.count_;
-                        biit->second.thread_count_ += countSetBits(hdr.exec);
-                        biit->second.duration_ += hdr.timestamp - wsit->second.start_time_;
-                        biit->second.duration_samples_.push_back(sample_duration);
-                    }
-                    else
-                    {
-                        block_info_[wsit->second.current_block_] = {countSetBits(hdr.exec), 1, hdr.timestamp - wsit->second.start_time_, 0, {sample_duration}};
-                    }
+    // The block is identified by the BBStart plugin's own number for it
+    // (user_data: the IR basic block's position in the kernel), and attributed
+    // to the source location the plugin recorded. kernelDB's blocks are built
+    // from the ISA with different boundaries and are not used to identify
+    // blocks: an IR block number is not an index into them.
+    auto& bb = blocks_[hdr.user_data];
+    if (bb.wave_visits == 0) {
+        bb.fname_hash = hdr.dwarf_fname_hash;
+        bb.line = hdr.dwarf_line;
+        bb.column = hdr.dwarf_column;
+    }
+    bb.wave_visits++;
+    bb.active_lanes += countSetBits(hdr.exec);
+    return true;
+}
 
-                    if (instructions[instructions.size() - 1].inst_ == "s_endpgm")
-                    {
-                        wave_states_.erase(wsit);
-                    }
-                    else
-                    {
-                        wsit->second.current_block_ = thisBlock;
-                        wsit->second.start_time_ = hdr.timestamp;
-                        wsit->second.count_ = 1;
-                    }
-                }
-                else
-                {
-                    wave_states_[wave] = {thisBlock, hdr.timestamp, 1};
-                }
-            }
+// Source file names for the hashes BBStart sends (std::hash of the path),
+// from the file names kernelDB recorded for this kernel's instructions.
+std::map<uint64_t, std::string> basic_block_analysis::resolveFileNames()
+{
+    std::map<uint64_t, std::string> names;
+    names[std::hash<std::string>{}("<unknown source file>")] = "<unknown>";
+    if (!kdb_p_)
+        return names;
+    try {
+        std::set<size_t> path_ids;
+        for (auto& block : kdb_p_->getKernel(kernel_name_).getBasicBlocks())
+            for (auto& inst : block->getInstructions())
+                path_ids.insert(inst.path_id_);
+        for (auto id : path_ids) {
+            if (id == 0 || id == (size_t)-1)
+                continue;
+            std::string name = kdb_p_->getFileName(kernel_name_, id);
+            if (!name.empty())
+                names[std::hash<std::string>{}(name)] = name;
         }
+    } catch (const std::exception& e) {
+        std::cerr << "omniprobe basic block analysis: no source file names for " << strKernel_ << ": " << e.what() << std::endl;
     }
-    catch (std::runtime_error e)
-    {
-        std::cerr << e.what() << std::endl;
-        return false;
-    }
-    return bReturn;
+    return names;
+}
+
+std::string basic_block_analysis::fileNameFor(const std::map<uint64_t, std::string>& names, uint64_t hash)
+{
+    auto it = names.find(hash);
+    if (it != names.end())
+        return it->second;
+    std::stringstream ss;
+    ss << "<unresolved 0x" << std::hex << hash << ">";
+    return ss.str();
 }
 
 void basic_block_analysis::setupLogger()
@@ -370,77 +334,24 @@ void basic_block_analysis::setupLogger()
 
 void basic_block_analysis::report()
 {
-    if (!kdb_p_) {
-        std::cerr << "omniprobe basic block analysis for kernel " << strKernel_ << " dispatch[" << std::dec << dispatch_id_ << "]\n";
-        return;
-    }
-
     const char* logDurLogFormat= std::getenv("LOGDUR_LOG_FORMAT");
     if (logDurLogFormat && std::string(logDurLogFormat) == "json") {
         report_json();
         return;
     }
 
-    std::map<std::string, uint64_t> inst_counts;
-    bool first_time = false, initialized = true;
     setupLogger();
-    renderComputeResources(*log_file_, "json");
+    bool first_time = false, initialized = true;
     if (banner_displayed_.compare_exchange_strong(first_time, initialized))
         std::cerr << "omniprobe basic block analysis for kernel\n";
-    auto it = block_info_.begin();
-    uint64_t duration = 0;
-    uint64_t block_exec_count = 0;
-    uint64_t thread_exec_count = 0;
-    while (it != block_info_.end())
-    {
-        duration += it->second.duration_;
-        block_exec_count += it->second.count_;
-        thread_exec_count += it->second.thread_count_;
-        it++;
-    }
-
+    auto names = resolveFileNames();
     *log_file_ << "Kernel: " << strKernel_ << std::endl;
     *log_file_ << "Dispatch: " << dispatch_id_ << std::endl;
-    *log_file_ << "Branchiness: " << 1.0 - ( (double) ((double)thread_exec_count / ((double)block_exec_count * 64.0))) << std::endl;
-    *log_file_  << "Start Line, End Line, Duration, FileName, Branchiness, Overhead, Count\n";
-
-    it = block_info_.begin();
-    while (it != block_info_.end())
-    {
-        auto instructions = it->first->getInstructions();
-        for (auto inst : instructions)
-        {
-            auto ic = inst_counts.find(inst.inst_);
-            if (ic != inst_counts.end())
-            {
-                if (inst.inst_.starts_with("v_"))
-                    inst_counts[inst.inst_] += it->second.thread_count_;
-                else
-                    ic->second += it->second.count_;
-            }
-            else
-            {
-                if (inst.inst_.starts_with("v_"))
-                    inst_counts[inst.inst_] = it->second.thread_count_;
-                else
-                    inst_counts[inst.inst_] = it->second.count_;
-            }
-        }
-
-        try
-        {
-            *log_file_ << instructions[0].line_ << "," << instructions[instructions.size() - 1].line_ << "," << it->second.duration_ << "," <<
-                kdb_p_->getFileName(kernel_name_, instructions[0].path_id_) << "," <<  1.0 - ((double) ((double)it->second.thread_count_  / ((double) it->second.count_ * 64.0))) << "," <<
-                    (double)((double) it->second.duration_ / (double) duration)
-                        << "," << it->second.count_ << std::endl;
-        }
-        catch (const std::exception& e)
-        {
-            std::cerr << e.what() << std::endl;
-        }
-
-        it++;
-    }
+    *log_file_ << "basic_block_id,source_file,line,column,wave_visits,active_lanes\n";
+    for (const auto& [id, bb] : blocks_)
+        *log_file_ << id << ",\"" << fileNameFor(names, bb.fname_hash) << "\"," << bb.line << "," << bb.column << ","
+                   << bb.wave_visits << "," << bb.active_lanes << "\n";
+    log_file_->flush();
     if (location_ != "console")
     {
         delete log_file_;
@@ -484,63 +395,21 @@ void basic_block_analysis::report_json()
     json_output << "{\n";
     json_output << "  \"kernel\": \"" << bb_json_escape(strKernel_) << "\",\n";
     json_output << "  \"dispatch_id\": " << dispatch_id_ << ",\n";
-    json_output << "  \"basic_blocks\": [\n";
+    json_output << "  \"basic_blocks\": [";
 
+    auto names = resolveFileNames();
     bool first_block = true;
-    uint32_t block_index = 0;
-
-    for (auto &bi : block_info_) {
-        auto instructions = bi.first->getInstructions();
-        if (instructions.empty())
-            continue;
-
-        if (!first_block) {
-            json_output << ",\n";
-        }
+    for (const auto& [id, bb] : blocks_) {
+        json_output << (first_block ? "\n" : ",\n");
         first_block = false;
-
-        std::string source_file;
-        try {
-            source_file = kdb_p_->getFileName(kernel_name_, instructions[0].path_id_);
-        } catch (...) {
-            source_file = "<unknown>";
-        }
-
-        // Calculate percentiles from duration_samples_
-        double min_cycles = 0, max_cycles = 0;
-        double p25 = 0, p50 = 0, p75 = 0, p95 = 0, p99 = 0;
-        if (!bi.second.duration_samples_.empty()) {
-            std::vector<double> samples = bi.second.duration_samples_;
-            std::sort(samples.begin(), samples.end());
-            min_cycles = samples.front();
-            max_cycles = samples.back();
-            p25 = calculatePercentile(samples, 0.25);
-            p50 = calculatePercentile(samples, 0.50);
-            p75 = calculatePercentile(samples, 0.75);
-            p95 = calculatePercentile(samples, 0.95);
-            p99 = calculatePercentile(samples, 0.99);
-        } else if (bi.second.count_ > 0) {
-            // Fallback: use average if no samples were collected
-            double avg = static_cast<double>(bi.second.duration_) / bi.second.count_;
-            min_cycles = max_cycles = p25 = p50 = p75 = p95 = p99 = avg;
-        }
-
         json_output << "    {\n";
-        json_output << "      \"basic_block_id\": " << block_index << ",\n";
-        json_output << "      \"source_file\": \"" << bb_json_escape(source_file) << "\",\n";
-        json_output << "      \"line\": " << instructions[0].line_ << ",\n";
-        json_output << "      \"end_line\": " << instructions[instructions.size() - 1].line_ << ",\n";
-        json_output << "      \"min_cycles\": " << std::fixed << std::setprecision(1) << min_cycles << ",\n";
-        json_output << "      \"max_cycles\": " << max_cycles << ",\n";
-        json_output << "      \"p25\": " << p25 << ",\n";
-        json_output << "      \"p50\": " << p50 << ",\n";
-        json_output << "      \"p75\": " << p75 << ",\n";
-        json_output << "      \"p95\": " << p95 << ",\n";
-        json_output << "      \"p99\": " << p99 << ",\n";
-        json_output << "      \"wave_count\": " << bi.second.count_ << "\n";
+        json_output << "      \"basic_block_id\": " << id << ",\n";
+        json_output << "      \"source_file\": \"" << bb_json_escape(fileNameFor(names, bb.fname_hash)) << "\",\n";
+        json_output << "      \"line\": " << bb.line << ",\n";
+        json_output << "      \"column\": " << bb.column << ",\n";
+        json_output << "      \"wave_visits\": " << bb.wave_visits << ",\n";
+        json_output << "      \"active_lanes\": " << bb.active_lanes << "\n";
         json_output << "    }";
-
-        block_index++;
     }
 
     json_output << "\n  ]\n";

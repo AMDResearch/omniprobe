@@ -66,6 +66,16 @@ target_compile_options(dual_kernel_bbstart_test PRIVATE
 target_link_options(dual_kernel_bbstart_test PRIVATE -fgpu-rdc)
 add_dependencies(dual_kernel_bbstart_test copy_bitcode AMDGCNSubmitBBStart-rocm)
 
+# Known control flow for BasicBlockAnalysis counts (test_bba_counts.sh)
+add_executable(bb_counts_test bb_counts_test.cpp)
+set_source_files_properties(bb_counts_test.cpp PROPERTIES LANGUAGE HIP)
+target_compile_options(bb_counts_test PRIVATE
+    ${TEST_KERNEL_COMPILE_FLAGS}
+    -fpass-plugin=${CMAKE_BINARY_DIR}/lib/plugins/libAMDGCNSubmitBBStart-rocm.so
+)
+target_link_options(bb_counts_test PRIVATE -fgpu-rdc)
+add_dependencies(bb_counts_test copy_bitcode AMDGCNSubmitBBStart-rocm)
+
 # Block filter test kernel
 add_executable(block_filter_test block_filter_test.cpp)
 set_source_files_properties(block_filter_test.cpp PROPERTIES LANGUAGE HIP)

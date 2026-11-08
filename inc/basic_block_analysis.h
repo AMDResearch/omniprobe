@@ -28,6 +28,15 @@ THE SOFTWARE.
 #include <vector>
 #include <atomic>
 
+// Per BBStart block (keyed by the plugin's block number): how often waves
+// entered it, the active lanes summed over those entries, and where it is.
+struct bb_counts_t {
+    uint64_t wave_visits = 0;
+    uint64_t active_lanes = 0;
+    uint64_t fname_hash = 0;
+    uint32_t line = 0;
+    uint32_t column = 0;
+};
 typedef struct {
     uint64_t thread_count_;
     uint64_t count_;
@@ -132,6 +141,8 @@ public:
     void renderComputeResources(std::ostream& out, const std::string& format);
     void report_json();
 private:
+    std::map<uint64_t, std::string> resolveFileNames();
+    static std::string fileNameFor(const std::map<uint64_t, std::string>& names, uint64_t hash);
     uint64_t first_start_;
     uint64_t last_stop_;
     uint64_t total_time_;
@@ -139,12 +150,12 @@ private:
     bool verbose_;
     std::string strKernel_;
     uint64_t message_count_;
-    bool warned_wrong_type_ = false;
-    bool warned_bad_index_ = false;
     uint64_t dispatch_id_;
     kernelDB::basicBlock *current_block_;
     uint64_t start_time_;
     std::map<waveIdentifier_t,wave_state_t, wave_cmp<waveIdentifier_t>> wave_states_;
+    std::map<uint32_t, bb_counts_t> blocks_;
+    static std::atomic<bool> warned_wrong_type_;
     std::map<kernelDB::basicBlock *, blockInfo_t> block_info_;
     std::map<kernelDB::basicBlock *, uint64_t> block_timings_;
     std::set<kernelDB::basicBlock *> blocks_seen_;

@@ -57,7 +57,18 @@ void InjectInstrumentationFunction(const BasicBlock::iterator &I,
                                    const Function &F, llvm::Module &M,
                                    uint32_t &LocationCounter, llvm::Value *Ptr,
                                    bool PrintLocationInfo) {
-  DILocation *DL = dyn_cast<Instruction>(I)->getDebugLoc();
+  // Attribute the block to the first instruction in it that has a source
+  // line, followed through inlining to the call site in the kernel itself.
+  // The insertion point alone is often a PHI-adjacent instruction without a
+  // location (line 0), or code inlined from a HIP header (e.g. blockIdx).
+  DILocation *DL = nullptr;
+  for (auto It = I; It != I->getParent()->end() && !DL; ++It) {
+    DILocation *Loc = It->getDebugLoc();
+    if (Loc && Loc->getLine() != 0)
+      DL = Loc;
+  }
+  while (DL && DL->getInlinedAt())
+    DL = DL->getInlinedAt();
 
   std::string dbgFile =
       DL != nullptr ? getFullPath(DL) : "<unknown source file>";

@@ -229,14 +229,9 @@ class Omniprobe:
                         bb_id=b.get("basic_block_id", 0),
                         source_file=b.get("source_file", ""),
                         line=b.get("line", 0),
-                        min_cycles=b.get("min_cycles", 0.0),
-                        max_cycles=b.get("max_cycles", 0.0),
-                        p25=b.get("p25", 0.0),
-                        p50=b.get("p50", 0.0),
-                        p75=b.get("p75", 0.0),
-                        p95=b.get("p95", 0.0),
-                        p99=b.get("p99", 0.0),
-                        wave_count=b.get("wave_count", 0),
+                        column=b.get("column", 0),
+                        wave_visits=b.get("wave_visits", 0),
+                        active_lanes=b.get("active_lanes", 0),
                     )
                 )
             result.kernels.append(

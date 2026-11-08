@@ -255,8 +255,11 @@ a flat `accesses` array. Multiple dispatches are wrapped in a JSON array.
 
 #### BasicBlockAnalysis JSON schema
 
-When using `-a BasicBlockAnalysis -t json`, each dispatch produces an object
-with a `basic_blocks` array.
+BasicBlockAnalysis needs a binary instrumented with the BBStart plugin
+(`-fpass-plugin=<omniprobe>/lib/plugins/libAMDGCNSubmitBBStart-rocm.so`). On a
+binary built with another plugin it warns once and reports no blocks. When
+`-t json` is used, each dispatch produces an object with a `basic_blocks`
+array:
 
 ```json
 {
@@ -264,18 +267,12 @@ with a `basic_blocks` array.
   "dispatch_id": 1,
   "basic_blocks": [
     {
-      "basic_block_id": 0,
+      "basic_block_id": 4,
       "source_file": "/path/to/source.hip",
-      "line": 10,
-      "end_line": 25,
-      "min_cycles": 100.0,
-      "max_cycles": 500.0,
-      "p25": 150.0,
-      "p50": 200.0,
-      "p75": 300.0,
-      "p95": 450.0,
-      "p99": 490.0,
-      "wave_count": 64
+      "line": 19,
+      "column": 19,
+      "wave_visits": 80,
+      "active_lanes": 5120
     }
   ]
 }
@@ -283,12 +280,23 @@ with a `basic_blocks` array.
 
 | Field | Description |
 |-------|-------------|
-| `basic_block_id` | Sequential index of the basic block within the kernel |
-| `source_file` | Source file from DWARF info |
-| `line`, `end_line` | Start and end lines of the basic block |
-| `min_cycles`, `max_cycles` | Fastest and slowest observed execution of this block |
-| `p25`–`p99` | Timing percentiles across all wave observations |
-| `wave_count` | Number of wave executions of this block |
+| `basic_block_id` | The BBStart plugin's number for the block: its position among the instrumented kernel's LLVM IR basic blocks. Stable for a given binary, so identical runs give identical ids. The plugin prints the id-to-location mapping at compile time ("Injecting Basic Block tracker N ..."). |
+| `source_file`, `line`, `column` | Source location of the first instruction in the block that has one, followed through inlining to the call site in the kernel itself. |
+| `wave_visits` | How many times a wave entered the block, summed over all waves. A loop body run T times by W waves gives T×W. |
+| `active_lanes` | Active lanes summed over those entries (popcount of the exec mask at block entry). `active_lanes / wave_visits` is the mean number of active lanes per entry; below the wave size it indicates divergence or partially filled waves. |
+
+Blocks no wave entered are not listed. IR blocks are not ISA blocks: the
+compiler may merge, split or duplicate them, so the ids do not correspond to
+blocks in the disassembly.
+
+**No timing.** Earlier versions reported `min_cycles`, `max_cycles` and
+percentiles. Those were intervals between consecutive instrumentation messages
+of a wave, dominated by the cost of the instrumentation itself (waiting for the
+shared message buffer and for the host to drain it): on one kernel the median
+went from about 25 thousand to 4 to 24 million cycles when the grid grew from
+16 to 4096 waves. They have been removed rather than kept as a misleading
+measure of per-block cost. Use the counts to find frequently executed and
+divergent blocks, and rocprofv3 or hardware counters for time.
 
 ### JSON output file (`-o`, `--output`)
 
@@ -490,8 +498,8 @@ for kernel in result.kernels:
 bb_result = op.analyze_basic_blocks("./my_hip_app")
 for kernel in bb_result.kernels:
     for bb in kernel.basic_blocks:
-        print(f"BB {bb.bb_id}: p50={bb.p50:.0f} cycles, "
-              f"wave_count={bb.wave_count}")
+        print(f"BB {bb.bb_id} {bb.source_file}:{bb.line}: "
+              f"{bb.wave_visits} wave visits, {bb.active_lanes} active lanes")
 ```
 
 ### API reference
@@ -505,8 +513,8 @@ a `MemoryAnalysisResult` with per-kernel `accesses` containing `source_file`,
 
 **`analyze_basic_blocks(command, kernel_filter=None, dispatches="all")`** —
 Returns a `BasicBlockResult` with per-kernel `basic_blocks` containing
-`bb_id`, `source_file`, `line`, timing percentiles (`p25`–`p99`),
-`min_cycles`, `max_cycles`, and `wave_count`.
+`bb_id`, `source_file`, `line`, `column`, `wave_visits` and `active_lanes`
+(see the BasicBlockAnalysis JSON schema above for their meaning).
 
 ### Error handling
 

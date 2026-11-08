@@ -75,29 +75,17 @@ BASIC_BLOCK_JSON = json.dumps({
             "basic_block_id": 0,
             "source_file": "/tmp/matmul.hip",
             "line": 10,
-            "end_line": 25,
-            "min_cycles": 100.0,
-            "max_cycles": 500.0,
-            "p25": 150.0,
-            "p50": 200.0,
-            "p75": 300.0,
-            "p95": 450.0,
-            "p99": 490.0,
-            "wave_count": 64,
+            "column": 15,
+            "wave_visits": 16,
+            "active_lanes": 1024,
         },
         {
             "basic_block_id": 1,
             "source_file": "/tmp/matmul.hip",
             "line": 26,
-            "end_line": 40,
-            "min_cycles": 50.0,
-            "max_cycles": 120.0,
-            "p25": 60.0,
-            "p50": 70.0,
-            "p75": 90.0,
-            "p95": 110.0,
-            "p99": 118.0,
-            "wave_count": 64,
+            "column": 7,
+            "wave_visits": 80,
+            "active_lanes": 1280,
         },
     ],
 })
@@ -168,12 +156,10 @@ class TestBasicBlockParsing(unittest.TestCase):
         self.assertEqual(bb0.bb_id, 0)
         self.assertEqual(bb0.source_file, "/tmp/matmul.hip")
         self.assertEqual(bb0.line, 10)
-        self.assertAlmostEqual(bb0.min_cycles, 100.0)
-        self.assertAlmostEqual(bb0.max_cycles, 500.0)
-        self.assertAlmostEqual(bb0.p50, 200.0)
-        self.assertAlmostEqual(bb0.p95, 450.0)
-        self.assertAlmostEqual(bb0.p99, 490.0)
-        self.assertEqual(bb0.wave_count, 64)
+        self.assertEqual(bb0.column, 15)
+        self.assertEqual(bb0.wave_visits, 16)
+        self.assertEqual(bb0.active_lanes, 1024)
+        self.assertEqual(k.basic_blocks[1].wave_visits, 80)
 
     def test_parse_empty(self):
         result = Omniprobe._parse_basic_blocks(EMPTY_JSON)
