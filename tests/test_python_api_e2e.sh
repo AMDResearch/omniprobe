@@ -6,7 +6,7 @@
 # that what the analyzers actually emit comes back through the API with the
 # meaning the result classes document: one address per active lane, block ids
 # that agree between BasicBlockLogger and BasicBlockAnalysis, extended
-# MemoryAccess fields, flat accesses counted, uninstrumented kernels reported.
+# MemoryAccess fields, flat accesses classified or counted, uninstrumented kernels reported.
 #
 # This script must never print the string that run_all_tests.sh treats as a
 # whole-suite skip marker.
@@ -22,15 +22,14 @@ check_omniprobe
 OUT="$OUTPUT_DIR/python_api_e2e"
 mkdir -p "$OUT"
 K="${BUILD_DIR}/tests/test_kernels"
-for b in dual_kernel_test bb_counts_test bb_counts_am_test; do
+for b in dual_kernel_test bb_counts_test bb_counts_am_test flat_access_O0_test; do
     if [ ! -x "$K/$b" ]; then
         echo -e "${RED}ERROR: test kernel not found: $K/$b${NC}"
         exit 1
     fi
 done
 
-# Two extra probes compiled here: a kernel without the plugin (no clone at
-# all) and the same kernel at -O0 with the plugin (all accesses flat).
+# An extra probe compiled here: a kernel without the plugin (no clone at all).
 HIPCC="${ROCM_PATH:-/opt/rocm-7.2.0}/bin/hipcc"
 [ -x "$HIPCC" ] || HIPCC="$(command -v hipcc)"
 ARCH="$(rocminfo 2>/dev/null | sed -n 's/^ *Name: *\(gfx[0-9a-z]*\) *$/\1/p' | head -1)"
@@ -42,10 +41,6 @@ int main() { int* d; (void)hipMalloc(&d, 256); plain_kernel<<<1, 64>>>(d); plain
 EOF
 "$HIPCC" --offload-arch="${ARCH:-gfx90a}" "$OUT/plain.hip" -o "$OUT/plain" > "$OUT/plain.log" 2>&1 || \
     echo "  (compile of the uninstrumented probe failed, see $OUT/plain.log)"
-"$HIPCC" --offload-arch="${ARCH:-gfx90a}" -O0 -g -fgpu-rdc \
-    -fpass-plugin="${OMNIPROBE_ROOT}/lib/plugins/libAMDGCNSubmitAddressMessages-rocm.so" \
-    "$OUT/plain.hip" -o "$OUT/plain_O0" > "$OUT/plain_O0.log" 2>&1 || \
-    echo "  (compile of the -O0 probe failed, see $OUT/plain_O0.log)"
 
 echo "================================================================================"
 echo "Python API end to end"
@@ -126,10 +121,15 @@ def uninstrumented():
     return "plain_kernel reported with 2 dispatches"
 
 def flat_counted():
-    r = op.analyze_memory(f"{out}/plain_O0")
-    assert r.kernels and all(kk.unanalyzed_flat_accesses > 0 and not kk.accesses for kk in r.kernels), \
-        [(kk.kernel_name, kk.unanalyzed_flat_accesses, len(kk.accesses)) for kk in r.kernels]
-    return f"{sum(kk.unanalyzed_flat_accesses for kk in r.kernels)} flat accesses counted, none analyzed"
+    # -O0: every access is flat. Classified at run time, so analyzed; only the
+    # wave whose lanes mix LDS and global stays counted as unanalyzed.
+    r = op.analyze_memory(f"{k}/flat_access_O0_test")
+    by = {kk.kernel_name.split("(")[0]: kk for kk in r.kernels}
+    summary = [(n, kk.unanalyzed_flat_accesses, len(kk.accesses)) for n, kk in by.items()]
+    assert by["strided_read"].unanalyzed_flat_accesses == 0 and by["strided_read"].accesses, summary
+    assert by["mixed_spaces"].unanalyzed_flat_accesses > 0, summary
+    return (f"-O0 strided_read analyzed ({len(by['strided_read'].accesses)} accesses); "
+            f"mixed_spaces {by['mixed_spaces'].unanalyzed_flat_accesses} unanalyzed")
 
 for name, fn in [("heatmap", heatmap), ("log_addresses", addresses), ("log_addresses_max_records", addresses_truncated),
                  ("log_basic_blocks_matches_analysis", basic_blocks), ("memory_access_fields", memory_fields),

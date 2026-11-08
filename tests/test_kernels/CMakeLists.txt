@@ -45,6 +45,18 @@ target_compile_options(python_handler_test PRIVATE
 target_link_options(python_handler_test PRIVATE -fgpu-rdc)
 add_dependencies(python_handler_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
 
+# Flat-pointer accesses (ft_flat-address-classification): the same source at -O2
+# and at -O0, where every access is through a flat pointer.
+foreach(_variant IN ITEMS "flat_access_test;-O2" "flat_access_O0_test;-O0")
+    list(GET _variant 0 _name)
+    list(GET _variant 1 _opt)
+    add_executable(${_name} flat_access_test.cpp)
+    target_compile_options(${_name} PRIVATE ${TEST_KERNEL_COMPILE_FLAGS} ${_opt} -fpass-plugin=${INST_PLUGIN})
+    target_link_options(${_name} PRIVATE -fgpu-rdc)
+    add_dependencies(${_name} copy_bitcode AMDGCNSubmitAddressMessages-rocm)
+endforeach()
+set_source_files_properties(flat_access_test.cpp PROPERTIES LANGUAGE HIP)
+
 # A kernel that faults on the GPU (bf_faulted-dispatch-hang)
 add_executable(fault_test fault_test.cpp)
 set_source_files_properties(fault_test.cpp PROPERTIES LANGUAGE HIP)
@@ -195,3 +207,13 @@ set_source_files_properties(module_load_test.cpp PROPERTIES LANGUAGE HIP)
 target_link_libraries(module_load_test PRIVATE amdhip64)
 add_dependencies(module_load_test module_load_kernel_hsaco)
 
+
+# The instrumentation plugins run inside the compiler, so a rebuilt plugin must
+# recompile the kernels it instruments; add_dependencies only orders the build.
+# Without this, a plugin change left the instrumented test binaries stale and the
+# suites tested the previous plugin.
+file(GLOB _instrumented_test_sources CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/*.hip)
+set_property(SOURCE ${_instrumented_test_sources} APPEND PROPERTY OBJECT_DEPENDS
+    ${INST_PLUGIN}
+    ${CMAKE_BINARY_DIR}/lib/plugins/libAMDGCNSubmitBBStart-rocm.so)

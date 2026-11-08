@@ -148,6 +148,11 @@ run_suite "PythonHandler message handler" "${SCRIPT_DIR}/test_python_handler.sh"
 # hanging at exit. Needs a GPU.
 run_suite "Faulted dispatch" "${SCRIPT_DIR}/test_faulted_dispatch.sh"
 
+# Suite 21: ft_flat-address-classification — MemoryAnalysis analyzes flat-pointer
+# accesses (-O0 builds, pointers loaded from memory): the same findings at -O0 as
+# at -O2. Needs a GPU.
+run_suite "Flat-pointer accesses" "${SCRIPT_DIR}/test_flat_access.sh"
+
 # Summary
 echo ""
 echo "================================================================================"
