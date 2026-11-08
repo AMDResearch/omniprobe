@@ -88,6 +88,7 @@ typedef struct kernel_info{
 typedef struct ld_kernel_descriptor {
     std::string name_;
     hsa_executable_symbol_t symbol_;
+    std::string kdb_name_;          // name for kernelDB lookups (see kernelDBName)
     hsa_agent_t agent_;
     uint32_t kernarg_size_;
 }ld_kernel_descriptor_t;
@@ -161,6 +162,8 @@ private:
     std::map<hsa_signal_t, kernel_info_t, hsa_cmp<hsa_signal_t>> pending_signals_;
     std::vector<hsa_signal_t> sig_pool_;
     std::map<uint64_t, ld_kernel_descriptor_t> kernel_objects_;
+    std::map<std::string, uint64_t> uninstrumented_kernels_;   // name -> dispatches without a clone
+    std::mutex uninstrumented_mutex_;
     std::map<hsa_signal_t, hsa_signal_t, hsa_cmp<hsa_signal_t>> app_sigs_;
     std::vector<dh_comms::dh_comms *> buffers_;
     std::map<std::string, std::string> config_;

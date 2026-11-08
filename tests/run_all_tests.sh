@@ -123,6 +123,11 @@ run_suite "BasicBlockAnalysis robustness" "${SCRIPT_DIR}/test_bba_robustness.sh"
 # identical blocks. Needs a GPU.
 run_suite "BasicBlockAnalysis counts" "${SCRIPT_DIR}/test_bba_counts.sh"
 
+# Suite 16: regression coverage for bf_intern-clone-name — static and
+# anonymous-namespace kernels under -fgpu-rdc, both .intern hash flavours, and
+# the end-of-run summary of kernels without an instrumented clone. Needs a GPU.
+run_suite "Internal-linkage kernels" "${SCRIPT_DIR}/test_intern_linkage.sh"
+
 # Summary
 echo ""
 echo "================================================================================"

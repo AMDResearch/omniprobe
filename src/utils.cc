@@ -114,6 +114,55 @@ std::string getExecutablePath() {
 }
 
 
+// Demangle a kernel symbol for use as a name-table key, the same way for every
+// internal-linkage kernel under -fgpu-rdc.
+//
+// Such kernels end in ".intern.<hash>". libstdc++ demangles that suffix only
+// when <hash> starts with a letter (it rejects a digit-leading clone suffix
+// containing letters), so about 10 in 16 translation units kept raw mangled
+// names while the rest got demangled ones. Worse, the pass names the clone
+// "__amd_crk_" + <symbol> + "Pv", which puts "Pv" after the suffix
+// ("__amd_crk__ZL8kernelPi.intern.<hash>Pv.kd"); that never demangles, so for
+// letter-leading hashes the clone's key could not match
+// getInstrumentedName(<original's key>) and the kernel ran uninstrumented.
+//
+// Here the part before ".intern." is demangled on its own (with "Pv" moved
+// back into the mangling for clones) and the suffix is re-attached in
+// libstdc++'s own "[clone .intern] [clone .<hash>]" form, so originals and
+// clones of both hash flavours get demangled keys that getInstrumentedName
+// maps onto each other. Clones are not renamed, so libraries instrumented
+// with the existing pass keep working.
+std::string demangleKernelName(const std::string& symbol)
+{
+    static const std::regex clone_intern(R"(^(__amd_crk_.*)\.intern\.([0-9a-fA-F]+)Pv(\.kd)?$)");
+    static const std::regex orig_intern(R"(^(.*)\.intern\.([0-9a-fA-F]+)(\.kd)?$)");
+    std::smatch m;
+    std::string base;
+    if (std::regex_match(symbol, m, clone_intern))
+        base = m[1].str() + "Pv";
+    else if (std::regex_match(symbol, m, orig_intern))
+        base = m[1].str();
+    if (!base.empty()) {
+        std::string demangled = kernelDB::demangleName(base.c_str());
+        if (!demangled.empty() && demangled != base)
+            return demangled + " [clone .intern] [clone ." + m[2].str() + "]" + (m[3].matched ? " [clone .kd]" : "");
+    }
+    return kernelDB::demangleName(symbol.c_str());
+}
+
+// The name under which kernelDB filed a kernel: kernelDB keys kernels by
+// getKernelName(demangleName(<symbol without ".kd">)), and its demangling and
+// truncation differ from ours for names it cannot demangle (it drops the last
+// "."-component, e.g. the .intern hash). Handlers that look kernels up in
+// kernelDB must use this, not our display name.
+std::string kernelDBName(const std::string& symbol)
+{
+    std::string s = symbol;
+    if (s.size() > 3 && s.compare(s.size() - 3, 3, ".kd") == 0)
+        s.erase(s.size() - 3);
+    return kernelDB::demangleName(s.c_str());
+}
+
 std::string getInstrumentedName(const std::string& func_decl) {
     std::string result = func_decl;
     size_t pos = result.find_last_of(')');
@@ -653,7 +702,7 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
                     CHECK_STATUS("Can't retrieve name from valid symbol", apiTable_->core_->hsa_executable_symbol_get_info_fn(sym, HSA_EXECUTABLE_SYMBOL_INFO_NAME, sym_name));
                     std::string mangledName(sym_name);
 
-                    string strName = kernelDB::demangleName(sym_name);
+                    string strName = demangleKernelName(sym_name);
                     // If a kernel filter was supplied, match the demangled name to the filter. If there's no match,
                     // skip this symbol because we don't want to run instrumented for kernels whose names don't
                     // match on the filter
@@ -1133,7 +1182,7 @@ void KernelArgHelper::computeKernargData(amd_comgr_metadata_node_t exec_map)
             amd_comgr_metadata_node_t field;
             CHECK_COMGR(amd_comgr_metadata_lookup(value,".symbol", &field));
             std::string strName = get_metadata_string(field);
-            strName = kernelDB::demangleName(strName.c_str());
+            strName = demangleKernelName(strName);
             arg_descriptor_t desc = {};
             amd_comgr_metadata_node_t args;
             CHECK_COMGR(amd_comgr_metadata_lookup(value, ".args", &args));

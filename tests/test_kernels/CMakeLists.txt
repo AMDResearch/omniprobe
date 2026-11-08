@@ -76,6 +76,25 @@ target_compile_options(bb_counts_test PRIVATE
 target_link_options(bb_counts_test PRIVATE -fgpu-rdc)
 add_dependencies(bb_counts_test copy_bitcode AMDGCNSubmitBBStart-rocm)
 
+# Internal-linkage kernels under -fgpu-rdc (test_intern_linkage.sh). The
+# .intern.<hash> suffix is derived from the compilation unit ID; fixing -cuid
+# makes the hash deterministic. cuid "a" -> letter-leading hash, "c" ->
+# digit-leading (the test asserts which one it got).
+foreach(_flavour_cuid IN ITEMS "letter:a" "digit:c")
+    string(REPLACE ":" ";" _fc "${_flavour_cuid}")
+    list(GET _fc 0 _flavour)
+    list(GET _fc 1 _cuid)
+    add_executable(intern_${_flavour}_test intern_linkage_test.cpp)
+    target_compile_options(intern_${_flavour}_test PRIVATE
+        ${TEST_KERNEL_COMPILE_FLAGS}
+        -cuid=${_cuid}
+        -fpass-plugin=${INST_PLUGIN}
+    )
+    target_link_options(intern_${_flavour}_test PRIVATE -fgpu-rdc)
+    add_dependencies(intern_${_flavour}_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
+endforeach()
+set_source_files_properties(intern_linkage_test.cpp PROPERTIES LANGUAGE HIP)
+
 # Block filter test kernel
 add_executable(block_filter_test block_filter_test.cpp)
 set_source_files_properties(block_filter_test.cpp PROPERTIES LANGUAGE HIP)

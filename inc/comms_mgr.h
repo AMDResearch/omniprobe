@@ -56,7 +56,7 @@ class comms_mgr
 public: 
     comms_mgr(HsaApiTable *pTable);
     ~comms_mgr();
-    dh_comms::dh_comms * checkoutCommsObject(hsa_agent_t agent, std::string& strKernelName, uint64_t dispatch_id, kernelDB::kernelDB *kdb);
+    dh_comms::dh_comms * checkoutCommsObject(hsa_agent_t agent, std::string& strKernelName, const std::string& kdbKernelName, uint64_t dispatch_id, kernelDB::kernelDB *kdb);
     bool checkinCommsObject(hsa_agent_t agent, dh_comms::dh_comms *object);
     bool addAgent(hsa_agent_t agent);
     void setConfig(const std::map<std::string, std::string>& config);

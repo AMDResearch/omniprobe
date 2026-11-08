@@ -285,6 +285,19 @@ hsaInterceptor::hsaInterceptor(HsaApiTable* table, uint64_t runtime_version, uin
 hsaInterceptor::~hsaInterceptor() {
     shutting_down_.store(true);
 
+    // A dispatch that found no instrumented clone ran its original and gave no
+    // analysis data; the per-dispatch log line is easy to miss in a long run.
+    {
+        lock_guard<std::mutex> lock(uninstrumented_mutex_);
+        if (!uninstrumented_kernels_.empty()) {
+            std::cerr << "omniprobe: WARNING: " << uninstrumented_kernels_.size()
+                      << " kernel(s) ran uninstrumented because no instrumented clone was found; "
+                      << "they are missing from the analysis:" << std::endl;
+            for (const auto& [name, count] : uninstrumented_kernels_)
+                std::cerr << "  " << name << " (" << count << " dispatch" << (count == 1 ? "" : "es") << ")" << std::endl;
+        }
+    }
+
     signal_runner_.join();
     cache_watcher_.join();
     comms_runner_.join();
@@ -806,6 +819,12 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                         }
                     } else {
                         std::cerr << "No instrumented alternative found for " << it->second.name_ << std::endl;
+                        // HIP runtime blit kernels are never instrumented; everything
+                        // else is listed again in the end-of-run summary.
+                        if (it->second.name_.rfind("__amd_rocclr_", 0) != 0) {
+                            lock_guard<std::mutex> lock(uninstrumented_mutex_);
+                            uninstrumented_kernels_[it->second.name_]++;
+                        }
                     }
                 }
                 else
@@ -841,7 +860,7 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                                     kdb->scanCodeObject(coRef.co_file);
                             }
 
-                            comms = comms_mgr_.checkoutCommsObject(queues_[queue], it->second.name_, dispatch_id, kdb);
+                            comms = comms_mgr_.checkoutCommsObject(queues_[queue], it->second.name_, it->second.kdb_name_, dispatch_id, kdb);
 
                             fixupKernArgs(new_kernargs, packet->kernarg_address, comms->get_dev_rsrc_ptr(), args);
                             dispatch->kernarg_address = new_kernargs;
@@ -1002,10 +1021,10 @@ void hsaInterceptor::addKernel(uint64_t kernelObject, std::string& name, hsa_exe
        auto it = kernel_objects_.find(kernelObject);
        if (it == kernel_objects_.end())
        {
-            thisName = kernelDB::demangleName(name.c_str());
+            thisName = demangleKernelName(name);
             if (!thisName.length())
                 thisName = name;
-            kernel_objects_[kernelObject] = {thisName, symbol, agent, kernarg_size};
+            kernel_objects_[kernelObject] = {thisName, symbol, kernelDBName(name), agent, kernarg_size};
        }
        else
            return;  // Already registered

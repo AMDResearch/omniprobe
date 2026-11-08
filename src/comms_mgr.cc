@@ -51,7 +51,7 @@ void comms_mgr::setConfig(const std::map<std::string, std::string>& config)
     }
 }
 
-dh_comms::dh_comms * comms_mgr::checkoutCommsObject(hsa_agent_t agent, std::string& strKernelName, uint64_t dispatch_id, kernelDB::kernelDB *kdb)
+dh_comms::dh_comms * comms_mgr::checkoutCommsObject(hsa_agent_t agent, std::string& strKernelName, const std::string& kdbKernelName, uint64_t dispatch_id, kernelDB::kernelDB *kdb)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     dh_comms::dh_comms_mem_mgr *mem_mgr = NULL;
@@ -68,7 +68,7 @@ dh_comms::dh_comms * comms_mgr::checkoutCommsObject(hsa_agent_t agent, std::stri
             {
                 auto *kdb_handler = dynamic_cast<kdb_message_handler_base *>(it);
                 if (kdb_handler)
-                    kdb_handler->set_context(kdb, strKernelName);
+                    kdb_handler->set_context(kdb, kdbKernelName);
                 auto tmp = std::unique_ptr<dh_comms::message_handler_base>(it);
                 obj->append_handler(std::move(tmp));
             }
