@@ -108,4 +108,40 @@ else
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
+################################################################################
+# Two source files under -fgpu-rdc link with each plugin
+# (bf_plugin-dhcomms-cuid-duplicate). The device bitcode carries a
+# __hip_cuid_<hash> global; linked into every unit as an external symbol, it
+# made the device link fail with "duplicate symbol: __hip_cuid_<hash>".
+################################################################################
+cat > "$WORK/rdc_a.hip" <<'SRC'
+#include <hip/hip_runtime.h>
+__global__ void ka(int* d) { d[threadIdx.x] = 1; }
+void run_other(int* d);
+int main() { int* d; (void)hipMalloc(&d, 256); ka<<<1, 64>>>(d); run_other(d); (void)hipDeviceSynchronize(); return 0; }
+SRC
+cat > "$WORK/rdc_b.hip" <<'SRC'
+#include <hip/hip_runtime.h>
+__global__ void kb(int* d) { d[threadIdx.x] += 2; }
+void run_other(int* d) { kb<<<1, 64>>>(d); }
+SRC
+for p in AddressMessages BBStart BBInterval; do
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo -e "\n${YELLOW}[TEST $TESTS_RUN]${NC} rdc_two_files_link_$p"
+    log="$WORK/rdc_$p.log"
+    rm -f "$WORK/rdc_$p"
+    "$HIPCC" --offload-arch="$ARCH" -O2 -g -fgpu-rdc \
+        -fpass-plugin="$BUILD_DIR/lib/plugins/libAMDGCNSubmit$p-rocm.so" \
+        "$WORK/rdc_a.hip" "$WORK/rdc_b.hip" -o "$WORK/rdc_$p" > "$log" 2>&1
+    rc=$?
+    if [ "$rc" -eq 0 ] && [ -x "$WORK/rdc_$p" ]; then
+        echo -e "  ${GREEN}✓ PASS${NC} - two -fgpu-rdc units linked"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - hipcc rc $rc; $(grep -m1 -E 'duplicate|error' "$log")"
+        echo "  Output saved to: $log"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+done
+
 print_summary

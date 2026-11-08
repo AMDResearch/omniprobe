@@ -209,6 +209,15 @@ std::unique_ptr<llvm::Module> loadAndLinkBitcode(llvm::Module &M) {
   std::unique_ptr<llvm::Module> DeviceModule =
       std::move(DeviceModuleOrErr.get());
 
+  // The device bitcode was compiled as a HIP translation unit and carries that
+  // unit's "__hip_cuid_<hash>" marker global. Linked into every instrumented
+  // translation unit, it is the same external symbol in each, and with
+  // -fgpu-rdc and two or more source files the device link fails with
+  // "duplicate symbol: __hip_cuid_<hash>". Make our copy local to each unit.
+  for (llvm::GlobalVariable &GV : DeviceModule->globals())
+    if (GV.getName().starts_with("__hip_cuid_"))
+      GV.setLinkage(llvm::GlobalValue::InternalLinkage);
+
   llvm::errs() << "Linking device module from " << BitcodePath
                << " into GPU module\n";
   if (llvm::Linker::linkModules(M, CloneModule(*DeviceModule)))
