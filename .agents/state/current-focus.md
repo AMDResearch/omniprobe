@@ -27,7 +27,9 @@
   **`bf_intern-clone-name` done 2026-11-08** (`3e31ee8`): static/anon kernels under `-fgpu-rdc`
   instrumented and attributed for both hash flavours; end-of-run summary lists kernels without a
   clone. Suite count now **16**.
-  **Queue now (supervisor, 2026-11-08):** `bf_plugin-missing-bitcode-fatal` (new, standalone) →
+  **`bf_plugin-missing-bitcode-fatal` done 2026-11-08**: missing device bitcode is a compile error
+  (hipcc rc 1; Triton JIT rc 1).
+  **Queue now (supervisor, 2026-11-08):** IntelliKit Python API request (spec from supervisor) (new, standalone) →
   IntelliKit Python API request → zero-param kernels, split LDS entries, flat-address warning →
   pyhandler-gil, faulted-dispatch-hang, exact-arch-bitcode + #38, Triton 3.9, intern-clone-name.
 
