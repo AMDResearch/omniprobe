@@ -25,6 +25,7 @@ THE SOFTWARE.
 #include <iomanip>
 #include <vector>
 #include <cassert>
+#include <mutex>
 #include "inc/message_logger.h"
 #include "data_headers.h"
 #include "message.h"
@@ -56,8 +57,21 @@ message_logger_t::~message_logger_t()
     if(location_ != "console")
         delete log_file_;
 }
+// Every logger instance (one per dispatch, each on its own dh_comms processing
+// thread) appends to the same file through its own stream. Records are written
+// and flushed under one lock, so overlapping dispatches cannot interleave them:
+// libstdc++ writes a string of 1 KiB or more (an address record with 64
+// addresses) to the file separately from the newline after it, and two such
+// records used to come out as "{A}{B}" followed by an empty line.
+static std::mutex log_write_mutex;
+
 bool message_logger_t::handle(const dh_comms::message_t &message)
 {
+    std::lock_guard<std::mutex> lock(log_write_mutex);
+    struct flush_on_exit {
+        std::ostream* out;
+        ~flush_on_exit() { out->flush(); }
+    } flusher{log_file_};
     JSONHelper json;
     dh_comms::wave_header_t hdr = message.wave_header();
     switch(hdr.user_type)
