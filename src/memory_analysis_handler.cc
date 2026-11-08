@@ -26,6 +26,7 @@
 #include "utils.h"
 #include "inc/json_output.h"
 
+#include <atomic>
 #include <cassert>
 #include <set>
 #include <string>
@@ -217,6 +218,14 @@ memory_analysis_handler_t::memory_analysis_handler_t(bool verbose)
 
 bool memory_analysis_handler_t::handle(const message_t &message) {
   if (message.wave_header().user_type != message_type::address) {
+    // Once per process, not per message: a binary built with another
+    // instrumentation plugin (BBStart, BBInterval) gives this analyzer nothing.
+    static std::atomic<bool> warned{false};
+    bool expected = false;
+    if (warned.compare_exchange_strong(expected, true)) {
+      fprintf(stderr, "omniprobe MemoryAnalysis: ignoring messages of type %u; MemoryAnalysis needs a binary instrumented with "
+              "the AddressMessages plugin (libAMDGCNSubmitAddressMessages-*.so)\n", message.wave_header().user_type);
+    }
     if (verbose_) {
       printf("memory_analysis_handler: skipping message with user type 0x%x\n", message.wave_header().user_type);
     }

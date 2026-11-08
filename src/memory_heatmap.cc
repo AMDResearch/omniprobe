@@ -26,6 +26,7 @@
 #include "data_headers.h"
 #include "message.h"
 
+#include <atomic>
 #include <cassert>
 #include <cstdio>
 #include <vector>
@@ -52,6 +53,14 @@ memory_heatmap_t::~memory_heatmap_t()
 
 bool memory_heatmap_t::handle(const message_t &message) {
   if (message.wave_header().user_type != message_type::address) {
+    // Once per process, not per message: a binary built with another
+    // instrumentation plugin (BBStart, BBInterval) gives this analyzer nothing.
+    static std::atomic<bool> warned{false};
+    bool expected = false;
+    if (warned.compare_exchange_strong(expected, true)) {
+      fprintf(stderr, "omniprobe Heatmap: ignoring messages of type %u; Heatmap needs a binary instrumented with "
+              "the AddressMessages plugin (libAMDGCNSubmitAddressMessages-*.so)\n", message.wave_header().user_type);
+    }
     if (verbose_) {
       printf("memory_heatmap: skipping message with user type 0x%x\n", message.wave_header().user_type);
     }
