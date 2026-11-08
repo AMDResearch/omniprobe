@@ -20,7 +20,7 @@ Packet directories follow the pattern: `.agents/workflows/<state>/<workflow-id>/
 | rf_clang-format-consistency | refactor | suspended | unassigned | .clang-format, CMakeLists.txt, scripts/git-hooks/ | None | Team coordination needed | 2026-08-25 |
 | rf_test-organization | refactor | suspended | unassigned | tests/ | None | Design decisions needed | 2026-08-25 |
 | ft_whitepaper-omniprobe | feature | suspended | unassigned | ~/repos/whitepaper_omniprobe/ | None (outside omniprobe repo) | Awaiting user review | 2026-08-25 |
-| bf_pyhandler-gil | bugfix | active | unassigned | src/pyHandler.cc, inc/pyHandler.h, plugins/, omniprobe/config/analytics.py, tests/ | Shares tests/run_all_tests.sh with the two above — append-only. Needs a GPU and an arch-matched build | None | 2026-09-08 |
+| bf_pyhandler-gil | bugfix | active | opimpl worker | see dossier write-scope | Implemented and pushed 2026-11-08; acceptance passed; awaiting acknowledgement of JUDGE AC-5 before moving to done | None | 2026-11-08 |
 
 ### rf_lazy-kerneldb-loading's premise is invalidated — read this before resuming it
 
@@ -115,6 +115,7 @@ Note that two overlaps recorded above are still live and still matter on resume:
 | bf_lds-split-entries | bugfix | 2026-11-08 |
 | bf_source-attribution-gaps | bugfix | 2026-11-08 |
 | bf_logger-record-interleave | bugfix | 2026-11-08 |
+| bf_faulted-dispatch-hang | bugfix | 2026-11-08 |
 
 ## Completed (migrated from KT)
 
