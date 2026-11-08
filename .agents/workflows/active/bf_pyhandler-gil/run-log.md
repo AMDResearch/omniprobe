@@ -64,3 +64,34 @@ interrupted, this log is the only record of progress.
   regression guard for the plugin-not-core scoping decision.
 - **Criteria impact**: none met; AC-6 passes as a guard, AC-5 is the judgement criterion.
 - **Blocker / Risk**: Open Question 2 — nothing supplies the `module_name` the constructor takes.
+
+### 2026-11-08 (session 2, gfx90a, ROCm 7.2.0, Python 3.12)
+
+- **Actor**: claude (opimpl worker, supervised)
+- **Planned step**: re-check the packet against main, then Plan Of Record steps 1-6, plus the
+  supervisor's added behavioural criteria (AC-9..11).
+- **Re-check**: `src/pyHandler.cc` and `inc/pyHandler.h` unchanged since filing; still constructed
+  nowhere; core still carried 13 undefined `Py*` symbols. Reading found two more defects beyond the
+  seed: every message leaked a `PyLong` (`PyDict_SetItemString` does not steal), and `pDict` was
+  released twice (`PyTuple_SetItem` steals it, then `Py_DECREF(pArgs)` and `Py_DECREF(pDict)`) —
+  a use-after-free per message. The seed's patch also left the constructor's
+  `PyImport_ImportModule` without the GIL, which crashes the *second* dispatch once the first
+  constructor has released it.
+- **Action taken**: rewrote `pyHandler.cc` (GIL on every entry point via RAII, interpreter started
+  once via `call_once` + `Py_InitializeEx(0)` + `PyEval_SaveThread`, never finalized, refcounts
+  fixed, `kernel`/`dispatch_id` in every dict, optional `handleReport`, `.py` path accepted). New
+  plugin `libPythonHandler64.so` (`-a PythonHandler`, module from `OMNIPROBE_PYTHON_HANDLER`), the
+  only target linking `Python::Python`; `pyHandler.cc` removed from the core library. Test kernel
+  `python_handler_test` (device barrier on atomics, which the address pass does not instrument),
+  fixture `tests/python_handler/stress_handler.py`, suite 19.
+- **Fails on the unfixed build**: the original `pyHandler.cc` bodies, with only the constructor
+  signature adapted so the plugin links (`/tmp/opimpl-py/pyHandler.unfixed.cc`), built into the same
+  plugin: both runs exit **139 (SIGSEGV)**, no evidence written, 7/7 checks FAIL. With the fix:
+  7/7 PASS (32 dispatches x 2048 messages; 4 concurrent dispatches x 64064 messages, 6 overlapping
+  delivery pairs on 4 threads; one interpreter token, running totals 65536 / 256256).
+- **Measured**: small kernels do NOT give concurrent delivery — each dispatch's messages are
+  drained at completion, one dispatch at a time (0 overlaps over 32 dispatches on 4 streams). Only
+  waves that fill their 256 KiB sub-buffer mid-kernel are processed while running; hence the
+  second, large-message run.
+- **Core**: `nm -D --undefined-only build/lib/liblogDuration64.so | grep -c ' Py'` 13 → 0; `ldd`
+  shows no libpython (AC-6).

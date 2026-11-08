@@ -14,13 +14,21 @@
 ```write-scope
 src/pyHandler.cc
 inc/pyHandler.h
+src/CMakeLists.txt
 plugins/python_bridge_plugin.cc
 plugins/CMakeLists.txt
 omniprobe/config/analytics.py
 tests/test_python_handler.sh
 tests/python_handler/
+tests/test_kernels/python_handler_test.cpp
+tests/test_kernels/CMakeLists.txt
 tests/run_all_tests.sh
+docs/usage.md
+README.md
 ```
+
+Scope amended 2026-11-08 (see handoff § Scope Amendments): `src/CMakeLists.txt` (drop
+`pyHandler.cc` from the core library), a dedicated test kernel, and user docs.
 
 ## Objective
 
@@ -117,9 +125,8 @@ way to name the module — for a test to prove it.
   written by the Python handler, not on `pyHandler.cc`'s `"Function call to … succeeded!"` print,
   which fires whenever `PyObject_CallObject` returns non-NULL, including for a Python function
   that ignores its argument entirely.
-- **AC-4**: The instrumented target's **real** exit status is 0. Check the target directly rather
-  than trusting `omniprobe`'s exit code, which is unreliable until
-  `bf_exit-status-not-propagated` lands.
+- **AC-4**: The instrumented target's **real** exit status is 0. *(Amended 2026-11-08: omniprobe
+  propagates the target's status since `c5aec00`, so omniprobe's exit status is that status.)*
 - **AC-5**: `src/pyHandler.cc` acquires the GIL on every path that touches the Python C-API, and
   releases it on every exit path including exceptional ones. **[judgement]** — reason: this is a
   claim about all paths through the source, including a `throw` in the `!pDict` branch that no
@@ -130,6 +137,20 @@ way to name the module — for a test to prove it.
   drifts into the core.
 - **AC-7**: The new suite is registered in `tests/run_all_tests.sh` and runs as part of it.
 - **AC-8**: `tests/run_all_tests.sh` reports every suite passed, 0 failed, 0 skipped.
+
+*Added 2026-11-08 at the supervisor's direction; all three fail (SIGSEGV) on the unfixed
+`pyHandler.cc`:*
+
+- **AC-9**: A Python handler that does real Python work per message (allocations, a dict update)
+  sees, for each of 32 dispatches on 4 streams, exactly the analytic number of address messages
+  (2048) at exactly 2048 distinct addresses, and every dispatch is reported once.
+- **AC-10**: Several dh_comms message-processing threads deliver into Python **concurrently**: in
+  a run whose dispatches start together at a device barrier and overflow their sub-buffers
+  mid-kernel, at least two dispatches' delivery intervals overlap.
+- **AC-11**: Under that concurrent delivery the counts are still exact (64064 messages, 128
+  distinct addresses per dispatch), and in both runs the interpreter is never finalized or
+  restarted between dispatches: one module-import token across all reports, running totals that
+  never reset.
 
 ## Failure Policy
 
@@ -255,6 +276,8 @@ AC-7 is behavioural for the same reason as in the companion packets: a grep of
 - `.agents/pm/units/handler-pipeline.md` — PM unit covering plugin loading and handler dispatch.
 
 ## Open Questions
+
+*Resolved 2026-11-08 — see handoff § Decisions.*
 
 1. **Does the adapter wrap `pythonMessageHandler`, or does the class start deriving from
    `message_handler_base`?** Wrapping keeps the core class untouched and is the smaller change;

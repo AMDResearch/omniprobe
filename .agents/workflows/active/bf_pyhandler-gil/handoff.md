@@ -4,20 +4,28 @@
 
 ## Current Status
 
-**Active**, promoted 2026-09-08 after passing `workflow-readiness-check`. Base commit `821c89b`.
-Filed the same day from an incoming seed. No production code changed.
+**2026-11-08: implemented, full-suite verification in progress.** Fix, plugin, test (suite 19) and
+docs written; the new suite passes 7/7 on gfx90a and fails 7/7 (SIGSEGV) on the unfixed
+`pyHandler.cc`. See run-log 2026-11-08.
 
-The readiness check repaired two defective checks in this packet's `acceptance.sh` before
-promotion. No acceptance criterion changed. If you edit those checks, read the dossier's
-Verification Strategy notes first — each is indirect on purpose and the obvious simplification
-reintroduces the defect it was written to avoid.
+## Decisions (2026-11-08, resolving Open Questions 1-3)
 
-**This packet will be executed in a fresh session by an agent with none of the filing context**,
-so the dossier is written to stand alone. Read it rather than the seed.
+1. **Wrap, don't derive.** `python_bridge_plugin.cc` holds a `pythonMessageHandler` inside an
+   adapter deriving from `dh_comms::message_handler_base`. `pythonMessageHandler` stays free of
+   dh_comms types.
+2. **Module named by `OMNIPROBE_PYTHON_HANDLER`**: a path to a `.py` file (its directory is put on
+   `sys.path`) or a module name resolved through `PYTHONPATH`. Env var because the launcher passes
+   the environment through and plugins already configure themselves that way
+   (`LOGDUR_LOG_LOCATION`). A launcher flag (`--python-handler`) would be friendlier for agents;
+   not done (launcher out of scope) — follow-up.
+3. **Visibility is moot**: `pyHandler.cc` is compiled into the plugin and removed from the core
+   library, so nothing crosses the core's symbol boundary. This also removed the core's 13
+   undefined `Py*` symbols.
 
-The scope was decided by the repository owner on 2026-09-08 and is not open for re-litigation
-during execution: **the Python bridge ships as a plugin under `plugins/`, not as a core change.**
-AC-6 makes that observable — it fails if libpython appears in `liblogDuration64.so`.
+Also decided: every dict now carries `kernel` and `dispatch_id` (needed for AC-2: without them
+Python cannot tell dispatches apart), and an optional `handleReport(dict)` is called once per
+dispatch from the adapter's `report()` (without it a Python handler has no point at which to emit
+per-dispatch results, since the interpreter is never finalized and `atexit` never runs).
 
 ## Last Verified
 
@@ -91,4 +99,17 @@ None.
 
 ## Scope Amendments
 
-None.
+2026-11-08: added `src/CMakeLists.txt` (remove `pyHandler.cc` from the core), `tests/test_kernels/
+python_handler_test.cpp` + `tests/test_kernels/CMakeLists.txt` (a kernel with an exact address
+count and a device barrier), `docs/usage.md` + `README.md` (document `PythonHandler`; also fixed
+their stale "BasicBlockAnalysis = timing with percentile breakdown" line, untrue since
+`bf_bba-hardening`). ACs 9-11 added and AC-4/AC-7 amended at the supervisor's direction (AC-7's
+`python` banner match had become vacuous: suite 17 is "Python API end to end").
+
+## Follow-ups (not in this packet)
+
+- Interpreter teardown ownership (declared non-goal; interpreter is leaked at exit).
+- `--python-handler` launcher flag.
+- **Untested: PythonHandler inside a Python host (Triton).** The host's interpreter is reused. If
+  the host thread holds the GIL while blocking on kernel completion, completion (`checkinCommsObject`
+  → `stop()` joins the processing thread, which waits for the GIL) would deadlock. Not measured.

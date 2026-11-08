@@ -10,9 +10,9 @@
 #     "Function call to ... succeeded!" print. That print fires whenever
 #     PyObject_CallObject returns non-NULL, so `def handleAddressMessage(d): pass`
 #     satisfies it completely while ignoring every message.
-#  2. AC-4 checks the TARGET's status, not omniprobe's. omniprobe's exit code is
-#     unreliable until bf_exit-status-not-propagated lands, and this packet must
-#     not depend on that one.
+#  2. AC-4 reads TARGET_STATUS. Since bf_exit-status-not-propagated (c5aec00)
+#     omniprobe returns the target's own status, so the test reports omniprobe's
+#     (amended 2026-11-08).
 #  3. AC-6 makes the plugin-not-core scoping decision observable. It fails if
 #     libpython drifts into liblogDuration64.so.
 #
@@ -123,8 +123,30 @@ else
   elif [ -n "$TS" ]; then
     ac_fail "AC-4" "the instrumented target exited $TS"
   else
-    ac_fail "AC-4" "no TARGET_STATUS= line — do not substitute omniprobe's status, which is unreliable until bf_exit-status-not-propagated lands"
+    ac_fail "AC-4" "no TARGET_STATUS= line"
   fi
+fi
+
+# --- AC-9 / AC-10 / AC-11 (added 2026-11-08, supervisor) ---
+# Each is one named check in tests/test_python_handler.sh; the PASS/FAIL line
+# follows its banner. All three fail on the unfixed pyHandler.cc (SIGSEGV).
+named_check() {   # named_check <AC> <test name> <what it shows>
+  if [ "$TEST_RAN" != 1 ]; then
+    ac_fail "$1" "no test script"
+  elif grep -A1 -F "$2" "$TEST_OUT" | grep -q "PASS"; then
+    ac_pass "$1" "$3"
+  else
+    ac_fail "$1" "test '$2' did not pass"
+  fi
+}
+named_check "AC-9"  "many: counts_match_analytic" "32 dispatches, each exactly 2048 messages at 2048 distinct addresses, counted by Python"
+named_check "AC-10" "concurrent: deliveries_overlap" "several dh_comms threads delivered to Python at the same time"
+if grep -A1 -F "concurrent: counts_match_analytic" "$TEST_OUT" | grep -q PASS \
+   && grep -A1 -F "many: interpreter_survives_dispatches" "$TEST_OUT" | grep -q PASS \
+   && grep -A1 -F "concurrent: interpreter_survives_dispatches" "$TEST_OUT" | grep -q PASS; then
+  ac_pass "AC-11" "exact counts under concurrent delivery; one interpreter across every dispatch of both runs"
+else
+  ac_fail "AC-11" "concurrent counts or interpreter-survival check did not pass"
 fi
 
 # --- AC-5: GIL held on every C-API path, released on every exit path ---
@@ -154,10 +176,12 @@ else
   SUITE_RC=$?
   # "python" appears nowhere as a suite name in the current runner, so this
   # cannot be satisfied by anything predating the registration.
-  if grep -qiE '^.*Suite [0-9]+:.*python' "$SUITE_OUT"; then
+  # Suite 17 ("Python API end to end") also contains "python", so anchor on
+  # the analyzer name (amended 2026-11-08).
+  if grep -qE 'Suite [0-9]+:.*PythonHandler' "$SUITE_OUT"; then
     ac_pass "AC-7" "the new suite is registered and actually ran inside run_all_tests.sh"
   else
-    ac_fail "AC-7" "no 'Suite N: ...python...' banner in the run_all_tests.sh output"
+    ac_fail "AC-7" "no 'Suite N: ...PythonHandler...' banner in the run_all_tests.sh output"
   fi
   if [ "$SUITE_RC" -eq 0 ] && grep -qiE 'Suites skipped:[[:space:]]*0([^0-9]|$)' "$SUITE_OUT"; then
     ac_pass "AC-8" "run_all_tests.sh: exit 0, 0 failed, 0 skipped"

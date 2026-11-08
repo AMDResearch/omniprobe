@@ -35,3 +35,22 @@ a feature most do not use. Enforced mechanically by AC-6.
 - A Python handler fixture that writes its own evidence, and a test asserting on that evidence
   across two dispatches.
 - A `run_all_tests.sh` transcript on architecture-matched hardware.
+
+## 2026-11-08 — acceptance run (gfx90a, ROCm 7.2.0)
+
+`acceptance.sh`: 11 PASS, 0 WEAK, 1 JUDGE, 0 FAIL, exit 0. Full suite inside it: 19 run, 19
+passed, 0 skipped, 0 failed.
+
+### `JUDGE AC-5` — src/pyHandler.cc acquires the GIL on every path touching the Python C-API and releases it on every exit path
+
+Worker's reading (2026-11-08), **awaiting the supervisor's acknowledgement**:
+- Constructor: `ensure_interpreter()` runs before any GIL is taken; inside `call_once` it is the
+  only C-API use (`Py_IsInitialized`, safe without the GIL; `Py_InitializeEx` then
+  `PyEval_SaveThread`, so the initializing thread does not keep the GIL). Everything after is under
+  a `gil_lock` (RAII). The one `throw` happens with `gil_lock` in scope, so stack unwinding
+  releases the GIL. A throw from `ensure_interpreter` happens before the lock exists.
+- Destructor: `Py_IsInitialized()` check (no GIL needed), then `gil_lock` around all `Py_CLEAR`s.
+- `addressMessage` / `timingMessage` / `report`: `gil_lock` first; `call()` is only reached under
+  it and has no throw (its failure paths print and return). `report()` reads `pReportFunc_`, a
+  plain pointer set in the constructor, before taking the GIL: a C++ read, not a C-API call.
+- No `Py_Finalize` anywhere (declared non-goal: the interpreter is leaked at exit).
