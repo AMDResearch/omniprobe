@@ -358,6 +358,12 @@ analysis takes the instruction from the code object (each LDS entry has
 `isa_instruction` and `isa_bytes`). When the compiler merges several accesses
 into one instruction, the access whose source location the instruction
 carries counts its conflicts; the others are counted in `merged_lds_accesses`.
+LDS atomics (`atomicAdd` etc. on `__shared__` data) are analyzed on gfx950:
+lanes of a wave updating the *same* address conflict too (atomics are not
+broadcast), except where the compiler combined a uniform-address atomic into
+one lane's update. Float atomics (`ds_add_f32`, `ds_pk_add_f16`) are served one
+lane at a time; that cost is not a bank conflict, and the entry reports it as
+`serialized_lanes` (active lanes summed over executions) instead.
 
 #### BasicBlockAnalysis JSON schema
 
