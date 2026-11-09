@@ -236,6 +236,17 @@ target_compile_options(lds_bank_patterns_plain PRIVATE ${TEST_KERNEL_COMPILE_FLA
 target_link_options(lds_bank_patterns_plain PRIVATE -fgpu-rdc)
 set_source_files_properties(lds_bank_patterns.cpp PROPERTIES LANGUAGE HIP)
 
+# Two kernels launched alternately, for -d dispatch selection
+# (tests/test_dispatch_selection.sh)
+add_executable(dispatch_select_test dispatch_select_test.cpp)
+set_source_files_properties(dispatch_select_test.cpp PROPERTIES LANGUAGE HIP)
+target_compile_options(dispatch_select_test PRIVATE
+    ${TEST_KERNEL_COMPILE_FLAGS}
+    -fpass-plugin=${INST_PLUGIN}
+)
+target_link_options(dispatch_select_test PRIVATE -fgpu-rdc)
+add_dependencies(dispatch_select_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
+
 # LDS conflict-set probe (tests/lds_conflict_sets/run.sh); not instrumented.
 add_executable(lds_conflict_sets ${CMAKE_CURRENT_SOURCE_DIR}/../lds_conflict_sets/lds_conflict_sets.cpp)
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../lds_conflict_sets/lds_conflict_sets.cpp PROPERTIES LANGUAGE HIP)
