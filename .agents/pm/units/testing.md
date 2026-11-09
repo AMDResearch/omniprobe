@@ -212,7 +212,7 @@ first draft, because the condition it checked was gated off.
 ## Added 2026-11-08 (third session): suites 25-27 and hardware-specific notes
 
 - Suite 25 bitcode selection (compile-only), 26 LDS vs `SQ_LDS_BANK_CONFLICT` (needs rocprofv3),
-  27 `-d random`. Full suite = **27 suites**. `tests/lds_conflict_sets/run.sh` (~15 s) is a tool,
+  27 `-d random` (replaced 2026-11-09 by dispatch selection). Full suite = **27 suites**. `tests/lds_conflict_sets/run.sh` (~15 s) is a tool,
   not a suite.
 - gfx950 (MI350 VM, 1 GPU, fuseblk /work1): the full suite runs from an in-repo build tree; 24
   pass, rocBLAS/hipBLASLt suites skip (gfx90a-only libraries; record as N/A). The runtime kills
@@ -241,6 +241,17 @@ Workflows whose write scope reaches into `tests/`. State (= directory under `.ag
 - `rf_rename-logduration-to-omniprobe` (suspended) — `tests/CMakeLists.txt`.
 - Done, for history: `bf_exit-status-not-propagated` (suite 11), `bf_hip-duplicate-code-object-load`
   (suites 7–10), `ft_omniprobe-python-api`.
+
+## Added 2026-11-09: suites 27-28, gfx950 build notes
+
+- Suite 27 is now **Dispatch selection** (`test_dispatch_selection.sh`, parser table + GPU checks),
+  suite 28 **PythonHandler in a Python host** (`test_python_host.sh`; needs TRITON_DIR, python3.9
+  and python3.12). Full suite = **28 suites**; on gfx950 25 pass, 3 N/A.
+- `build/` was reconfigured in place for gfx950 (`-DCMAKE_HIP_ARCHITECTURES=gfx950`); switch back
+  on an MI210 node. A `tests/library_filter_chain/build` from another arch segfaults even without
+  omniprobe — delete it when switching (suite 2 rebuilds it).
+- Suite 26 reads hardware counters: run the full suite under `flock /tmp/gpu-measure.lock` on a
+  shared node (~5 min on gfx950).
 
 `tests/run_all_tests.sh` is shared and append-only: each packet adds its own `run_suite` line and edits no other.
 

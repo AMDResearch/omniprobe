@@ -178,9 +178,16 @@ run_suite "Bitcode selection" "${SCRIPT_DIR}/test_bitcode_selection.sh"
 # phases, and 16-byte read/write phases. Needs a GPU and rocprofv3.
 run_suite "LDS bank conflicts vs hardware" "${SCRIPT_DIR}/test_lds_bank_conflicts.sh"
 
-# Suite 27: -d random — every eligible kernel is captured or named in the
-# end-of-run warning; kernels excluded by -k are neither. Needs a GPU.
-run_suite "Random dispatch capture" "${SCRIPT_DIR}/test_dispatch_random.sh"
+# Suite 27: ft_dispatch-selection — -d specs (lists, ranges, repeats) select
+# dispatches per kernel; both spec parsers agree with dispatch_spec_cases.txt;
+# malformed specs are rejected; kernel_dispatch is reported. Needs a GPU.
+run_suite "Dispatch selection" "${SCRIPT_DIR}/test_dispatch_selection.sh"
+
+# Suite 28: bf_pyhandler-python-host-deadlock — PythonHandler when the host is
+# Python (Triton, ctypes PyDLL/CDLL on 3.12 and 3.9, a busy thread): no
+# deadlock, exact counts, no crash at exit; a host holding the GIL while it waits
+# for the kernel is reported. Needs a GPU and TRITON_DIR.
+run_suite "PythonHandler in a Python host" "${SCRIPT_DIR}/test_python_host.sh"
 
 # Summary
 echo ""

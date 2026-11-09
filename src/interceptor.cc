@@ -89,6 +89,31 @@ const char *INTERCEPTOR_MSG = "[hsaInterceptor] ";
 
 std::mutex hsaInterceptor::singleton_mutex_;
 
+namespace {
+std::mutex kernel_dispatch_mutex;
+std::map<uint64_t, uint64_t> kernel_dispatches; // global dispatch id -> per-kernel number
+
+void recordKernelDispatch(uint64_t dispatch_id, uint64_t kernel_dispatch)
+{
+    std::lock_guard<std::mutex> lock(kernel_dispatch_mutex);
+    kernel_dispatches[dispatch_id] = kernel_dispatch;
+}
+
+void forgetKernelDispatch(uint64_t dispatch_id)
+{
+    std::lock_guard<std::mutex> lock(kernel_dispatch_mutex);
+    kernel_dispatches.erase(dispatch_id);
+}
+} // namespace
+
+// See inc/kernel_dispatch.h.
+extern "C" __attribute__((visibility("default"))) uint64_t omniprobe_kernel_dispatch(uint64_t dispatch_id)
+{
+    std::lock_guard<std::mutex> lock(kernel_dispatch_mutex);
+    auto it = kernel_dispatches.find(dispatch_id);
+    return it == kernel_dispatches.end() ? 0 : it->second;
+}
+
 hsaInterceptor * hsaInterceptor::getInstance(HsaApiTable *table, uint64_t runtime_version, uint64_t failed_tool_count, const char* const* failed_tool_names)
 {
     const lock_guard<mutex> lock(singleton_mutex_);
@@ -287,6 +312,12 @@ hsaInterceptor::~hsaInterceptor() {
     shutting_down_.store(true);
 
     signal_runner_.join();
+    {
+        // No more completions: comms_runner drains its queue and stops.
+        lock_guard<std::mutex> lock(checkin_mutex_);
+        signals_done_ = true;
+    }
+    checkin_cv_.notify_one();
     cache_watcher_.join();
     comms_runner_.join();
 
@@ -320,25 +351,9 @@ hsaInterceptor::~hsaInterceptor() {
                 summary << "  " << name << " (" << count << " dispatch" << (count == 1 ? "" : "es") << ")\n";
             }
         }
-        // -d random captures each eligible dispatch with probability
-        // 1/RANDOM_DISPATCH_DISTRIBUTION, so a kernel with few dispatches is
-        // usually not captured at all. Say so rather than end with no output.
-        {
-            std::ostringstream missed;
-            size_t n_missed = 0;
-            for (const auto& [name, draws] : random_draws_) {
-                if (draws.second == 0) {
-                    n_missed++;
-                    missed << "  " << name << " (" << draws.first << " dispatch"
-                           << (draws.first == 1 ? "" : "es") << ")\n";
-                }
-            }
-            if (n_missed)
-                summary << "omniprobe: WARNING: -d random captured no dispatch of " << n_missed
-                        << " kernel(s); each dispatch is captured with probability 1/"
-                        << RANDOM_DISPATCH_DISTRIBUTION << ". Use -d 1 or -d all for these:\n"
-                        << missed.str();
-        }
+        if (!dispatcher_.valid())
+            summary << "omniprobe: ERROR: " << dispatcher_.error()
+                    << " (LOGDUR_DISPATCHES); no dispatch was instrumented\n";
         if (kerneldb_failures_)
             summary << "omniprobe: ERROR: kernelDB failed on " << kerneldb_failures_
                     << " code object(s); their kernels have no source attribution (see the first ERROR above)\n";
@@ -444,6 +459,10 @@ void hsaInterceptor::reportKernelDBFailure(const std::string& co_file, const std
 
 void hsaInterceptor::signalCompleted(const hsa_signal_t sig)
 {
+    // Checked in by comms_runner, outside mutex_: checking in waits for the
+    // dispatch's handlers, and a PythonHandler waits for the GIL, which a Python
+    // host may hold while it submits the next dispatch (which takes mutex_) or
+    // waits for a later dispatch to complete (which this thread signals).
     lock_guard<std::mutex> lock(mutex_);
     auto it = pending_signals_.find(sig);
     if (it != pending_signals_.end())
@@ -479,9 +498,10 @@ void hsaInterceptor::signalCompleted(const hsa_signal_t sig)
         }
         //Put this completion signal back in the pool for subsequent dispatches
         sig_pool_.push_back(sig);
-        if (ki.comms_obj_) {
-            comms_mgr_.checkinCommsObject(ki.agent_, ki.comms_obj_);
-        }
+        // Queued while mutex_ is held, so idle() never sees a dispatch that is
+        // neither pending nor queued.
+        if (ki.comms_obj_)
+            queueCheckin(ki.agent_, ki.comms_obj_);
     }
     else
     {
@@ -489,14 +509,62 @@ void hsaInterceptor::signalCompleted(const hsa_signal_t sig)
     }
 }
 
+void hsaInterceptor::queueCheckin(hsa_agent_t agent, dh_comms::dh_comms *comms)
+{
+    {
+        lock_guard<std::mutex> lock(checkin_mutex_);
+        checkin_queue_.emplace_back(agent, comms);
+    }
+    checkin_cv_.notify_one();
+}
+
+// The next comms object to check in; false once signal_runner has finished and
+// the queue is empty.
+bool hsaInterceptor::nextCheckin(std::pair<hsa_agent_t, dh_comms::dh_comms *>& item)
+{
+    std::unique_lock<std::mutex> lock(checkin_mutex_);
+    checkin_busy_ = false;   // the previous item, if any, is checked in
+    checkin_cv_.wait(lock, [this] { return !checkin_queue_.empty() || signals_done_; });
+    if (checkin_queue_.empty())
+        return false;
+    item = checkin_queue_.front();
+    checkin_queue_.pop_front();
+    checkin_busy_ = true;
+    return true;
+}
+
+bool hsaInterceptor::idle()
+{
+    lock_guard<std::mutex> lock(mutex_);
+    lock_guard<std::mutex> checkin_lock(checkin_mutex_);
+    return pending_signals_.empty() && checkin_queue_.empty() && !checkin_busy_;
+}
+
+// Waits until every dispatch so far has completed and been checked in (its
+// handlers have reported), or timeout_ms passes; 1 if idle. A Python host
+// calls this, through PythonHandler, before it finalizes its interpreter.
+extern "C" __attribute__((visibility("default"))) int omniprobe_wait_idle(unsigned timeout_ms)
+{
+    hsaInterceptor *me = hsaInterceptor::getInstanceIfExists();
+    if (!me)
+        return 1;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    while (!me->idle()) {
+        if (std::chrono::steady_clock::now() > deadline)
+            return 0;
+        usleep(1000);
+    }
+    return 1;
+}
+
+// Checks in finished dispatches' comms objects: stops their processing,
+// reports and deletes their handlers.
 void comms_runner(comms_mgr& mgr)
 {
-    //cerr << "Comms Runner\n";
     hsaInterceptor *me = hsaInterceptor::getInstance();
-    while (!me->shuttingdown())
-    {
-        usleep(500);
-    }
+    std::pair<hsa_agent_t, dh_comms::dh_comms *> item;
+    while (me->nextCheckin(item))
+        mgr.checkinCommsObject(item.first, item.second);
     cerr << "Comms Runner shutting down\n";
 }
 
@@ -881,10 +949,14 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
         sig_pool_.pop_back();
         dh_comms::dh_comms *comms = NULL;
         uint64_t alt_kernel_object = 0;
+        // Every dispatch of a known kernel counts toward its per-kernel number,
+        // instrumented or not and whether or not a clone exists yet, so "the
+        // n-th dispatch of K" is the application's n-th launch of K.
+        auto it = kernel_objects_.find(packet->kernel_object);
+        const uint64_t kernel_dispatch = it != kernel_objects_.end() ? dispatcher_.nextOrdinal(it->second.name_) : 0;
         // Are there any kernels in the cache?
         if (kernel_cache_.hasKernels(queues_[queue]))
         {
-            auto it = kernel_objects_.find(packet->kernel_object);
             if (it != kernel_objects_.end())
             {
                 uint64_t alt_kernel_object = 0;
@@ -895,7 +967,8 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                 {
                     alt_kernel_object = kernel_cache_.findInstrumentedAlternative(it->second.symbol_, it->second.name_, queues_[queue]);
                     if(alt_kernel_object){
-                        std::cerr << "Found instrumented alternative for " << it->second.name_ << std::endl;
+                        std::cerr << "Found instrumented alternative for " << it->second.name_ << " (dispatch " << dispatch_id
+                                  << ", kernel dispatch " << kernel_dispatch << ")" << std::endl;
                         CodeObjectRef origRef, instRef;
                         bool hasOrig = kernel_cache_.getCodeObjectRef(queues_[queue], it->second.name_, origRef);
                         std::string instName = getInstrumentedName(it->second.name_);
@@ -939,17 +1012,8 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                         else
                             filter_excluded_[it->second.name_]++;
                     }
-                    // -k is applied first, so -d random draws only among the
-                    // dispatches the filter lets through.
-                    const bool eligible = run_instrumented_ && filter_allows;
-                    const bool capture = eligible && dispatcher_.canDispatch(alt_kernel_object);
-                    if (eligible && dispatcher_.isRandom()) {
-                        lock_guard<std::mutex> lock(uninstrumented_mutex_);
-                        auto& draws = random_draws_[it->second.name_];
-                        draws.first++;
-                        if (capture)
-                            draws.second++;
-                    }
+                    // Dispatch numbers count per kernel; -k picks the kernels.
+                    const bool capture = run_instrumented_ && filter_allows && dispatcher_.selected(kernel_dispatch);
                     if (capture)
                     {
                         // Found an instrumented  kernel Vobject to use as an alternative
@@ -980,7 +1044,15 @@ hsa_kernel_dispatch_packet_t * hsaInterceptor::fixupPacket(const hsa_kernel_disp
                                 }
                             }
 
-                            comms = comms_mgr_.checkoutCommsObject(queues_[queue], it->second.name_, it->second.kdb_name_, dispatch_id, kdb);
+                            // Handlers read kernel_dispatch in their constructors.
+                            recordKernelDispatch(dispatch_id, kernel_dispatch);
+                            try {
+                                comms = comms_mgr_.checkoutCommsObject(queues_[queue], it->second.name_, it->second.kdb_name_, dispatch_id, kdb);
+                            } catch (...) {
+                                forgetKernelDispatch(dispatch_id);
+                                throw;
+                            }
+                            forgetKernelDispatch(dispatch_id);
 
                             fixupKernArgs(new_kernargs, packet->kernarg_address, comms->get_dev_rsrc_ptr(), args);
                             dispatch->kernarg_address = new_kernargs;

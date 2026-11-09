@@ -1,6 +1,7 @@
 """Omniprobe Python API — programmatic access to GPU kernel analysis."""
 
 from .omniprobe import Omniprobe
+from .dispatch_spec import DispatchSpecError
 from .results import (
     AddressRecord,
     AddressTrace,
@@ -19,6 +20,7 @@ from .results import (
 
 __all__ = [
     "Omniprobe",
+    "DispatchSpecError",
     "AddressRecord",
     "AddressTrace",
     "BasicBlock",

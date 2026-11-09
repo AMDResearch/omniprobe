@@ -57,6 +57,9 @@ class KernelMemoryResult:
     unanalyzed_flat_accesses: int = 0
     unattributed_accesses: int = 0
     merged_lds_accesses: int = 0
+    # Per-kernel dispatch number (the n-th dispatch of this kernel, from 1), as
+    # selected with dispatches=; dispatch_id counts all kernels together.
+    kernel_dispatch: int = 0
 
 
 @dataclass
@@ -90,6 +93,9 @@ class KernelBBResult:
     kernel_name: str
     dispatch_id: int
     basic_blocks: list[BasicBlock] = field(default_factory=list)
+    # Per-kernel dispatch number (the n-th dispatch of this kernel, from 1), as
+    # selected with dispatches=; dispatch_id counts all kernels together.
+    kernel_dispatch: int = 0
 
 
 @dataclass
@@ -114,6 +120,9 @@ class KernelHeatmap:
     dispatch_id: int
     page_size: int
     pages: list[HeatmapPage] = field(default_factory=list)
+    # Per-kernel dispatch number (the n-th dispatch of this kernel, from 1), as
+    # selected with dispatches=; dispatch_id counts all kernels together.
+    kernel_dispatch: int = 0
 
 
 @dataclass
@@ -150,6 +159,9 @@ class AddressRecord:
     line: int
     column: int
     addresses: list[int] = field(default_factory=list)
+    # Per-kernel dispatch number (the n-th dispatch of this kernel, from 1), as
+    # selected with dispatches=; dispatch_id counts all kernels together.
+    kernel_dispatch: int = 0
 
 
 @dataclass
@@ -184,6 +196,9 @@ class BBRecord:
     source_file: str
     line: int
     column: int
+    # Per-kernel dispatch number (the n-th dispatch of this kernel, from 1), as
+    # selected with dispatches=; dispatch_id counts all kernels together.
+    kernel_dispatch: int = 0
 
 
 @dataclass

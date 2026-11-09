@@ -301,6 +301,29 @@ def get_rocm_path():
             return os.path.normpath(path)
     return None
 
+def _load_dispatch_spec():
+    """omniprobe/api/dispatch_spec.py, from the install/build tree or next to this script."""
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    for d in (os.path.join(os.path.dirname(here), "api"),
+              os.path.join(os.path.dirname(os.path.realpath(__file__)), "api")):
+        path = os.path.join(d, "dispatch_spec.py")
+        if os.path.isfile(path):
+            spec = importlib.util.spec_from_file_location("omniprobe_dispatch_spec", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+    raise ImportError("omniprobe: cannot find api/dispatch_spec.py")
+
+dispatch_spec = _load_dispatch_spec()
+
+def dispatch_spec_arg(text):
+    """argparse type for -d: validated, brackets stripped; errors exit 2 before launch."""
+    try:
+        return dispatch_spec.normalize(text)
+    except dispatch_spec.DispatchSpecError as e:
+        raise argparse.ArgumentTypeError(str(e))
+
 def get_omniprobe_home():
     tmp = os.path.dirname(__file__)
     return os.path.abspath(tmp)
@@ -484,6 +507,9 @@ def setup_env(parms):
                     env_dump[key] = hip_config[key]
             else:
                 sys.exit(1)
+
+    if parms.dispatches != "all" and not parms.instrumented:
+        print("--dispatches parameter is only used when running instrumented kernels. It will be ignored.")
 
     if len(parms.kernels):
         if parms.instrumented == False:
@@ -711,12 +737,19 @@ def add_general_group(parser):
     general_group.add_argument (
         "-d",
         "--dispatches",
-        type=str,
+        type=dispatch_spec_arg,
         metavar="",
         dest="dispatches",
         required=False,
         default="all",
-        help="\tThe dispatches for which to capture instrumentation output. This only applies when running with --instrumented.  Valid options: [all, random, 1]"
+        help="\tWhich dispatches of each kernel to instrument (requires --instrumented). Dispatches are\n"
+             "\tnumbered per kernel from 1; with -k, per matching kernel. Default: all.\n"
+             "\t  2,5          the 2nd and 5th dispatch of each kernel\n"
+             "\t  1-10, 10-    ranges are inclusive; 10- is the 10th dispatch on\n"
+             "\t  1,3,4:3      repeat the list 3 times, continuing after it: 1,3,4,5,7,8,9,11,12\n"
+             "\t  1,3,4:3:100  ... with copies 100 apart: 1,3,4,101,103,104,201,203,204\n"
+             "\t  1,3,4::100   ... without end; 1::100 is every 100th dispatch\n"
+             "\tNo spaces. Brackets ('[1,3,4]') are allowed but must be quoted."
     )
     
     general_group.add_argument (

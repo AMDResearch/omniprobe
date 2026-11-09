@@ -24,6 +24,7 @@ THE SOFTWARE.
 #include <cassert>
 #include <set>
 #include "inc/basic_block_analysis.h"
+#include "inc/kernel_dispatch.h"
 #include "inc/time_interval_handler.h"
 #include "inc/json_output.h"
 #include <iomanip>
@@ -137,6 +138,7 @@ basic_block_analysis::basic_block_analysis(const std::string& strKernel, uint64_
       verbose_(verbose),
       strKernel_(strKernel),
       dispatch_id_(dispatch_id),
+      kernel_dispatch_(kernelDispatchOrdinal(dispatch_id)),
       current_block_(nullptr),
       start_time_(0),
       location_(strLocation)
@@ -211,7 +213,7 @@ void basic_block_analysis::renderComputeResources(std::ostream& out, const std::
 {
     std::stringstream ss;
     std::string tmpss;
-    ss << "{\"kernel\": \"" << strKernel_ << "\", " << "\"dispatch\": " << dispatch_id_ << ", "; 
+    ss << "{\"kernel\": \"" << strKernel_ << "\", " << "\"dispatch\": " << dispatch_id_ << ", \"kernel_dispatch\": " << kernel_dispatch_ << ", ";
     ss << "\"resources\":[";
     for (const auto& xccs : compute_resources_)
     {
@@ -358,6 +360,7 @@ void basic_block_analysis::report_json()
     json_output << "{\n";
     json_output << "  \"kernel\": \"" << bb_json_escape(strKernel_) << "\",\n";
     json_output << "  \"dispatch_id\": " << dispatch_id_ << ",\n";
+    json_output << "  \"kernel_dispatch\": " << kernel_dispatch_ << ",\n";
     json_output << "  \"basic_blocks\": [";
 
     bool first_block = true;

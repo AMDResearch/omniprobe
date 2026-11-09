@@ -124,6 +124,8 @@ Note that two overlaps recorded above are still live and still matter on resume:
 | bf_robustness-errors | bugfix | 2026-11-08 |
 | bf_kernel-filter-search | bugfix | 2026-11-08 |
 | rf_exact-arch-bitcode | refactor | 2026-11-08 |
+| ft_dispatch-selection | feature | 2026-11-09 |
+| bf_pyhandler-python-host-deadlock | bugfix | 2026-11-09 |
 
 ## Completed (migrated from KT)
 

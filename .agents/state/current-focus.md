@@ -10,6 +10,24 @@ Leak-scan 2026-11-09 (oplds close): scanned 5d23a84..e9a1174 (12 commits, 1295 a
 12 messages, 478 tracked files, zero hits outside the baseline). The commit carrying this note
 is outside that range: re-derive the range at push time.
 
+## State after the 2026-11-09 session (gfx950 node) — read first
+
+**Next session (supervisor, MI210 node):** reconfigure `build/` for gfx90a, delete
+`tests/library_filter_chain/build`, run the full suite (expect 28 suites, all pass) and
+`run_module_load_tests.sh`; later, merge oplds' `lds-bank-model` into main (supervisor coordinates).
+GIL-throughput slowdown is on Rene's deferred list (not now).
+
+Done and pushed (`fc288d7`): `ft_dispatch-selection` (-d takes per-kernel specs like `2,5`,
+`1-10`, `10-`, `1,3,4:3:100`, `1::100`; `-d random` removed; `kernel_dispatch` in all output;
+suite 27) and `bf_pyhandler-python-host-deadlock` (PythonHandler in a Python host: Triton and
+GIL-holding hosts deadlocked; check-in now on comms_runner outside all locks, atexit hook in the
+host; suite 28). Full suite on gfx950: 25 pass, 3 N/A (rocBLAS/hipBLASLt), 0 fail.
+`build/` is configured for **gfx950**; on an MI210 node reconfigure with
+`-DCMAKE_HIP_ARCHITECTURES=gfx90a`, delete `tests/library_filter_chain/build`, and re-run the
+full suite. Follow-ups not queued: batch GIL acquisition in the Python bridge; IntelliKit's `-d`
+choices list (ikl); oplds must merge the one-member/one-line `kernel_dispatch` change in
+`src/memory_analysis_handler.cc` / `inc/memory_analysis_handler.h`.
+
 ## State after the fourth 2026-11-08 session — read first
 
 **Final main `113d53b` verified on gfx90a** (MI210 VM, 1 GPU): fresh clone built in /tmp, full suite

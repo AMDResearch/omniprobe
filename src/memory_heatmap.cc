@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include "inc/memory_heatmap.h"
+#include "inc/kernel_dispatch.h"
 #include "inc/json_helpers.h"
 
 #include "data_headers.h"
@@ -33,7 +34,7 @@
 
 namespace dh_comms {
   
-memory_heatmap_t::memory_heatmap_t(const std::string& strKernel, uint64_t dispatch_id, const std::string& location, size_t page_size /*= 1024 * 1024*/, bool verbose /*= false*/) : verbose_(verbose), page_size_(page_size), kernel_(strKernel), dispatch_id_(dispatch_id), location_(location)
+memory_heatmap_t::memory_heatmap_t(const std::string& strKernel, uint64_t dispatch_id, const std::string& location, size_t page_size /*= 1024 * 1024*/, bool verbose /*= false*/) : verbose_(verbose), page_size_(page_size), kernel_(strKernel), dispatch_id_(dispatch_id), kernel_dispatch_(kernelDispatchOrdinal(dispatch_id)), location_(location)
 {
     const char* logDurLogFormat= std::getenv("LOGDUR_LOG_FORMAT");
     if (logDurLogFormat)
@@ -106,6 +107,7 @@ void memory_heatmap_t::report() {
     JSONHelper json;
     json.addField("kernel", kernel_, true, false);
     json.addField("dispatch_id", dispatch_id_);
+    json.addField("kernel_dispatch", kernel_dispatch_);
     json.addField("page_size", page_size_);
     std::vector<std::string> pages;
     for (const auto &[first_page_address, count] : page_counts_) {

@@ -87,18 +87,23 @@ dh_comms::dh_comms * comms_mgr::checkoutCommsObject(hsa_agent_t agent, std::stri
 
 bool comms_mgr::checkinCommsObject(hsa_agent_t agent, dh_comms::dh_comms *object)
 {
-    std::lock_guard<std::mutex> lock(mutex_);
+    // Not under mutex_: stopping, reporting and deleting the handlers wait for
+    // them, and a PythonHandler waits for the GIL, which a Python host may hold
+    // while it submits a dispatch that checks out a comms object. Only freeing
+    // the device memory needs the lock.
     try
     {
         object->stop();
         object->report();
         object->delete_handlers();
-        delete object;
     }
     catch (const exception& e)
     {
         printf("%s: %s\n ", "comms_mgr", e.what());
+        return true;
     }
+    std::lock_guard<std::mutex> lock(mutex_);
+    delete object;
     return true;
 }
 

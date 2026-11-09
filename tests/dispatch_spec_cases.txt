@@ -1,0 +1,87 @@
+# Dispatch spec cases, shared by the Python parser (omniprobe/api/dispatch_spec.py)
+# and the C++ parser (src/dispatch_spec.cc); run by tests/dispatch_spec_table.py.
+#
+# <spec> TAB <expected>
+#   expected = SET <members in 1..300: numbers, inclusive ranges a-b, every s-th a-b:s; "-" for none>
+#            | ERR <substring of the error reason>
+# <empty> stands for the empty spec. Lines starting with '#' are comments.
+#
+# Rene's examples (rene-response-2026-11-09.md), with and without brackets
+[1,3,4]	SET 1,3,4
+1,3,4	SET 1,3,4
+[1,3,4:3]	SET 1,3,4,5,7,8,9,11,12
+1,3,4:3	SET 1,3,4,5,7,8,9,11,12
+[1,3,4:3:100]	SET 1,3,4,101,103,104,201,203,204
+1,3,4:3:100	SET 1,3,4,101,103,104,201,203,204
+[1,3,4::100]	SET 1,3,4,101,103,104,201,203,204
+1,3,4::100	SET 1,3,4,101,103,104,201,203,204
+[1-10]	SET 1-10
+1-10	SET 1-10
+# keywords and simple forms
+all	SET 1-300
+[all]	SET 1-300
+1	SET 1
+2,5	SET 2,5
+5,2	SET 2,5
+1,1,1-3	SET 1-3
+300	SET 300
+301	SET -
+9223372036854775807	SET -
+# open ranges
+10-	SET 10-300
+[2-]	SET 2-300
+1,5-	SET 1,5-300
+10-:1	SET 10-300
+# repetition
+1::100	SET 1,101,201
+1::2	SET 1-300:2
+1:	SET 1-300
+1,3:	SET 1-300:3,3-300:3
+1-2:3	SET 1-6
+1-10:3	SET 1-30
+1-10:3:5	SET 1-20
+2-4:2:10	SET 2-4,12-14
+1,3:2:6	SET 1,3,7,9
+1,3:1:100	SET 1,3
+5:3	SET 5,6,7
+5:3:	SET 5,6,7
+5::	SET 5-300
+007	SET 7
+# errors
+<empty>	ERR empty dispatch spec
+random	ERR -d random was removed; for sampling use e.g. -d 1::100
+[random]	ERR -d random was removed
+0	ERR dispatch numbers start at 1
+0-5	ERR dispatch numbers start at 1
+1,0	ERR dispatch numbers start at 1
+5-2	ERR range 5-2 is empty
+1,,3	ERR empty item in dispatch list
+1,	ERR empty item in dispatch list
+,3	ERR empty item in dispatch list
+[]	ERR empty item in dispatch list
+:3	ERR empty item in dispatch list
+1,3:0	ERR repeat count must be >= 1
+1,3:2:0	ERR stride must be >= 1
+1:2:3:4	ERR too many ':' fields
+1,x	ERR expected a number, a range a-b or an open range a-; got 'x'
+-3	ERR expected a number, a range a-b or an open range a-; got '-3'
+1-2-3	ERR got '2-3'
++3	ERR got '+3'
+1:x	ERR expected a number for the repeat count; got 'x'
+1:2:x	ERR expected a number for the stride; got 'x'
+1:-1	ERR expected a number for the repeat count; got '-1'
+[1,3	ERR unbalanced '['
+1,3]	ERR unbalanced ']'
+[	ERR unbalanced '['
+[1,[3]]	ERR brackets may only enclose the whole spec
+1, 2	ERR whitespace is not allowed
+ 1	ERR whitespace is not allowed
+1 	ERR whitespace is not allowed
+9223372036854775808	ERR is too large
+99999999999999999999	ERR is too large
+1:99999999999999999999	ERR is too large
+5-:3	ERR an open range a- cannot be repeated
+5-:	ERR an open range a- cannot be repeated
+5-::10	ERR an open range a- cannot be repeated
+ALL	ERR got 'ALL'
+1.5	ERR got '1.5'

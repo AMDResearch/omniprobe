@@ -214,7 +214,10 @@ add_custom_target(build_tree_symlinks ALL
     COMMAND ${CMAKE_COMMAND} -E create_symlink
         ${CMAKE_SOURCE_DIR}/omniprobe/config
         ${CMAKE_BINARY_DIR}/config
-    COMMENT "Creating build/bin/omniprobe and build/config symlinks"
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+        ${CMAKE_SOURCE_DIR}/omniprobe/api
+        ${CMAKE_BINARY_DIR}/api
+    COMMENT "Creating build/bin/omniprobe, build/config and build/api symlinks"
 )
 
 # Build tests

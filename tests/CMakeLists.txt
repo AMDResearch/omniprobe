@@ -85,3 +85,8 @@
 
 # Build simple test kernels
 add_subdirectory(test_kernels)
+
+# The runtime's dispatch-spec parser, driven over tests/dispatch_spec_cases.txt by
+# tests/dispatch_spec_table.py. Host-only; no GPU code.
+add_executable(dispatch_spec_check dispatch_spec_check.cc ${CMAKE_SOURCE_DIR}/src/dispatch_spec.cc)
+target_include_directories(dispatch_spec_check PRIVATE ${CMAKE_SOURCE_DIR})

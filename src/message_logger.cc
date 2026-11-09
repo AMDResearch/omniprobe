@@ -27,12 +27,14 @@ THE SOFTWARE.
 #include <cassert>
 #include <mutex>
 #include "inc/message_logger.h"
+#include "inc/kernel_dispatch.h"
 #include "data_headers.h"
 #include "message.h"
 
 message_logger_t::message_logger_t(const std::string& strKernel, uint64_t dispatch_id, std::string& location, bool verbose)
     : strKernel_(strKernel),
       dispatch_id_(dispatch_id),
+      kernel_dispatch_(kernelDispatchOrdinal(dispatch_id)),
       location_(location),
       verbose_(verbose),
       format_csv_(true)
@@ -116,10 +118,10 @@ bool message_logger_t::handle_address_message(const dh_comms::message_t& message
         // the headers of the rows it actually contains.
         if (!address_header_written_)
         {
-            *log_file_ << "ADDRESS_MESSAGE,timestamp,kernel,src_line,dispatch,exec_mask,xcc_id,se_id,cu_id,kind,address" << std::endl;
+            *log_file_ << "ADDRESS_MESSAGE,timestamp,kernel,src_line,dispatch,kernel_dispatch,exec_mask,xcc_id,se_id,cu_id,kind,address" << std::endl;
             address_header_written_ = true;
         }
-        *log_file_ << "ADDRESS_MESSAGE," << std::dec << hdr.timestamp << ",\"" << strKernel_ << "\"," << hdr.dwarf_line << "," << dispatch_id_ << ",";
+        *log_file_ << "ADDRESS_MESSAGE," << std::dec << hdr.timestamp << ",\"" << strKernel_ << "\"," << hdr.dwarf_line << "," << dispatch_id_ << "," << kernel_dispatch_ << ",";
 
 
         *log_file_ << "0x" << std::hex << std::setw(sizeof(void*) * 2) << std::setfill('0') << hdr.exec << "," << std::dec << hdr.xcc_id << "," << hdr.se_id << "," << hdr.cu_id << ",";
@@ -158,11 +160,11 @@ void message_logger_t::write_other_csv(const dh_comms::message_t& message)
     auto hdr = message.wave_header();
     if (!other_header_written_)
     {
-        *log_file_ << "WAVE_MESSAGE,timestamp,kernel,src_line,src_column,dispatch,exec_mask,xcc_id,se_id,cu_id,user_type,user_data" << std::endl;
+        *log_file_ << "WAVE_MESSAGE,timestamp,kernel,src_line,src_column,dispatch,kernel_dispatch,exec_mask,xcc_id,se_id,cu_id,user_type,user_data" << std::endl;
         other_header_written_ = true;
     }
     *log_file_ << "WAVE_MESSAGE," << std::dec << hdr.timestamp << ",\"" << strKernel_ << "\"," << hdr.dwarf_line << ","
-               << hdr.dwarf_column << "," << dispatch_id_ << ",0x" << std::hex << std::setw(16) << std::setfill('0') << hdr.exec
+               << hdr.dwarf_column << "," << dispatch_id_ << "," << kernel_dispatch_ << ",0x" << std::hex << std::setw(16) << std::setfill('0') << hdr.exec
                << std::dec << std::setfill(' ') << "," << hdr.xcc_id << "," << hdr.se_id << "," << hdr.cu_id << ","
                << hdr.user_type << "," << hdr.user_data << std::endl;
 }
@@ -177,6 +179,7 @@ void message_logger_t::handle_header(const dh_comms::message_t& message, JSONHel
     auto hdr = message.wave_header();
     json.addField("kernel_name", strKernel_, true);
     json.addField("dispatch_id", dispatch_id_);
+    json.addField("kernel_dispatch", kernel_dispatch_);
     json.addField("exec", hdr.exec, false, false);
     json.addField("timestamp", hdr.timestamp);
     json.addField("dwarf_line", hdr.dwarf_line);

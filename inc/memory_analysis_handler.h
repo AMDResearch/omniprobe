@@ -135,6 +135,7 @@ private:
   bool verbose_;
   std::string kernel_;
   uint64_t dispatch_id_;
+  uint64_t kernel_dispatch_;
   std::string location_;
   const std::map<uint8_t, const char *> rw2str_map;
   std::ostream *log_file_;

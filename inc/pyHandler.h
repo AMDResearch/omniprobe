@@ -63,7 +63,7 @@ struct pyTimeInterval {
 //!   handleAddressMessage(dict)  once per active lane (the original, per-lane form)
 //!   handleTimeMessage(dict)     once per time-interval message
 //!   handleReport(dict)          once per dispatch, after its last message
-//! Every dict carries "kernel" and "dispatch_id"; see docs/usage.md for the rest.
+//! Every dict carries "kernel", "dispatch_id" and "kernel_dispatch"; see docs/usage.md for the rest.
 //!
 //! Every method may be called on a different thread (dispatch, dh_comms processing,
 //! completion), so each one takes the GIL itself. The interpreter is process-wide:
@@ -95,4 +95,5 @@ private:
     PyObject *pReportFunc_ = nullptr;       // optional
     PyObject *pKernel_ = nullptr;
     PyObject *pDispatchId_ = nullptr;
+    PyObject *pKernelDispatch_ = nullptr;
 };
