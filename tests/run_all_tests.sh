@@ -189,6 +189,10 @@ run_suite "Dispatch selection" "${SCRIPT_DIR}/test_dispatch_selection.sh"
 # for the kernel is reported. Needs a GPU and TRITON_DIR.
 run_suite "PythonHandler in a Python host" "${SCRIPT_DIR}/test_python_host.sh"
 
+# Suite 29: bf_temp-code-object-leak — the code objects coCache extracts to
+# /tmp (tmpnam: /tmp/fileXXXXXX) are removed at exit. Needs a GPU.
+run_suite "Temporary code objects" "${SCRIPT_DIR}/test_temp_code_objects.sh"
+
 # Summary
 echo ""
 echo "================================================================================"

@@ -251,6 +251,13 @@ add_dependencies(dispatch_select_test copy_bitcode AMDGCNSubmitAddressMessages-r
 add_executable(lds_conflict_sets ${CMAKE_CURRENT_SOURCE_DIR}/../lds_conflict_sets/lds_conflict_sets.cpp)
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../lds_conflict_sets/lds_conflict_sets.cpp PROPERTIES LANGUAGE HIP)
 
+# Its extracted code object must not outlive the run (tests/test_temp_code_objects.sh)
+add_executable(temp_co_test temp_co_test.cpp)
+set_source_files_properties(temp_co_test.cpp PROPERTIES LANGUAGE HIP)
+target_compile_options(temp_co_test PRIVATE ${TEST_KERNEL_COMPILE_FLAGS} -fpass-plugin=${INST_PLUGIN})
+target_link_options(temp_co_test PRIVATE -fgpu-rdc)
+add_dependencies(temp_co_test copy_bitcode AMDGCNSubmitAddressMessages-rocm)
+
 # The instrumentation plugins run inside the compiler, so a rebuilt plugin must
 # recompile the kernels it instruments; add_dependencies only orders the build.
 # Without this, a plugin change left the instrumented test binaries stale and the

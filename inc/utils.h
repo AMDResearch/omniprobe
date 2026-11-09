@@ -206,6 +206,9 @@ private:
     std::map<hsa_agent_t, std::map<hsa_executable_symbol_t, uint64_t, hsa_cmp<hsa_executable_symbol_t>>, hsa_cmp<hsa_agent_t>> alternatives_;
     std::map<uint64_t, uint32_t> kernarg_sizes_;
     std::map<hsa_agent_t, std::map<std::string, CodeObjectRef>, hsa_cmp<hsa_agent_t>> kernel_co_map_;
+    // Code objects extractCodeObjects() wrote to temporary files. Kept until
+    // ~coCache, because kernelDB reads their DWARF at dispatch time.
+    std::vector<std::string> temp_co_files_;   // guarded by mutex_
     // Runtime kernel objects: agent -> (name -> kernel_object address) for resolveRuntimeArgDescriptors
     std::map<hsa_agent_t, std::map<std::string, uint64_t>, hsa_cmp<hsa_agent_t>> runtime_kernel_objects_;
     // Cache: executable.handle -> whether it comes from an excluded file

@@ -231,6 +231,9 @@ coCache::~coCache()
     {
         CHECK_STATUS("Unable to destroy loaded code objects", apiTable_->core_->hsa_executable_destroy_fn(it.second.executable_));
     }
+    lock_guard<std::mutex> files_lock(mutex_);
+    for (const auto& file : temp_co_files_)
+        unlink(file.c_str());
 }
 
 const amd_kernel_code_t* coCache::getKernelCode(uint64_t kernel_object)
@@ -601,6 +604,13 @@ bool coCache::addFile(const std::string& name, hsa_agent_t agent, const std::str
     std::vector<std::string> code_object_files = extractCodeObjects(agent, name);
     if (code_object_files.empty())
         return false;
+    {
+        // Every result but name itself is a temporary file (/tmp/fileXXXXXX).
+        lock_guard<std::mutex> lock(mutex_);
+        for (const auto& co_file : code_object_files)
+            if (co_file != name)
+                temp_co_files_.push_back(co_file);
+    }
 
     /* The application loads this code itself, so building a second HSA executable from
      * the same bytes would give us clones whose __constant__ segment nobody initialises.
