@@ -1,6 +1,23 @@
 # Handoff — iv_lds-bank-model
 
-## Current Status (2026-11-09, end of the MI350 session)
+## Current Status (2026-11-09, end of the MI210 work)
+
+- gfx950 and gfx90a are both measured and modelled (dh_comms `tools/lds_bank_probe`,
+  branch `lds-bank-model` at ad8f231, pushed). Report `report-lds-2026-11-09.md` has both
+  columns.
+- Handler: per-instruction classes on gfx90a and gfx950 (cf8d8e8, pushed). gfx908/gfx942
+  keep size-based classes with the gfx90a geometry.
+- kerneldb fix pushed on kerneldb branch `lds-bank-model` (be0af40); omniprobe pointer
+  bumped (ba8a245). origin/main f5a5721 merged into the branch.
+- Validated on gfx90a: suite 26 78/78 (under the lock), full suite 28/28.
+
+## Next
+
+1. gfx950 re-validation of the merged branch on an MI350 node (supervisor schedules): build,
+   suite 26 under the lock (expect 78/78), full suite.
+2. Then, on the supervisor's word: omniprobe main, dh_comms main, kerneldb main.
+
+## Previous status (2026-11-09, end of the MI350 session)
 
 - gfx950 is done.
   - Every DS access class, including all atomics, is measured and modelled: dh_comms
@@ -17,7 +34,8 @@
     layout.
   - The supervisor decides how kerneldb gets it.
 
-## Next (MI210 node)
+## Done: MI210 steps (were "Next")
+
 
 1. Build: `cmake -S . -B /tmp/oplds/build -DCMAKE_HIP_ARCHITECTURES=gfx90a ...` (memory
    `Omniprobe Build with Triton`). Apply the kerneldb patch if it is still not upstream:

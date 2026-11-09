@@ -1,7 +1,7 @@
 # LDS bank conflicts on MI350 (gfx950) and MI210 (gfx90a): how they are counted
 
 Report for Rene, 2026-11-09. Worker `oplds`; branches `lds-bank-model` in omniprobe and
-dh_comms (not merged to main). gfx90a column: to be filled on the MI210 node.
+dh_comms (not merged to main). gfx90a column measured on an MI210 node, same day.
 
 Tags: **[meas]** measured on hardware, with every GPU run under `/tmp/gpu-measure.lock`.
 **[read]** read in code or docs. **[inf]** inference. **[ext]** external source.
@@ -27,6 +27,14 @@ Tags: **[meas]** measured on hardware, with every GPU run under `/tmp/gpu-measur
   aligned patterns measured on gfx950. These include 300 random patterns per instruction
   that were not used to build the model. It also matched an independent kernel (ikl's
   blockmix, §5) in all six cases.
+- **gfx90a (MI210)** [meas]: **32 banks for every access class**, no wide read path. It
+  differs from gfx950 in exactly two classes: `ds_read_b64` (4 × 16 consecutive lanes,
+  128 B period; gfx950: 2 × 32 lanes, 256 B) and `ds_read_b128` (the 8-lane b96 groups,
+  128 B; gfx950: 4 × 16-lane groups, 256 B), and correspondingly those reads take twice the
+  base cycles (4 and 8 vs 2 and 4). Every other class, atomics included, has the same lane
+  groups and period on both. One model per architecture predicts `SQ_LDS_BANK_CONFLICT`
+  exactly for all 140,257 aligned patterns measured on gfx90a (55 instructions; no
+  transposes or `pk_add` on gfx90a).
 
 ## 2. Method (reusable, in dh_comms)
 
@@ -71,20 +79,20 @@ The tool is `external/dh_comms/tools/lds_bank_probe/`; its README has the detail
 
 | class | instructions | gfx950 groups | gfx950 period | gfx950 base | gfx90a (MI210) |
 |---|---|---|---|---|---|
-| narrow | read u8/i8/u16/i16 (+d16, d16_hi), b32; write b8/b16 (+d16_hi), b32 | {0..31},{32..63} | 128 B | 2 | *(TBD; old model: same)* |
-| read b64 | `ds_read_b64` | {0..31},{32..63} | **256 B** | 2 | *(TBD; old: 4×16 lanes, 128 B)* |
-| read b96 | `ds_read_b96` | {0..3,20..23},{4..7,16..19},{8..11,28..31},{12..15,24..27} (+32) | 128 B | 8 | *(TBD; unmeasured)* |
-| read b128 | `ds_read_b128` | {0..3,12..15,20..27},{4..11,16..19,28..31} (+32) | **256 B** | 4 | *(TBD; old: the b96 groups of gfx950, 128 B)* |
-| write b64 | `ds_write_b64` | 4 × 16 consecutive lanes | 128 B | 4 | *(TBD; old: same)* |
-| write b96 | `ds_write_b96` | 8 × 8 consecutive lanes | 128 B | 8 | *(TBD; unmeasured)* |
-| write b128 | `ds_write_b128` | 8 × 8 consecutive lanes | 128 B | 8 | *(TBD; old: same)* |
-| read2/write2 b32 (+st64) | each of the two addresses is a narrow access | narrow | 128 B | 4 | *(TBD)* |
-| read2/write2 b64 (+st64) | each address is a **write b64**-class access, for reads too | 4 × 16 | 128 B | 8 | *(TBD)* |
-| atomic 32-bit | integer add, max, wrxchg (rtn and no-rtn); **float min/max_f32**; wrxchg2 = 2 accesses | {0..31},{32..63}; one address conflicts | 128 B | 2 | *(TBD)* |
-| atomic 64-bit | add_u64, max_rtn_u64; **add_f64, add_rtn_f64, max_f64** | 4 × 16 | 128 B; one address conflicts | 4 | *(TBD)* |
-| atomic two-data 32 | `ds_cmpst(_rtn)_b32`, `ds_mskor(_rtn)_b32` | 4 × 16 | **64 B (16 banks)** | 4 | *(TBD)* |
-| atomic compare-swap 64 | `ds_cmpst(_rtn)_b64` | 8 × 8 | **16 banks** | 8 | *(TBD)* |
-| atomic float add | `ds_add(_rtn)_f32`; gfx950: `ds_pk_add(_rtn)_f16`, `ds_pk_add_bf16` | lane by lane, 3 cycles per active lane | never counted as a bank conflict | 3/lane | *(TBD; pk_add n/a)* |
+| narrow | read u8/i8/u16/i16 (+d16, d16_hi), b32; write b8/b16 (+d16_hi), b32 | {0..31},{32..63} | 128 B | 2 | same: 2 × 32 lanes, 128 B, base 2 [meas] |
+| read b64 | `ds_read_b64` | {0..31},{32..63} | **256 B** | 2 | **4 × 16 consecutive lanes, 128 B**, base 4 [meas] |
+| read b96 | `ds_read_b96` | {0..3,20..23},{4..7,16..19},{8..11,28..31},{12..15,24..27} (+32) | 128 B | 8 | same as gfx950 (8-lane groups, 128 B), base 8 [meas] |
+| read b128 | `ds_read_b128` | {0..3,12..15,20..27},{4..11,16..19,28..31} (+32) | **256 B** | 4 | **the b96 groups (8 × 8 lanes), 128 B**, base 8 [meas] |
+| write b64 | `ds_write_b64` | 4 × 16 consecutive lanes | 128 B | 4 | same, base 4 [meas] |
+| write b96 | `ds_write_b96` | 8 × 8 consecutive lanes | 128 B | 8 | same, base 8 [meas] |
+| write b128 | `ds_write_b128` | 8 × 8 consecutive lanes | 128 B | 8 | same, base 8 [meas] |
+| read2/write2 b32 (+st64) | each of the two addresses is a narrow access | narrow | 128 B | 4 | same, base 4 [meas] |
+| read2/write2 b64 (+st64) | each address is a **write b64**-class access, for reads too | 4 × 16 | 128 B | 8 | same (4 × 16, 128 B), base 8; here read b64 is the same class anyway [meas] |
+| atomic 32-bit | integer add, max, wrxchg (rtn and no-rtn); **float min/max_f32**; wrxchg2 = 2 accesses | {0..31},{32..63}; one address conflicts | 128 B | 2 | same, base 2 [meas] |
+| atomic 64-bit | add_u64, max_rtn_u64; **add_f64, add_rtn_f64, max_f64** | 4 × 16 | 128 B; one address conflicts | 4 | same groups and period; base 4, but **add_f64/add_rtn_f64 base 8** [meas] |
+| atomic two-data 32 | `ds_cmpst(_rtn)_b32`, `ds_mskor(_rtn)_b32` | 4 × 16 | **64 B (16 banks)** | 4 | same (16 banks), base 4 [meas] |
+| atomic compare-swap 64 | `ds_cmpst(_rtn)_b64` | 8 × 8 | **16 banks** | 8 | same (16 banks), base 8 [meas] |
+| atomic float add | `ds_add(_rtn)_f32`; gfx950: `ds_pk_add(_rtn)_f16`, `ds_pk_add_bf16` | lane by lane, 3 cycles per active lane | never counted as a bank conflict | 3/lane | same for `ds_add(_rtn)_f32` (3 cycles/lane, never counted); pk_add n/a [meas] |
 | transpose b64 (gfx950 only) | `ds_read_b64_tr_b4/b8/b16` | {0..31},{32..63} | 256 B | 2 | n/a |
 | transpose b96 (gfx950 only) | `ds_read_b96_tr_b6` | 4 × 16 | 256 B | 4 | n/a |
 
@@ -134,8 +142,8 @@ aligned. The unaligned path is not modelled in Omniprobe.
      update. Omniprobe detects that from the ISA (`v_mbcnt` at the atomic's location).
 7. **Stride-17 padding.** The textbook `i + (i >> 4)` pad leaves every contiguous b32
    access 2-way conflicted on gfx950: a 32-lane group spans 33 dwords and wraps onto one
-   bank. `i + (i >> 5)` is conflict-free. The same model predicts the same on gfx90a
-   [inf, to be measured].
+   bank. `i + (i >> 5)` is conflict-free. Measured the same on gfx90a for read_b32 and
+   write_b32: 2 and 0 cycles per wave [meas]; suite 26 now has both kernels.
 8. **Original vs instrumented code** [read + meas]. The clone's DS *instructions* differ
    from the original's, but each lane's *address* is the same in both. The bank-conflict
    count depends on the addresses (from the clone's messages) and the instruction class
@@ -187,6 +195,12 @@ aligned. The unaligned path is not modelled in Omniprobe.
   Values are cycles per wave execution of the gather. Kernel totals also match exactly.
 - **Full regression suite** (gfx950 build of the branch): 23 passed, 3 skipped. The
   skipped suites need rocBLAS/hipBLASLt, which exist only for gfx90a.
+- **gfx90a** (MI210, branch at `cf8d8e8` after merging main `f5a5721`) [meas]:
+  - Suite 26 under the lock: 78 of 78 kernels equal (74 plus four padding kernels). On
+    the handler before the gfx90a change, 21 of 74 differed: three b96, eight read2/write2, four
+    merged-pair and five atomic kernels.
+  - Full suite: 28 of 28 suites passed (27 in one run, plus suite 26 under the lock),
+    including the rocBLAS/hipBLASLt suites.
 
 ## 6. What Nabu and the documentation say
 
@@ -206,9 +220,10 @@ aligned. The unaligned path is not modelled in Omniprobe.
 
 ## 7. Still open
 
-- **gfx90a:** run `run_all.sh` on the MI210, fill the last column, and switch gfx90a to
-  per-instruction classes in the handler. Until then gfx90a keeps the 2026-11-08
-  size-based model.
+- **gfx908 and gfx942** are not measured. They keep the size-based class with the
+  gfx90a geometry [inf].
+- **add_f64 on gfx90a** takes 8 base cycles against 4 for other 64-bit atomics [meas];
+  its conflict count follows the 64-bit atomic class exactly, so only the cost differs.
 - **Atomics:** all kinds that exist on gfx950 are measured. `min_f64` is assumed to behave
   like `max_f64` [inf]. The `v_mbcnt` test for compiler wave-reduced atomics is a
   heuristic, but suite 26 checks it against hardware.

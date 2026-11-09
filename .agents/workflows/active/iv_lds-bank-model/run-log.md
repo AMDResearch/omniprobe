@@ -30,3 +30,15 @@
   starts attributed to the previous function's last line; write_r2b64_stride8 0 vs hw 120):
   fixed on local kerneldb branch lds-bank-model (be0af40, patch in packet); with it 74/74 and
   the full suite green (23 pass / 3 skip / 0 fail). Report updated.
+- 2026-11-09 (MI210 node, gfx90a): kerneldb lds-bank-model (be0af40) pushed, pointer bumped
+  (ba8a245); origin/main f5a5721 merged (conflicts: results.py and current-focus,
+  both sides kept). run_all.sh campaign (every lds_probe run under the lock): 55 ops, 140257
+  aligned patterns; gfx90a model fitted in model.py (dh_comms ad8f231), all match. Differs
+  from gfx950 only in read_b64 (4x16 lanes, 128 B) and read_b128 (8-lane b96 groups, 128 B);
+  add_f64 base 8 cycles. i+(i>>4) pad 2-way, i+(i>>5) conflict-free on gfx90a [meas].
+  Handler: cdna_lds = measured gfx90a model, lds_classes_from_isa on for gfx90a (cf8d8e8).
+  Suite 26 under the lock: 21/74 differ before, 78/78 equal after (+4 padding kernels).
+  Full suite 27/27 (+ suite 26) with OMNIPROBE_ROOT=/tmp/oplds/build and hand-built
+  rocBLAS/hipBLASLt drivers. Note: test-env.sh prepends the main checkout's build/ to
+  LD_LIBRARY_PATH; the first full run used it and was discarded.
+  Data: .untracked/lds-meas/gfx90a-2026-11-09/.

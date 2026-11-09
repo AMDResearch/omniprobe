@@ -39,8 +39,8 @@ needed. For LDS: detects bank conflicts.
 ## Invariants
 
 - Cache line sizes are architecture-specific (`gfx906`/`908`: 64 bytes, `gfx90a`/`940`/`941`/`942`: 128 bytes) -- defined in `external/dh_comms/include/gpu_arch_constants.h`.
-- Bank conflict analysis depends on the access class (gfx950: DS instruction; elsewhere access
-  size and direction); see the LDS section below.
+- Bank conflict analysis depends on the access class (gfx90a and gfx950: DS instruction;
+  elsewhere access size and direction); see the LDS section below.
 - ISA-level access size may differ from IR-level (`dwordx4` optimization).
 - Output formats: Console, CSV (`LOGDUR_LOG_FORMAT=csv`), JSON (`LOGDUR_LOG_FORMAT=json`).
 - JSON schema (as of ft_omniprobe-python-api): flat per-access objects with `kernel`,
@@ -71,17 +71,19 @@ needed. For LDS: detects bank conflicts.
 
 *Not on main yet (branch `lds-bank-model`, packet `iv_lds-bank-model`).* `lds_model(arch)` in
 `src/memory_analysis_handler.cc` maps an **access class** to (bank count, lane groups per
-cycle). On gfx950 (`lds_classes_from_isa`) the class comes from the **DS instruction** that
+cycle). On gfx90a and gfx950 (`lds_classes_from_isa`) the class comes from the **DS instruction** that
 kernelDB finds at the access's file/line/column (`lds_isa_instruction`). The instruction is
 read from the *original* kernel's ISA: the kdb name is the dispatched kernel object's
 (`src/interceptor.cc:1156`). The clone's DS instructions differ, but its per-lane addresses
 are the same, so pairing the clone's addresses with the original's class gives the
-uninstrumented conflicts. Other architectures keep the 2026-11-08 size-based classes until
-re-measured.
+uninstrumented conflicts. gfx908/gfx942 (unmeasured) keep size-based classes with the
+gfx90a geometry.
 
 Measured with dh_comms `tools/lds_bank_probe` (`run_all.sh`; the model is `model.py`, and
 the table is in the packet's `report-lds-2026-11-09.md`). gfx950 behaves as 64 banks for
 `ds_read_b64`/`ds_read_b128`/the transpose loads and as 32 banks for everything else.
+gfx90a is 32 banks throughout; it differs from gfx950 only in `read_b64` (4 x 16 lanes) and
+`read_b128` (the 8-lane `read_b96` groups).
 
 Classes:
 - `narrow` (≤4 B, and each address of read2/write2_b32);
@@ -104,9 +106,9 @@ Rules:
 
 LDS atomics are instrumented by the plugin (atomicrmw/cmpxchg on addrspace 3, rw_kind
 `read_write`). Suite 26 (`tests/test_lds_bank_conflicts.sh`, `tests/lds_bank_check.py`)
-has 74 kernels, all equal to `SQ_LDS_BANK_CONFLICT` on gfx950. That needs the kernelDB
-end_sequence fix (kerneldb branch `lds-bank-model`, not yet pushed; the patch is in the
-packet). The model objects and regexes are allocated with `new` and never destroyed. A
+has 78 kernels, all equal to `SQ_LDS_BANK_CONFLICT` on gfx90a (and 74/74 on gfx950 before
+the four padding kernels were added). That needs the kernelDB end_sequence fix (kerneldb
+branch `lds-bank-model`, pushed; not on kerneldb main yet). The model objects and regexes are allocated with `new` and never destroyed. A
 function-local `static std::regex` segfaulted at exit: handler threads outlive static
 destruction.
 
@@ -131,3 +133,4 @@ None.
 2026-11-08 (second session: unanalyzed_flat_accesses now mixed-space waves only; flat_* ISA sizes and width-preferring match; from e807927/4cd6f48 and the ft_flat-address-classification packet, not re-measured; other invariants not re-read)
 - 2026-11-08 (third session): LDS model section; suite 26 32/32 on gfx90a and on gfx950.
 - 2026-11-09 (oplds, branch lds-bank-model): LDS section rewritten (per-instruction classes, atomics, kernelDB lookup); verified on gfx950 by suite 26 74/74.
+- 2026-11-09 (oplds, MI210): gfx90a measured and per-instruction; suite 26 78/78 on gfx90a.
