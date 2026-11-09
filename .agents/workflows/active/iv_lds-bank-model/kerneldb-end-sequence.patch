@@ -1,0 +1,41 @@
+From be0af40d4e1fd8c4ad1d05c6afece5de417ff320 Mon Sep 17 00:00:00 2001
+From: Rene van Oostrum <Rene.vanOostrum@amd.com>
+Date: Mon, 9 Nov 2026 08:02:34 -0600
+Subject: [PATCH] Ignore DWARF end_sequence rows when mapping addresses to
+ source lines
+
+An end_sequence row carries the first address after a sequence, which is
+usually the address of the next function's first row. It was recorded as a
+location, and the real row at that address was then skipped as a duplicate,
+so the start of a function (up to its next line-table row) was attributed to
+the previous function's last line. Seen on gfx950: a kernel's ds_write2_b64
+instructions mapped to another kernel's line 78 instead of 121.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/addressMap.cc | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/addressMap.cc b/src/addressMap.cc
+index e14cadb..d376cc9 100644
+--- a/src/addressMap.cc
++++ b/src/addressMap.cc
+@@ -344,6 +344,15 @@ bool buildDwarfAddressMap(const char* filename, size_t offset, size_t hsaco_leng
+                     continue;
+                 }
+ 
++                // An end_sequence row marks the first address *after* a
++                // sequence; the next function's first row often has the same
++                // address. Recording it attributed the start of that function to
++                // the previous function's last line (and the same-address check
++                // below then dropped the real row).
++                Dwarf_Bool end_sequence = 0;
++                if (dwarf_lineendsequence(linebuf[i], &end_sequence, &err) == DW_DLV_OK && end_sequence)
++                    continue;
++
+                 // Skip if address is zero or same as previous (avoid duplicates)
+                 if (addr == 0 || addr == prev_addr) {
+                     prev_addr = addr;
+-- 
+2.47.3
+

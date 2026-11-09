@@ -111,6 +111,7 @@ const lds_model_t &cdna4_lds = *new lds_model_t{
     {"atomic_b64", {32, consecutive_lanes(16)}},
     // compare-swap carries two data dwords per lane: behaves as 16 banks
     {"atomic_cmpst_b32", {16, consecutive_lanes(16)}},
+    {"atomic_cmpst_b64", {16, consecutive_lanes(8)}},
 };
 
 const lds_model_t &lds_model(uint8_t arch) {
@@ -132,28 +133,29 @@ std::string lds_class_for_size(bool write, uint16_t bytes) {
 // What a DS instruction does to the banks: its class and the bytes behind each
 // of its addresses. Returns false for instructions that are not LDS data
 // accesses this analysis models (atomics are not instrumented).
-// Class of a DS atomic, as measured on gfx950 (ds_add/max/wrxchg in 32 and 64
-// bits, ds_cmpst_rtn_b32, ds_add_f32, ds_pk_add_f16). "atomic_float": the
-// lanes are served one at a time (3 cycles per active lane) and the hardware
-// never counts that as a bank conflict. Other atomics (cmpst_b64, mskor, float
-// min/max, f64, bf16) are not measured: false.
+// Class of a DS atomic, as measured on gfx950 with lds_bank_probe:
+//   integer RMW and float min/max: atomic_b32 / atomic_b64 by width (f64
+//     add/max too; min_f64 by analogy with min_f32, not measured)
+//   ds_cmpst_b32, ds_mskor_b32 (two data dwords): atomic_cmpst_b32
+//   ds_cmpst_b64: atomic_cmpst_b64
+//   float add (add_f32, pk_add_f16, pk_add_bf16, with or without return):
+//     atomic_float -- lanes are served one at a time (3 cycles per active
+//     lane) and the hardware never counts that as a bank conflict.
 const std::regex &ds_atomic = *new std::regex(
-    R"(^ds_(add|sub|rsub|inc|dec|min|max|and|or|xor|wrxchg|cmpst|pk_add)(_rtn)?_(u32|i32|b32|u64|i64|b64|f32|f16)$)");
+    R"(^ds_(add|sub|rsub|inc|dec|min|max|and|or|xor|wrxchg|cmpst|mskor|pk_add)(_rtn)?_(u32|i32|b32|f32|f16|bf16|u64|i64|b64|f64)$)");
 bool lds_atomic_class(const std::string &mnemonic, std::string &cls, uint16_t &bytes) {
   std::smatch m;
   if (!std::regex_match(mnemonic, m, ds_atomic))
     return false;
   std::string op = m[1], type = m[3];
   bytes = type.back() == '4' ? 8 : 4;
-  if ((op == "add" && type == "f32") || (op == "pk_add" && type == "f16"))
+  if (op == "pk_add" || (op == "add" && type == "f32"))
     cls = "atomic_float";
-  else if (type == "f32" || type == "f16" || op == "pk_add")
-    return false;
-  else if (op == "cmpst")
-    cls = bytes == 4 ? "atomic_cmpst_b32" : "";
+  else if (op == "cmpst" || op == "mskor")
+    cls = bytes == 4 ? "atomic_cmpst_b32" : "atomic_cmpst_b64";
   else
     cls = bytes == 4 ? "atomic_b32" : "atomic_b64";
-  return !cls.empty();
+  return true;
 }
 
 // Never destroyed, like the models above.

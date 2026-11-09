@@ -45,7 +45,8 @@ NEW_PATTERNS = ["b8_stride1", "b8_stride128", "b8_dword4", "b16_stride64",
                 "r2b32_stride1", "r2b32_stride16", "r2b64_stride1", "r2b64_stride8",
                 "pair_stride1", "pair_stride16", "pairlines_stride1", "pairlines_stride16"]
 ATOMIC_PATTERNS = ["u32_stride1", "u32_bcast", "u32_stride32", "u64_stride1", "u64_stride16",
-                   "cas_stride1", "cas_stride16", "f32_stride1", "f32_bcast"]
+                   "cas_stride1", "cas_stride16", "f32_stride1", "f32_bcast",
+                   "cas64_stride1", "cas64_stride8", "f64_stride16"]
 
 
 def phases(lanes_per_phase):

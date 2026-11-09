@@ -212,6 +212,9 @@ ATOMIC_KERNEL(unsigned, cas_stride1, l, atomicCAS(&s[idx], k, l))
 ATOMIC_KERNEL(unsigned, cas_stride16, 16 * l, atomicCAS(&s[idx], k, l))
 ATOMIC_KERNEL(float, f32_stride1, l, atomicAdd(&s[idx], 1.0f))
 ATOMIC_KERNEL(float, f32_bcast, 0u, atomicAdd(&s[idx], 1.0f))
+ATOMIC_KERNEL(unsigned long long, cas64_stride1, l, atomicCAS(&s[idx], (unsigned long long)k, 1ull))
+ATOMIC_KERNEL(unsigned long long, cas64_stride8, 8 * l, atomicCAS(&s[idx], (unsigned long long)k, 1ull))
+ATOMIC_KERNEL(double, f64_stride16, 16 * l, atomicAdd(&s[idx], 1.0))
 
 template <typename T> static void run(void (*k)(T *), const char *name) {
   T *d;
@@ -251,5 +254,8 @@ int main() {
   run(atomic_cas_stride16, "atomic_cas_stride16");
   run(atomic_f32_stride1, "atomic_f32_stride1");
   run(atomic_f32_bcast, "atomic_f32_bcast");
+  run(atomic_cas64_stride1, "atomic_cas64_stride1");
+  run(atomic_cas64_stride8, "atomic_cas64_stride8");
+  run(atomic_f64_stride16, "atomic_f64_stride16");
   return 0;
 }
