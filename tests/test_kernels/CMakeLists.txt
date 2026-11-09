@@ -269,3 +269,15 @@ foreach(_t IN LISTS _test_kernel_targets)
     add_dependencies(${_t} AMDGCNSubmitAddressMessages-rocm
         AMDGCNSubmitBBStart-rocm AMDGCNSubmitBBInterval-rocm)
 endforeach()
+
+# Instrumented kernel in a shared library, for a Python host loading it with
+# ctypes (tests/test_python_host.sh).
+add_library(py_host_lib SHARED py_host_lib.cpp)
+set_source_files_properties(py_host_lib.cpp PROPERTIES LANGUAGE HIP)
+target_compile_options(py_host_lib PRIVATE
+    ${TEST_KERNEL_COMPILE_FLAGS}
+    -fpass-plugin=${INST_PLUGIN}
+)
+target_link_options(py_host_lib PRIVATE -fgpu-rdc)
+add_dependencies(py_host_lib copy_bitcode AMDGCNSubmitAddressMessages-rocm
+    AMDGCNSubmitBBStart-rocm AMDGCNSubmitBBInterval-rocm)
