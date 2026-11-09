@@ -42,3 +42,9 @@
   rocBLAS/hipBLASLt drivers. Note: test-env.sh prepends the main checkout's build/ to
   LD_LIBRARY_PATH; the first full run used it and was discarded.
   Data: .untracked/lds-meas/gfx90a-2026-11-09/.
+- 2026-11-09 (MI350 node, gfx950 re-validation of 6aefd17): clean build /tmp/oplds/build950;
+  suite 26 under the exclusive lock 78/78 (hole16/hole32: 2/0, as on gfx90a); full suite
+  under the shared lock without suites 20 (deliberate GPU fault) and 26: 23 pass, 3 skip
+  (rocBLAS/hipBLASLt gfx90a-only), 0 fail. Merged (fast-forward): dh_comms main 9551a41..ad8f231,
+  kerneldb main 5bec946..be0af40, omniprobe main f5a5721..6aefd17. Submodule pointers already
+  equal the new submodule mains; no bump needed.

@@ -13,9 +13,9 @@
 
 ## Next
 
-1. gfx950 re-validation of the merged branch on an MI350 node (supervisor schedules): build,
-   suite 26 under the lock (expect 78/78), full suite.
-2. Then, on the supervisor's word: omniprobe main, dh_comms main, kerneldb main.
+- Merged to main everywhere (2026-11-09, after gfx950 re-validation): omniprobe main 6aefd17,
+  dh_comms main ad8f231, kerneldb main be0af40. The packet can be completed
+  (`/workflow-complete`) once the supervisor agrees nothing is left.
 
 ## Previous status (2026-11-09, end of the MI350 session)
 
