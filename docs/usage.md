@@ -195,9 +195,8 @@ default handlers instead. Only this plugin links libpython.
 See `tests/python_handler/wave_handler.py` (per wave) and `tests/python_handler/stress_handler.py` (per lane) for complete examples.
 
 **When the application is itself Python** (Triton, PyTorch, a ctypes program),
-the handler runs in the application's interpreter and shares its GIL; module
-globals of the handler and of the application are separate modules in the same
-interpreter. This works, including back-to-back Triton launches, and at exit
+the handler module is imported into the application's interpreter and shares
+its GIL. This works, including back-to-back Triton launches, and at exit
 the application waits for the last dispatches' handlers before its interpreter
 shuts down. One pattern cannot work: an application that **holds the GIL while
 it waits for an instrumented kernel**, for example a C extension that launches

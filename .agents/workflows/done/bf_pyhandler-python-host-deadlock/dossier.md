@@ -4,7 +4,7 @@
 
 - Workflow ID: bf_pyhandler-python-host-deadlock
 - Workflow Type: bugfix
-- Lifecycle State: active
+- Lifecycle State: done
 - Owner / Current Executor: opdisp (worker), supervised
 - Intended Write Scope:
 - Dependencies On Other Active Workflows: none
@@ -13,6 +13,7 @@
 ```write-scope
 src/interceptor.cc
 src/comms_mgr.cc
+inc/interceptor.h      # amended 2026-11-09 — the check-in queue lives in hsaInterceptor
 src/pyHandler.cc
 inc/pyHandler.h
 tests/

@@ -14,7 +14,6 @@ Packet directories follow the pattern: `.agents/workflows/<state>/<workflow-id>/
 
 | Workflow ID | Type | State | Owner | Intended Write Scope | Dependencies / Overlap Notes | Blocker Status | Last Update |
 |-------------|------|-------|-------|----------------------|------------------------------|----------------|-------------|
-| bf_pyhandler-python-host-deadlock | bugfix | active | opdisp | src/interceptor.cc, src/comms_mgr.cc, src/pyHandler.cc, inc/pyHandler.h, tests/, docs/usage.md | None | None | 2026-11-09 |
 | rf_lazy-kerneldb-loading | refactor | suspended | unassigned | src/interceptor.cc | Overlaps with rf_rename-logduration (same file) | None | 2026-08-25 |
 | rf_rename-logduration-to-omniprobe | refactor | suspended | unassigned | src/, inc/, plugins/, omniprobe/, CMakeLists.txt, containers/, .github/ | Broad scope — overlaps with most other refactors | Open questions need user input | 2026-08-25 |
 | rf_clang-format-consistency | refactor | suspended | unassigned | .clang-format, CMakeLists.txt, scripts/git-hooks/ | None | Team coordination needed | 2026-08-25 |
@@ -125,6 +124,7 @@ Note that two overlaps recorded above are still live and still matter on resume:
 | bf_kernel-filter-search | bugfix | 2026-11-08 |
 | rf_exact-arch-bitcode | refactor | 2026-11-08 |
 | ft_dispatch-selection | feature | 2026-11-09 |
+| bf_pyhandler-python-host-deadlock | bugfix | 2026-11-09 |
 
 ## Completed (migrated from KT)
 
