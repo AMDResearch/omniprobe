@@ -48,3 +48,14 @@
   (rocBLAS/hipBLASLt gfx90a-only), 0 fail. Merged (fast-forward): dh_comms main 9551a41..ad8f231,
   kerneldb main 5bec946..be0af40, omniprobe main f5a5721..6aefd17. Submodule pointers already
   equal the new submodule mains; no bump needed.
+
+### 2026-11-09T09:49:09-06:00
+
+- **Actor**: oplds worker
+- **Planned step**: Workflow completion
+- **Action taken**: All acceptance criteria verified. Workflow marked done.
+- **Result**: success
+- **Files touched**: dossier.md, handoff.md, active-workflows.md, current-focus.md
+- **Verification**: no acceptance.sh (packet predates it); manual: AC-1/2 dh_comms b3e2e8f/237b0e3, AC-3 ad8f231 (140257 patterns, 0 mismatches), AC-4 suite 26 78/78 on gfx90a and gfx950 under the lock, fails 21/74 before on gfx90a; full suite green on both.
+- **Criteria impact**: All criteria met
+- **Blocker / Risk**: none

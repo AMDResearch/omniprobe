@@ -1,20 +1,20 @@
 # Current Focus
 
-## oplds worktree (`.untracked/wt-lds`, branch `lds-bank-model`), 2026-11-09 — read first if you are oplds
+## LDS bank model — done 2026-11-09 (oplds)
 
-`iv_lds-bank-model` is active. gfx950 is done. Next is the MI210 (gfx90a) measurements; see
-the packet's `handoff.md`. The kerneldb end_sequence fix is local only (patch in the packet).
-Main is untouched by this branch; it merges when the supervisor says so (expect `.agents/`
-conflicts: keep both sides).
-Leak-scan 2026-11-09 (oplds close): scanned 5d23a84..e9a1174 (12 commits, 1295 added lines,
-12 messages, 478 tracked files, zero hits outside the baseline). The commit carrying this note
-is outside that range: re-derive the range at push time.
+`iv_lds-bank-model` is complete (packet in `done/`) and merged: omniprobe main 6aefd17,
+dh_comms main ad8f231, kerneldb main be0af40 (end_sequence fix). LDS bank conflicts are
+measured per DS instruction on gfx90a and gfx950 (report in the packet). After pulling, run
+`git submodule update` so dh_comms and kerneldb match. The worktree `.untracked/wt-lds`
+(branch `lds-bank-model`) is kept. On a shared node, run the full suite without suite 20
+(it faults the GPU on purpose); GPU use takes `flock -s`, measurements `flock -x` on
+`/tmp/gpu-measure.lock`.
 
 ## State after the 2026-11-09 session (gfx950 node) — read first
 
 **Next session (supervisor, MI210 node):** reconfigure `build/` for gfx90a, delete
 `tests/library_filter_chain/build`, run the full suite (expect 28 suites, all pass) and
-`run_module_load_tests.sh`; later, merge oplds' `lds-bank-model` into main (supervisor coordinates).
+`run_module_load_tests.sh`; oplds' `lds-bank-model` is merged into main (6aefd17).
 GIL-throughput slowdown is on Rene's deferred list (not now).
 
 Done and pushed (`fc288d7`): `ft_dispatch-selection` (-d takes per-kernel specs like `2,5`,
@@ -25,7 +25,7 @@ host; suite 28). Full suite on gfx950: 25 pass, 3 N/A (rocBLAS/hipBLASLt), 0 fai
 `build/` is configured for **gfx950**; on an MI210 node reconfigure with
 `-DCMAKE_HIP_ARCHITECTURES=gfx90a`, delete `tests/library_filter_chain/build`, and re-run the
 full suite. Follow-ups not queued: batch GIL acquisition in the Python bridge; IntelliKit's `-d`
-choices list (ikl); oplds must merge the one-member/one-line `kernel_dispatch` change in
+choices list (ikl); oplds merged the one-member/one-line `kernel_dispatch` change in
 `src/memory_analysis_handler.cc` / `inc/memory_analysis_handler.h`.
 
 ## State after the fourth 2026-11-08 session — read first

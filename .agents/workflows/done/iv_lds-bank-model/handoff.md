@@ -1,6 +1,20 @@
 # Handoff — iv_lds-bank-model
 
-## Current Status (2026-11-09, end of the MI210 work)
+## Current Status
+
+**Done. All acceptance criteria met.** Merged to main: omniprobe 6aefd17, dh_comms ad8f231,
+kerneldb be0af40.
+
+- Last Verified: 2026-11-09. gfx950: suite 26 78/78 (exclusive lock), full suite 23 pass /
+  3 N/A / 0 fail. gfx90a: suite 26 78/78, full suite 28/28.
+- Next Exact Step: N/A — workflow complete.
+- Active Risks / Blockers: none. Open items (not in scope): gfx908/gfx942 unmeasured
+  (size-based classes, gfx90a geometry); flat accesses to LDS keep size-based classes;
+  macro-shared source locations match by width.
+
+## History
+
+### Status at end of the MI210 work
 
 - gfx950 and gfx90a are both measured and modelled (dh_comms `tools/lds_bank_probe`,
   branch `lds-bank-model` at ad8f231, pushed). Report `report-lds-2026-11-09.md` has both

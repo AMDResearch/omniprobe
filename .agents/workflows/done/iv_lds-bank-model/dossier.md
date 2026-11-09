@@ -4,7 +4,7 @@
 
 - Workflow ID: iv_lds-bank-model
 - Workflow Type: investigation (followed by a fix of the handler's LDS model)
-- Lifecycle State: active
+- Lifecycle State: done
 - Owner / Current Executor: oplds worker (supervised run, 2026-11-09), worktree `.untracked/wt-lds`, branch `lds-bank-model`
 - Base Commit: 5d23a84 (omniprobe), 9551a41 (dh_comms)
 
@@ -45,13 +45,25 @@ one bank count. A single consistent model must explain all measurements.
 - AC-2: gfx950 table for all ISA access classes, with a model that predicts
   `SQ_LDS_BANK_CONFLICT` exactly for every aligned measured pattern, including random
   patterns not used to build it. **Met** (172 runs, 109122 patterns, 0 mismatches).
-- AC-3: same on gfx90a (MI210 node). Open.
+- AC-3: same on gfx90a (MI210 node). **Met** (dh_comms `ad8f231`: 55 ops, 140257 aligned
+  patterns incl. 300 random per op, 0 mismatches).
 - AC-4: handler's LDS model corrected/completed for both arches; suite 26 extended with the
   new classes (b96, read2/write2, sub-dword, atomics if instrumented) and failing on the
-  current code. Open; after AC-3.
+  current code. **Met** (omniprobe `cf8d8e8`): suite 26 has 78 kernels; on gfx90a 21/74
+  differed on the code before the change, 78/78 equal after; gfx950 78/78 (each earlier
+  group of kernels failed on the code before its fix, see run log). Both under the lock.
 
 ## Non-goals
 
 Unaligned LDS accesses (they take another path, counted in `SQ_LDS_UNALIGNED_STALL`):
 recorded, not modelled. LDS DMA (global_load_lds_*), ds_bpermute/permute/swizzle (no bank
 access), GWS.
+
+## Completion note (2026-11-09)
+
+All four criteria met; merged to main (omniprobe 6aefd17, dh_comms ad8f231, kerneldb
+be0af40). Writes outside the declared scope, all part of the same work: the plugin's LDS atomic
+instrumentation (`src/instrumentation/`), `tests/lds_bank_check.py` and
+`tests/test_kernels/lds_bank_patterns.cpp` (suite 26's checker and kernels), the kernelDB
+end_sequence fix (kerneldb `be0af40`), and a merge of main (`omniprobe/api/results.py`). No
+acceptance.sh: the packet predates it; evidence is the run log.
