@@ -102,7 +102,7 @@ memory heatmap report(simple_kernel(int*, unsigned long) [clone .kd][1])
 ```
 
 With `-t json`, one line per dispatch:
-`{"kernel": ..., "dispatch_id": N, "page_size": 1048576, "pages": [{"start_address": A, "end_address": B, "accesses": C}, ...]}`
+`{"kernel": ..., "dispatch_id": N, "kernel_dispatch": K, "page_size": 1048576, "pages": [{"start_address": A, "end_address": B, "accesses": C}, ...]}`
 (`end_address` is inclusive).
 
 #### BasicBlockAnalysis
@@ -115,7 +115,8 @@ BasicBlockAnalysis JSON schema below.
 
 Logs every memory address message: one record per instrumented memory
 instruction executed by a wave. This is the raw trace, for post-processing.
-With `-t json`, one object per line with `kernel_name`, `dispatch_id`, `exec`,
+With `-t json`, one object per line with `kernel_name`, `dispatch_id`,
+`kernel_dispatch`, `exec`,
 `active_lane_count`, `timestamp`, `block_idx_x/y/z`, `wave_num`, `xcc_id`,
 `se_id`, `cu_id`, `source_file`, `dwarf_line`, `dwarf_column`, `op_type`
 (`read`/`write`/`readwrite`), `memory_space` (`flat`, `global`, `shared`,
@@ -125,7 +126,9 @@ disagree), `access_size` (bytes of the accessed type) and
 `addresses` (one per active lane, in increasing lane order). The source
 location is the instruction's own: code inlined from a header (e.g. HIP's
 `blockDim`, a 2-byte `constant` read) points into that header. With CSV
-(default) the rows are `ADDRESS_MESSAGE,...` under a header line.
+(default) the rows are `ADDRESS_MESSAGE,...` under a header line; its columns
+`dispatch,kernel_dispatch` are the two numbers described under
+[Dispatch capture](#dispatch-capture).
 
 #### BasicBlockLogger
 
@@ -149,8 +152,8 @@ OMNIPROBE_PYTHON_HANDLER=./my_analysis.py omniprobe -i -a PythonHandler -- ./my_
 ```
 
 The module defines any of the following functions; at least one of the first
-three is required. Each receives one `dict`, and every dict has `kernel` (str)
-and `dispatch_id` (int):
+three is required. Each receives one `dict`, and every dict has `kernel` (str),
+`dispatch_id` (int) and `kernel_dispatch` (int, see [Dispatch capture](#dispatch-capture)):
 
 | Function | Called |
 |----------|--------|
@@ -247,33 +250,62 @@ Requires `-i`.
 
 ## Dispatch capture
 
-### Selecting dispatches (`-d`, `--dispatches`)
+### Dispatch capture
+
+`-d`/`--dispatches` selects which dispatches of each kernel run instrumented.
+Dispatches are numbered **per kernel, from 1**: the 5th dispatch of `kernel_a`
+is `kernel_a`'s 5th launch, however many other kernels ran in between. With
+`-k`, the numbering applies to each kernel the regex matches: `-k 'A|B' -d 2,5`
+instruments the 2nd and 5th dispatch of A and of B. Without `-k`, every kernel
+has its own count, so `-d 1` is the first dispatch of each kernel. Every
+dispatch of a kernel counts, whether it ran instrumented or not.
 
 ```bash
-# Instrument all dispatches (default)
-omniprobe -i -a MemoryAnalysis -d all -- ./my_app
-
-# Instrument only the first dispatch of each kernel
-omniprobe -i -a MemoryAnalysis -d 1 -- ./my_app
-
-# Instrument each dispatch with probability 1/100
-omniprobe -i -a MemoryAnalysis -d random -- ./my_app
+omniprobe -i -a MemoryAnalysis -- ./my_app                 # all dispatches (default; same as -d all)
+omniprobe -i -a MemoryAnalysis -d 1 -- ./my_app            # first dispatch of each kernel
+omniprobe -i -a MemoryAnalysis -d 2,5 -- ./my_app          # 2nd and 5th
+omniprobe -i -a MemoryAnalysis -d 1-10 -- ./my_app         # 1st to 10th (inclusive)
+omniprobe -i -a MemoryAnalysis -d 10- -- ./my_app          # 10th and every later one
+omniprobe -i -a MemoryAnalysis -d 1,3,4:3 -- ./my_app      # 1,3,4,5,7,8,9,11,12
+omniprobe -i -a MemoryAnalysis -d 1,3,4:3:100 -- ./my_app  # 1,3,4,101,103,104,201,203,204
+omniprobe -i -a MemoryAnalysis -d 1,3,4::100 -- ./my_app   # 1,3,4,101,103,104,201,... without end
+omniprobe -i -a MemoryAnalysis -d 1::100 -- ./my_app       # every 100th: 1,101,201,...
 ```
 
-| Value | Behavior |
-|-------|----------|
-| `all` | Instrument every dispatch (default) |
-| `1` | Only the first dispatch of each kernel |
-| `random` | Each dispatch independently, with probability 1/100 |
+Grammar: `all`, or `pattern[:count[:stride]]`.
 
-Instrumenting all dispatches gives the most complete picture but adds overhead.
-For large workloads, `1` or `random` can significantly reduce runtime while
-still catching representative behavior.
+| Part | Meaning |
+|------|---------|
+| `pattern` | comma-separated items: `N`, an inclusive range `A-B`, or an open range `A-` (the A-th dispatch and every later one). Order and duplicates do not matter. |
+| `count` | how many copies of the pattern, **including the first**. Empty (`1,3::100`, `1,3:`) repeats without end. Default 1. |
+| `stride` | distance between copies, measured from the first. Default: one past the pattern's span (`max - min + 1`), so the next copy starts right after the last item: `1,3,4:3` = 1,3,4, 5,7,8, 9,11,12. |
 
-`random` samples: a kernel can be captured several times or not at all, and a
-kernel with only a few dispatches usually is not captured at all. With `-k`,
-only dispatches the filter matches are sampled. At the end of the run omniprobe
-lists the kernels `random` captured no dispatch of; use `-d 1` for those.
+Copies may overlap (`1-10:3:5` = 1–20); an open range cannot be repeated.
+Numbers start at 1. Spaces are not allowed anywhere in a spec. A malformed spec
+stops omniprobe before the application starts (exit status 2), naming the
+problem.
+
+**Brackets and the shell.** `[1,3,4:3]` is accepted, but only quoted:
+`-d '[1,3,4:3]'`. Unquoted, `[...]` is a shell glob: bash replaces `[1,3,4]`
+with `1` if the current directory holds a file called `1` (measured), and zsh
+stops with `no matches found`. The forms without brackets need no quoting.
+
+Output reports both numbers: `dispatch_id` counts all dispatches of the process
+together (as before), `kernel_dispatch` is the per-kernel number `-d` uses. Find
+the number to pass to `-d` in a first run's `kernel_dispatch` field, or on the
+`Found instrumented alternative for <kernel> (dispatch N, kernel dispatch K)`
+line.
+
+**Several GPUs and threads.** A kernel's dispatches on all GPUs of one process
+share one count, so on a multi-GPU process `-d 1` is the kernel's first dispatch
+overall, not the first on each GPU (it was per GPU before `-d` took dispatch
+numbers). When several threads launch the same kernel concurrently, which
+launch is "the n-th" is decided by the order omniprobe intercepts them and is
+not deterministic from run to run. Each process (each MPI rank, say) counts its
+own dispatches from 1.
+
+`-d random` (each dispatch with probability 1/100) was removed; for sampling use
+`-d 1::100`, every 100th dispatch of each kernel.
 
 Requires `-i`.
 
@@ -300,6 +332,7 @@ a flat `accesses` array. Multiple dispatches are wrapped in a JSON array.
 {
   "kernel": "my_kernel",
   "dispatch_id": 1,
+  "kernel_dispatch": 1,
   "accesses": [
     {
       "source_file": "/path/to/source.hip",
@@ -363,6 +396,7 @@ array:
 {
   "kernel": "my_kernel",
   "dispatch_id": 1,
+  "kernel_dispatch": 1,
   "basic_blocks": [
     {
       "basic_block_id": 4,
@@ -573,7 +607,7 @@ documented here for debugging and advanced use cases.
 | `OMNIPROBE_LOG_FORMAT` | `-t` | Output format (`csv` or `json`) |
 | `OMNIPROBE_LOG_LOCATION` | `-l` | Output file path, or `console` |
 | `OMNIPROBE_FILTER` | `-k` | ECMAScript regex for kernel name filtering |
-| `OMNIPROBE_DISPATCHES` | `-d` | Dispatch capture mode (`all`, `random`, or `1`) |
+| `OMNIPROBE_DISPATCHES` | `-d` | Dispatch spec, as for `-d` (brackets removed). A malformed value set by hand instruments no dispatch and is reported as an error |
 | `OMNIPROBE_KERNEL_CACHE` | `-c` | Triton kernel cache directory |
 | `OMNIPROBE_LIBRARY_FILTER` | `--library-filter` | Path to library filter JSON config |
 | `DH_COMMS_GROUP_FILTER_X` | `--filter-x` | Block index filter for X dimension |
@@ -626,7 +660,10 @@ trace = op.log_addresses("./my_hip_app", max_records=10000)
 
 ### API reference
 
-All analysis methods take `(command, kernel_filter=None, dispatches="all")`;
+All analysis methods take `(command, kernel_filter=None, dispatches="all")`,
+where `dispatches` is a `-d` spec (see [Dispatch capture](#dispatch-capture)); a
+malformed one raises `DispatchSpecError`, a `ValueError`, before anything runs.
+Every per-dispatch result has `dispatch_id` and `kernel_dispatch`;
 the two trace methods also take `max_records=None`. Every result has
 `uninstrumented_kernels: dict[str, int]` (kernel name → dispatches that ran
 without an instrumented clone and are therefore missing from the result).

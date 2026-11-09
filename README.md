@@ -82,7 +82,7 @@ See [docs/usage.md](docs/usage.md) for the complete reference with examples.
 | `-a`, `--analyzers` | Which analysis to run | [Analyzers](docs/usage.md#analyzers) |
 | `-i`, `--instrumented` | Enable instrumented kernel dispatch | [Instrumented mode](docs/usage.md#instrumented-mode) |
 | `-k`, `--kernels` | Regex to select which kernels to instrument | [Kernel filtering](docs/usage.md#kernel-filtering) |
-| `-d`, `--dispatches` | Which dispatches to capture (`all`, `random`, `1`) | [Dispatch capture](docs/usage.md#dispatch-capture) |
+| `-d`, `--dispatches` | Which dispatches of each kernel to instrument (`all`, `1`, `2,5`, `1-10`, `1::100`, ...) | [Dispatch capture](docs/usage.md#dispatch-capture) |
 | `-t`, `--log-format` | Output format (`csv`, `json`); JSON produces structured, machine-readable output | [Output format](docs/usage.md#output-format-and-location) |
 | `-o`, `--output` | JSON output file; auto-generates timestamped name when omitted with `-t json` | [JSON output file](docs/usage.md#output-format-and-location) |
 | `-l`, `--log-location` | Output file or `console` (primarily for CSV) | [Output location](docs/usage.md#output-format-and-location) |

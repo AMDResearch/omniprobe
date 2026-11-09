@@ -322,7 +322,7 @@ and focusing the report on the memory operations you care about.
 | `-i`, `--instrumented` | Run instrumented kernel variants instead of originals. |
 | `-c`, `--cache-location` | Path to Triton's kernel cache (typically `~/.triton/cache`). |
 | `-k`, `--kernels` | Kernel name filter (ECMAScript regex). Only matching kernels are instrumented. |
-| `-d`, `--dispatches` | Which dispatches to capture. Options: `all`, `random`, `1`. |
+| `-d`, `--dispatches` | Which dispatches of each kernel to instrument, numbered per kernel from 1: `all` (default), `1`, `2,5`, `1-10`, `1::100`, ... See [Dispatch capture](usage.md#dispatch-capture). |
 | `--instrumentation-scope` | Limit instrumentation to specific source locations. Format: `file[:line_spec,...][;file...]`. |
 | `--instrumentation-scope-file` | File containing scope definitions (same syntax, one per line). |
 | `--filter-x`, `--filter-y`, `--filter-z` | Filter output by block index. Format: `N` (single) or `N:M` (half-open range). |
