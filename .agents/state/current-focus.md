@@ -1,5 +1,18 @@
 # Current Focus
 
+## State after the 2026-11-09 session (gfx950 node) — read first
+
+Done and pushed (`fc288d7`): `ft_dispatch-selection` (-d takes per-kernel specs like `2,5`,
+`1-10`, `10-`, `1,3,4:3:100`, `1::100`; `-d random` removed; `kernel_dispatch` in all output;
+suite 27) and `bf_pyhandler-python-host-deadlock` (PythonHandler in a Python host: Triton and
+GIL-holding hosts deadlocked; check-in now on comms_runner outside all locks, atexit hook in the
+host; suite 28). Full suite on gfx950: 25 pass, 3 N/A (rocBLAS/hipBLASLt), 0 fail.
+`build/` is configured for **gfx950**; on an MI210 node reconfigure with
+`-DCMAKE_HIP_ARCHITECTURES=gfx90a`, delete `tests/library_filter_chain/build`, and re-run the
+full suite. Follow-ups not queued: batch GIL acquisition in the Python bridge; IntelliKit's `-d`
+choices list (ikl); oplds must merge the one-member/one-line `kernel_dispatch` change in
+`src/memory_analysis_handler.cc` / `inc/memory_analysis_handler.h`.
+
 ## State after the fourth 2026-11-08 session — read first
 
 **Final main `113d53b` verified on gfx90a** (MI210 VM, 1 GPU): fresh clone built in /tmp, full suite
