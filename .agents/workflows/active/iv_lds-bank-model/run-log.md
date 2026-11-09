@@ -7,3 +7,7 @@
   /tmp/gpu-measure.lock (~10 min, delayed ikl); killed with kill <pid>; probe.py now
   wraps lds_probe in `timeout -s KILL` inside the lock, and run_all.sh keeps atomics
   aligned. dh_comms b3e2e8f pushed to origin/lds-bank-model.
+- 2026-11-09 (turn 2): atomics spot-check (cmpst = 16 banks, float atomics lane-serial and
+  invisible to the conflict counter); ikl blockmix predicted exactly; handler takes the
+  DS class from kernelDB (87d9363); suite 26 extended to 58 kernels, 58/58 on gfx950,
+  13 of the new fail on the old handler. dh_comms 243e27c.
