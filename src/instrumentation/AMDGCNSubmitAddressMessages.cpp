@@ -224,6 +224,56 @@ static Value *classifyFlatAddressSpace(IRBuilder<> &Builder, Module &M,
   return Builder.CreateSelect(AllShared, Builder.getInt8(3), Space);
 }
 
+// LDS atomics (atomicrmw, cmpxchg on an address-space-3 pointer): reported as
+// read_write (0b11) accesses of the operand's size, for the LDS bank-conflict
+// analysis. Atomics on other address spaces are not instrumented.
+static bool InjectLDSAtomicInstrumentation(const BasicBlock::iterator &I,
+                                           const Function &F, llvm::Module &M,
+                                           uint32_t &LocationCounter,
+                                           llvm::Value *Ptr,
+                                           bool PrintLocationInfo) {
+  Value *Addr;
+  Type *ValueType;
+  if (auto RMW = dyn_cast<AtomicRMWInst>(I)) {
+    Addr = RMW->getPointerOperand();
+    ValueType = RMW->getValOperand()->getType();
+  } else if (auto CX = dyn_cast<AtomicCmpXchgInst>(I)) {
+    Addr = CX->getPointerOperand();
+    ValueType = CX->getNewValOperand()->getType();
+  } else {
+    return false;
+  }
+  if (cast<PointerType>(Addr->getType())->getAddressSpace() != 3)
+    return false;
+  auto &CTX = M.getContext();
+  IRBuilder<> Builder(dyn_cast<Instruction>(I));
+  DILocation *DL = dyn_cast<Instruction>(I)->getDebugLoc();
+  std::string dbgFile =
+      DL != nullptr ? getFullPath(DL) : "<unknown source file>";
+  Value *Addr64 = Builder.CreatePointerCast(Addr, Ptr->getType());
+  FunctionType *FT = FunctionType::get(
+      Type::getVoidTy(CTX),
+      {Ptr->getType(), Addr64->getType(), Type::getInt64Ty(CTX),
+       Type::getInt32Ty(CTX), Type::getInt32Ty(CTX), Type::getInt8Ty(CTX),
+       Type::getInt8Ty(CTX), Type::getInt16Ty(CTX)},
+      false);
+  FunctionCallee InstrumentationFunction =
+      M.getOrInsertFunction("v_submit_address", FT);
+  Builder.CreateCall(
+      FT, cast<Function>(InstrumentationFunction.getCallee()),
+      {Ptr, Addr64, Builder.getInt64(std::hash<std::string>{}(dbgFile)),
+       Builder.getInt32(DL != nullptr ? DL->getLine() : 0),
+       Builder.getInt32(DL != nullptr ? DL->getColumn() : 0),
+       Builder.getInt8(0b11), Builder.getInt8(3),
+       Builder.getInt16(M.getDataLayout().getTypeStoreSize(ValueType))});
+  if (PrintLocationInfo)
+    errs() << LocationCounter << "     " << F.getName() << "     " << dbgFile
+           << ":" << (DL != nullptr ? DL->getLine() : 0) << ":"
+           << (DL != nullptr ? DL->getColumn() : 0) << "     SHARED     ATOMIC\n";
+  LocationCounter++;
+  return true;
+}
+
 template <typename LoadOrStoreInst>
 void InjectInstrumentationFunction(const BasicBlock::iterator &I,
                                    const Function &F, llvm::Module &M,
@@ -350,6 +400,10 @@ bool AMDGCNSubmitAddressMessage::runOnModule(Module &M) {
           InjectInstrumentationFunction<StoreInst>(I, *NF, M, LocationCounter,
                                                    bufferPtr, true);
           ModifiedCodeGen = true;
+        } else if (isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I)) {
+          if (InjectLDSAtomicInstrumentation(I, *NF, M, LocationCounter,
+                                             bufferPtr, true))
+            ModifiedCodeGen = true;
         } else if (auto CI = dyn_cast<CallInst>(I)) {
           // Handle AMDGPU buffer intrinsics
           if (isAMDGCNBufferLoad(CI)) {

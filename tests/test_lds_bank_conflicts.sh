@@ -51,7 +51,7 @@ if [ "$rc_hw" -ne 0 ] || [ "$rc_om" -ne 0 ] || [ -z "$csv" ]; then
     TESTS_FAILED=$((TESTS_FAILED + 1))
 elif python3 -I "$SCRIPT_DIR/lds_bank_check.py" "$csv" "$WORK/omniprobe.json" > "$WORK/check.txt" 2>&1; then
     sed 's/^/    /' "$WORK/check.txt"
-    echo -e "  ${GREEN}✓ PASS${NC} - omniprobe equals SQ_LDS_BANK_CONFLICT for all $(grep -c "^read_\|^write_" "$WORK/check.txt") pattern kernels"
+    echo -e "  ${GREEN}✓ PASS${NC} - omniprobe equals SQ_LDS_BANK_CONFLICT for all $(grep -c "^read_\|^write_\|^atomic_" "$WORK/check.txt") pattern kernels"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
     sed 's/^/    /' "$WORK/check.txt"

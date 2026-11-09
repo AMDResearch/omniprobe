@@ -186,6 +186,33 @@ __global__ void write_pairlines_stride1(float *out) { write_pairlines<1>(out); }
 __global__ void read_pairlines_stride16(float *out) { read_pairlines<16>(out); }
 __global__ void write_pairlines_stride16(float *out) { write_pairlines<16>(out); }
 
+// LDS atomics (instrumented since 2026-11-09): a lane-serial cost even on one
+// address. Results unused: the no-return form.
+#define ATOMIC_KERNEL(T, NAME, EXPR, OP)                                       \
+  __global__ void atomic_##NAME(T *out) {                                      \
+    __shared__ T s[LDS_DWORDS * 4 / sizeof(T)];                                \
+    for (unsigned i = threadIdx.x; i < LDS_DWORDS * 4 / sizeof(T); i += 64)    \
+      s[i] = (T)i;                                                             \
+    __syncthreads();                                                           \
+    unsigned l = threadIdx.x;                                                  \
+    unsigned idx = (EXPR);                                                     \
+    for (int k = 0; k < REPS; ++k) {                                           \
+      OP;                                                                      \
+      REPEAT_FENCE();                                                          \
+    }                                                                          \
+    __syncthreads();                                                           \
+    out[blockIdx.x * 64 + l] = s[l];                                           \
+  }
+ATOMIC_KERNEL(unsigned, u32_stride1, l, atomicAdd(&s[idx], 1u))
+ATOMIC_KERNEL(unsigned, u32_bcast, 0u, atomicAdd(&s[idx], 1u))
+ATOMIC_KERNEL(unsigned, u32_stride32, 32 * l, atomicMax(&s[idx], l))
+ATOMIC_KERNEL(unsigned long long, u64_stride1, l, atomicAdd(&s[idx], 1ull))
+ATOMIC_KERNEL(unsigned long long, u64_stride16, 16 * l, atomicAdd(&s[idx], 1ull))
+ATOMIC_KERNEL(unsigned, cas_stride1, l, atomicCAS(&s[idx], k, l))
+ATOMIC_KERNEL(unsigned, cas_stride16, 16 * l, atomicCAS(&s[idx], k, l))
+ATOMIC_KERNEL(float, f32_stride1, l, atomicAdd(&s[idx], 1.0f))
+ATOMIC_KERNEL(float, f32_bcast, 0u, atomicAdd(&s[idx], 1.0f))
+
 template <typename T> static void run(void (*k)(T *), const char *name) {
   T *d;
   if (hipMalloc(&d, BLOCKS * 64 * sizeof(T)) != hipSuccess) {
@@ -215,5 +242,14 @@ int main() {
   RUN(b96_stride1) RUN(b96_stride8) RUN(b96_rwsplit)
   RUN(r2b32_stride1) RUN(r2b32_stride16) RUN(r2b64_stride1) RUN(r2b64_stride8)
   RUN(pair_stride1) RUN(pair_stride16) RUN(pairlines_stride1) RUN(pairlines_stride16)
+  run(atomic_u32_stride1, "atomic_u32_stride1");
+  run(atomic_u32_bcast, "atomic_u32_bcast");
+  run(atomic_u32_stride32, "atomic_u32_stride32");
+  run(atomic_u64_stride1, "atomic_u64_stride1");
+  run(atomic_u64_stride16, "atomic_u64_stride16");
+  run(atomic_cas_stride1, "atomic_cas_stride1");
+  run(atomic_cas_stride16, "atomic_cas_stride16");
+  run(atomic_f32_stride1, "atomic_f32_stride1");
+  run(atomic_f32_bcast, "atomic_f32_bcast");
   return 0;
 }

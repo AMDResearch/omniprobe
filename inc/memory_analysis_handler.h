@@ -67,7 +67,7 @@ namespace dh_comms {
 class conflict_set {
 public:
   conflict_set(const std::vector<std::pair<std::size_t, std::size_t>> &fl_pairs, std::size_t no_banks);
-  bool register_access(size_t lane, uint64_t address, std::size_t bytes);
+  bool register_access(size_t lane, uint64_t address, std::size_t bytes, bool per_lane);
   size_t bank_conflict_count() const;
   void clear();
 
@@ -114,6 +114,7 @@ private:
 
   struct lds_accesses_t : memory_accesses_t {
     size_t no_bank_conflicts = 0;
+    size_t no_serialized_lanes = 0; // lane-serial float atomics: active lanes, not bank conflicts
   };
 
   struct global_accesses_t : memory_accesses_t {

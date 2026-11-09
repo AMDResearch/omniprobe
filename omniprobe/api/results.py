@@ -17,6 +17,8 @@ class MemoryAccess:
     ``execution_count`` wave-level executions (global accesses); their
     difference is ``excess_cache_lines``. ``ir_bytes`` is the accessed type's
     size in the IR, ``isa_bytes`` the size the ISA instruction moves.
+    ``serialized_lanes`` (LDS float atomics on gfx950): active lanes served one
+    at a time; the hardware does not count these as bank conflicts.
     """
     source_file: str
     line: int
@@ -31,6 +33,7 @@ class MemoryAccess:
     isa_instruction: str = ""
     ir_bytes: int = 0
     isa_bytes: int = 0
+    serialized_lanes: int = 0
 
 
 @dataclass

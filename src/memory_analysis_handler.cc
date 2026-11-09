@@ -106,6 +106,11 @@ const lds_model_t &cdna4_lds = *new lds_model_t{
     {"write_b128", {32, consecutive_lanes(8)}},
     {"read_b64_tr", {64, {lanes_0_31, lanes_32_63}}},
     {"read_b96_tr", {64, consecutive_lanes(16)}},
+    // Atomics serialize lanes even on one address (no broadcast).
+    {"atomic_b32", {32, {lanes_0_31, lanes_32_63}}},
+    {"atomic_b64", {32, consecutive_lanes(16)}},
+    // compare-swap carries two data dwords per lane: behaves as 16 banks
+    {"atomic_cmpst_b32", {16, consecutive_lanes(16)}},
 };
 
 const lds_model_t &lds_model(uint8_t arch) {
@@ -127,6 +132,30 @@ std::string lds_class_for_size(bool write, uint16_t bytes) {
 // What a DS instruction does to the banks: its class and the bytes behind each
 // of its addresses. Returns false for instructions that are not LDS data
 // accesses this analysis models (atomics are not instrumented).
+// Class of a DS atomic, as measured on gfx950 (ds_add/max/wrxchg in 32 and 64
+// bits, ds_cmpst_rtn_b32, ds_add_f32, ds_pk_add_f16). "atomic_float": the
+// lanes are served one at a time (3 cycles per active lane) and the hardware
+// never counts that as a bank conflict. Other atomics (cmpst_b64, mskor, float
+// min/max, f64, bf16) are not measured: false.
+const std::regex &ds_atomic = *new std::regex(
+    R"(^ds_(add|sub|rsub|inc|dec|min|max|and|or|xor|wrxchg|cmpst|pk_add)(_rtn)?_(u32|i32|b32|u64|i64|b64|f32|f16)$)");
+bool lds_atomic_class(const std::string &mnemonic, std::string &cls, uint16_t &bytes) {
+  std::smatch m;
+  if (!std::regex_match(mnemonic, m, ds_atomic))
+    return false;
+  std::string op = m[1], type = m[3];
+  bytes = type.back() == '4' ? 8 : 4;
+  if ((op == "add" && type == "f32") || (op == "pk_add" && type == "f16"))
+    cls = "atomic_float";
+  else if (type == "f32" || type == "f16" || op == "pk_add")
+    return false;
+  else if (op == "cmpst")
+    cls = bytes == 4 ? "atomic_cmpst_b32" : "";
+  else
+    cls = bytes == 4 ? "atomic_b32" : "atomic_b64";
+  return !cls.empty();
+}
+
 // Never destroyed, like the models above.
 const std::regex &ds_data_access =
     *new std::regex(R"(^ds_(read|write)(2st64|2)?_([biu])(8|16|32|64|96|128)(_tr_b[0-9]+)?(_d16(_hi)?)?$)");
@@ -162,13 +191,14 @@ conflict_set::conflict_set(const std::vector<std::pair<std::size_t, std::size_t>
     }
   }
 }
-bool conflict_set::register_access(size_t lane, uint64_t address, std::size_t bytes) {
+bool conflict_set::register_access(size_t lane, uint64_t address, std::size_t bytes, bool per_lane) {
   if (lanes.find(lane) == lanes.end()) { // lane is not in this conflict set
     return false;
   }
-  // Every dword the access touches; bytes of one dword never conflict.
+  // Every dword the access touches; bytes of one dword never conflict, except
+  // for atomics (per_lane), where every lane is served separately.
   for (uint64_t dword = address / sizeof(uint32_t); dword <= (address + bytes - 1) / sizeof(uint32_t); ++dword)
-    banks[dword % banks.size()].insert(dword);
+    banks[dword % banks.size()].insert(per_lane ? dword * 64 + lane : dword);
   return true;
 }
 
@@ -584,9 +614,14 @@ bool memory_analysis_handler_t::handle_cache_line_count_analysis(const message_t
 // address equal the IR access size. Empty if there is none (or no kernelDB).
 // flat is set if a flat_* instruction is at that location: a flat access that
 // reached LDS (classified at run time, e.g. at -O0) has no DS instruction.
+// wave_reduced is set if a v_mbcnt_* is there: the compiler's atomic optimizer
+// turned an atomic on a uniform address into one lane's atomic on the wave's
+// combined value, while the IR-level instrumentation still reports every lane.
 static std::string lds_isa_instruction(const message_t &message, const std::string &kernel_name,
-                                       kernelDB::kernelDB *kdb, bool write, uint16_t ir_size, bool &flat) {
+                                       kernelDB::kernelDB *kdb, bool write, bool atomic, uint16_t ir_size,
+                                       bool &flat, bool &wave_reduced) {
   flat = false;
+  wave_reduced = false;
   if (kdb == nullptr)
     return "";
   auto hdr = message.wave_header();
@@ -600,7 +635,10 @@ static std::string lds_isa_instruction(const message_t &message, const std::stri
         continue;
       if (inst.inst_.rfind("flat_", 0) == 0)
         flat = true;
-      if (!lds_class_for_isa(inst.inst_, cls, bytes) || (inst.inst_.rfind("ds_write", 0) == 0) != write)
+      if (inst.inst_.rfind("v_mbcnt_", 0) == 0)
+        wave_reduced = true;
+      if (atomic ? !lds_atomic_class(inst.inst_, cls, bytes)
+                 : (!lds_class_for_isa(inst.inst_, cls, bytes) || (inst.inst_.rfind("ds_write", 0) == 0) != write))
         continue;
       if (bytes == ir_size)
         return inst.inst_;
@@ -628,16 +666,28 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
   // several IR accesses may be merged into one wider instruction (then only
   // the IR access at the start of the instruction's data counts it, so a
   // merged instruction is counted once).
-  bool flat = false;
-  std::string isa_instruction = lds_isa_instruction(message, kernel_name_, kdb_p_, write, data_size, flat);
+  bool atomic = rw_kind == memory_access::read_write;
+  bool flat = false, wave_reduced = false;
+  std::string isa_instruction =
+      lds_isa_instruction(message, kernel_name_, kdb_p_, write, atomic, data_size, flat, wave_reduced);
+  wave_reduced = wave_reduced && atomic;
+  // Atomics are modelled only from their instruction, where it is measured.
+  if (atomic && (!lds_classes_from_isa(arch) || isa_instruction.empty()))
+    return true;
   std::string cls = lds_class_for_size(write, data_size);
   uint16_t isa_size = 0;
   if (!isa_instruction.empty()) {
     std::string isa_cls;
-    lds_class_for_isa(isa_instruction, isa_cls, isa_size);
+    if (atomic)
+      lds_atomic_class(isa_instruction, isa_cls, isa_size);
+    else
+      lds_class_for_isa(isa_instruction, isa_cls, isa_size);
     if (lds_classes_from_isa(arch))
       cls = isa_cls;
   }
+  // Float atomics are served lane by lane: not bank conflicts, but reported
+  // as serialized lanes.
+  size_t serialized_lanes = cls == "atomic_float" ? (wave_reduced ? 1 : message.no_data_items()) : 0;
   uint16_t piece = data_size;
   if (lds_classes_from_isa(arch) && isa_size != 0)
     piece = isa_size;
@@ -652,7 +702,7 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
     ++merged_lds_;
 
   const lds_model_t &model = lds_model(arch);
-  auto phases = model.find(cls);
+  auto phases = model.find(cls == "atomic_float" ? "narrow" : cls);
   if (phases == model.end()) {
     printf("bank conflict handling of %u-byte LDS %s (%s) not supported on this architecture\n", data_size,
            write ? "writes" : "reads", isa_instruction.empty() ? "no ISA match" : isa_instruction.c_str());
@@ -670,7 +720,7 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
   size_t bank_conflict_count = 0;
   bool merged_tail = piece > data_size && message.no_data_items() != 0 &&
                      *(const uint64_t *)message.data_item(0) % piece != 0;
-  if (!merged_tail && !merged_away) {
+  if (!merged_tail && !merged_away && !wave_reduced && cls != "atomic_float") {
     // One pass over the lanes per piece; a merged access covers the
     // instruction's whole data.
     uint16_t pieces = piece < data_size ? data_size / piece : 1;
@@ -679,7 +729,7 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
         auto lane = lane_ids_of_active_lanes[i];
         uint64_t address = *(const uint64_t *)message.data_item(i) + p * piece;
         for (auto &cs : sets) {
-          if (cs.register_access(lane, address, piece)) {
+          if (cs.register_access(lane, address, piece, atomic)) {
             break;
           }
         }
@@ -724,7 +774,7 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
   size_t no_accesses = 1;
   uint16_t isa_access_size = isa_size;
   lds_accesses_t current_access{{no_accesses, data_size, isa_access_size, rw_kind, isa_instruction},
-                                bank_conflict_count};
+                                bank_conflict_count, serialized_lanes};
   auto it = std::find_if(accesses.begin(), accesses.end(), [&current_access](const memory_accesses_t &access) {
     return access.ir_access_size == current_access.ir_access_size &&
            access.isa_access_size == current_access.isa_access_size && access.rw_kind == current_access.rw_kind;
@@ -732,6 +782,7 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
   if (it != accesses.end()) {
     ++(it->no_accesses);
     it->no_bank_conflicts += bank_conflict_count;
+    it->no_serialized_lanes += serialized_lanes;
   } else {
     accesses.push_back(current_access);
   }
@@ -1086,7 +1137,8 @@ void memory_analysis_handler_t::report_json() {
           json_output << "      \"isa_bytes\": " << access.isa_access_size << ",\n";
           json_output << "      \"isa_instruction\": \"" << json_escape(access.isa_instruction) << "\",\n";
           json_output << "      \"excess_cache_lines\": 0,\n";
-          json_output << "      \"bank_conflicts\": " << access.no_bank_conflicts << "\n";
+          json_output << "      \"bank_conflicts\": " << access.no_bank_conflicts << ",\n";
+          json_output << "      \"serialized_lanes\": " << access.no_serialized_lanes << "\n";
           json_output << "    }";
         }
       }

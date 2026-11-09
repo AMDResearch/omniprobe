@@ -44,6 +44,8 @@ NEW_PATTERNS = ["b8_stride1", "b8_stride128", "b8_dword4", "b16_stride64",
                 "b96_stride1", "b96_stride8", "b96_rwsplit",
                 "r2b32_stride1", "r2b32_stride16", "r2b64_stride1", "r2b64_stride8",
                 "pair_stride1", "pair_stride16", "pairlines_stride1", "pairlines_stride16"]
+ATOMIC_PATTERNS = ["u32_stride1", "u32_bcast", "u32_stride32", "u64_stride1", "u64_stride16",
+                   "cas_stride1", "cas_stride16", "f32_stride1", "f32_bcast"]
 
 
 def phases(lanes_per_phase):
@@ -97,8 +99,8 @@ def main(counter_csv, omniprobe_json):
     ok = True
     print(f"{'kernel':22s} {'hw':>6s} {'omniprobe':>9s}   predicted: " + " | ".join(HYPOTHESES))
     fits = defaultdict(lambda: set(HYPOTHESES))
-    for rw in ("read", "write"):
-        for pattern in list(PATTERNS) + NEW_PATTERNS:
+    for rw in ("read", "write", "atomic"):
+        for pattern in (ATOMIC_PATTERNS if rw == "atomic" else list(PATTERNS) + NEW_PATTERNS):
             width = PATTERNS[pattern][0] if pattern in PATTERNS else None
             kernel = f"{rw}_{pattern}"
             if kernel not in hw or "SQ_LDS_BANK_CONFLICT" not in hw[kernel] or not hw[kernel].get("SQ_WAVES"):

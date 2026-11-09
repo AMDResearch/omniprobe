@@ -409,6 +409,7 @@ class Omniprobe:
                         column=a.get("column", 0),
                         excess_cache_lines=a.get("excess_cache_lines", 0),
                         bank_conflicts=a.get("bank_conflicts", 0),
+                        serialized_lanes=a.get("serialized_lanes", 0),
                         memory_space=a.get("memory_space", ""),
                         access_type=a.get("access_type", ""),
                         execution_count=a.get("execution_count", 0),
