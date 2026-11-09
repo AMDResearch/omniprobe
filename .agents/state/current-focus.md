@@ -6,6 +6,9 @@
 the packet's `handoff.md`. The kerneldb end_sequence fix is local only (patch in the packet).
 Main is untouched by this branch; it merges when the supervisor says so (expect `.agents/`
 conflicts: keep both sides).
+Leak-scan 2026-11-09 (oplds close): scanned 5d23a84..e9a1174 (12 commits, 1295 added lines,
+12 messages, 478 tracked files, zero hits outside the baseline). The commit carrying this note
+is outside that range: re-derive the range at push time.
 
 ## State after the fourth 2026-11-08 session — read first
 
