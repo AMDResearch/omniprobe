@@ -54,6 +54,10 @@ PATTERN_KERNELS(float, b32_stride32, 32 * l)
 PATTERN_KERNELS(float, b32_stride64, 64 * l)
 PATTERN_KERNELS(float, b32_pad33, 33 * l)
 PATTERN_KERNELS(float, b32_bcast, 0u)
+// Padding one word per 16 (2-way: a 32-lane group spans 33 dwords) and per 32
+// (conflict-free).
+PATTERN_KERNELS(float, b32_hole16, l + (l >> 4))
+PATTERN_KERNELS(float, b32_hole32, l + (l >> 5))
 // 8-byte elements: element q covers dwords 2q and 2q+1
 PATTERN_KERNELS(double, b64_stride1, l)
 PATTERN_KERNELS(double, b64_stride2, 2 * l)
@@ -238,6 +242,7 @@ template <typename T> static void run(void (*k)(T *), const char *name) {
 int main() {
   RUN(b32_stride1) RUN(b32_stride2) RUN(b32_split32) RUN(b32_stride32)
   RUN(b32_stride64) RUN(b32_pad33) RUN(b32_bcast)
+  RUN(b32_hole16) RUN(b32_hole32)
   RUN(b64_stride1) RUN(b64_stride2) RUN(b64_split16) RUN(b64_split32)
   RUN(b64_stride16) RUN(b64_pad17)
   RUN(b128_stride1) RUN(b128_stride8) RUN(b128_rwsplit)

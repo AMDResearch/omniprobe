@@ -27,6 +27,8 @@ PATTERNS = {
     "b32_stride64": (4, lambda l: 64 * l),
     "b32_pad33": (4, lambda l: 33 * l),
     "b32_bcast": (4, lambda l: 0),
+    "b32_hole16": (4, lambda l: l + (l >> 4)),
+    "b32_hole32": (4, lambda l: l + (l >> 5)),
     "b64_stride1": (8, lambda l: l),
     "b64_stride2": (8, lambda l: 2 * l),
     "b64_split16": (8, lambda l: (l % 16) + 32 * (l // 16)),

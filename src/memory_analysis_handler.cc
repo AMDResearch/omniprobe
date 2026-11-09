@@ -76,15 +76,25 @@ const std::vector<lane_ranges_t> cdna_read_b128_groups{
 // Function-local statics would also race on first use, since this library is
 // built with -fno-threadsafe-statics.
 //
-// CDNA1-3 (measured on gfx90a, 2026-11-08, b32/b64/b128 only): 32 banks
-// throughout. 16-byte writes are served 8 consecutive lanes at a time, unlike
-// 16-byte reads. 12-byte accesses and read2/write2 are not measured yet.
+// CDNA1-3 (measured on gfx90a/MI210, 2026-11-09, every DS access class; the
+// model reproduces SQ_LDS_BANK_CONFLICT for all 140257 measured aligned
+// patterns): 32 banks for every access. Unlike gfx950, ds_read_b64 is served
+// 16 consecutive lanes at a time and ds_read_b128 in the 8-lane groups of
+// ds_read_b96. gfx908 and gfx942 are not measured; they use this model with
+// the access class from the IR size.
 const lds_model_t &cdna_lds = *new lds_model_t{
     {"narrow", {32, {lanes_0_31, lanes_32_63}}},
     {"read_b64", {32, consecutive_lanes(16)}},
-    {"write_b64", {32, consecutive_lanes(16)}},
+    {"read_b96", {32, cdna_read_b128_groups}},
     {"read_b128", {32, cdna_read_b128_groups}},
+    {"write_b64", {32, consecutive_lanes(16)}},
+    {"write_b96", {32, consecutive_lanes(8)}},
     {"write_b128", {32, consecutive_lanes(8)}},
+    // Atomics as on gfx950 (below).
+    {"atomic_b32", {32, {lanes_0_31, lanes_32_63}}},
+    {"atomic_b64", {32, consecutive_lanes(16)}},
+    {"atomic_cmpst_b32", {16, consecutive_lanes(16)}},
+    {"atomic_cmpst_b64", {16, consecutive_lanes(8)}},
 };
 
 // CDNA4 (measured on gfx950/MI350X, 2026-11-09, every DS access class; the
@@ -120,9 +130,11 @@ const lds_model_t &lds_model(uint8_t arch) {
 }
 
 // Whether the access class of an LDS access is taken from the DS instruction
-// kernelDB finds at its source location. Only where every class is measured;
-// elsewhere the class follows from the IR access size alone.
-bool lds_classes_from_isa(uint8_t arch) { return arch == dh_comms::gcnarch::gfx950; }
+// kernelDB finds at its source location. Only where every class is measured
+// (gfx90a, gfx950); elsewhere the class follows from the IR access size alone.
+bool lds_classes_from_isa(uint8_t arch) {
+  return arch == dh_comms::gcnarch::gfx90a || arch == dh_comms::gcnarch::gfx950;
+}
 
 // Class for an IR access of <bytes> without ISA information.
 std::string lds_class_for_size(bool write, uint16_t bytes) {
