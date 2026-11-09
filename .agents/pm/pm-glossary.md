@@ -93,3 +93,5 @@ Project-specific terms, abbreviations, and parameters. Updated by `pm-update`.
 | IR Access Size | Memory access size at LLVM IR level |
 | ISA Access Size | Actual access size after backend optimization (may differ from IR) |
 | dwordx4 | 16-byte vector load/store instruction (4 dwords) |
+| kernel_dispatch | Per-kernel dispatch number (n-th dispatch of that kernel in the process, from 1); what `-d` selects. `dispatch_id` is the global counter over all kernels |
+| dispatch spec | The `-d` argument: `all` or `pattern[:count[:stride]]` (see `omniprobe-cli`) |

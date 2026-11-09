@@ -51,7 +51,10 @@ resources across kernel dispatches.
 4. `checkoutCommsObject()` creates new `dh_comms`, attaches handlers (custom via
    `LOGDUR_HANDLERS` or defaults: `memory_heatmap_t`, `time_interval_handler_t`).
 5. Caller uses `dh_comms` for kernel dispatch.
-6. `checkinCommsObject()` stops, reports, deletes handlers, then deletes `dh_comms` object.
+6. `checkinCommsObject()` stops, reports, deletes handlers (no lock held), then deletes the
+   `dh_comms` object under the comms_mgr mutex. Since 2026-11-09 it runs on `comms_runner`, fed by
+   `signalCompleted` through `hsaInterceptor::queueCheckin` (queued under `mutex_`, checked in
+   outside every lock), so neither submitting nor completing dispatches waits for handlers.
 
 ### Built-in Plugins
 
@@ -136,9 +139,19 @@ dispatches on 4 streams). Only waves that fill their 256 KiB sub-buffer mid-kern
 while the kernel runs, which is the only way several dh_comms threads call into Python at once.
 A test of concurrent delivery must therefore use large per-wave message volumes.
 
-Untested: PythonHandler inside a Python host (Triton). If the host thread holds the GIL while
-blocking on kernel completion, completion (which joins the processing thread, which waits for the
-GIL) could deadlock. Not measured.
+PythonHandler inside a Python host (2026-11-09, `done/bf_pyhandler-python-host-deadlock`): it
+deadlocked when the host held the GIL while submitting work (Triton launcher, ctypes.PyDLL) —
+lock cycle GIL → `mutex_` → join(handler) → GIL. Fixed by the asynchronous check-in above; in a
+host-owned interpreter the plugin registers an `atexit` hook that calls `omniprobe_wait_idle()`
+(GIL released) and then stops all Python calls (`python_usable()`). Unfixable case: host holds the
+GIL while waiting for a kernel whose buffers fill — warned after 10 s by a GIL-wait monitor.
+Known slowdown (deferred): a busy Python thread makes every handler call wait for the GIL
+(0.9 s → 11 s on 3.12, 120 s on 3.9). Suite 28.
+
+`kernel_dispatch` (2026-11-09): built-in handlers read it in their constructors via
+`kernelDispatchOrdinal(dispatch_id)` (`inc/kernel_dispatch.h`, weak `omniprobe_kernel_dispatch`
+exported by liblogDuration64; recorded by `fixupPacket` around `checkoutCommsObject`). The plugin
+ABI is unchanged. CSV has a `kernel_dispatch` column right after `dispatch`.
 
 ## Output files and record integrity (2026-11-08)
 
@@ -183,4 +196,5 @@ None.
 2026-09-08 (pyHandler GIL defects and unreachability; verified by grep, nm and ldd)
 2026-10-27 (mechanical re-check only: every file path and code symbol named in this unit exists in the tree; prose claims not re-read; basic_block_plugin handler corrected to basic_block_analysis)
 2026-11-08 (output-file semantics and BBA semantics from this session's commits, verified on gfx90a; pyHandler section not re-verified, still resting on 2026-09-08)
+2026-11-09 (check-in path, Python-host section, kernel_dispatch; verified by suites 27/28 on gfx950 at `fc288d7`)
 2026-11-08 (second session: PythonHandler section replaces the 2026-09-08 'broken and unreachable' note; validation hook and fatal plugin-load errors; verified against src/pyHandler.cc, plugins/python_bridge_plugin.cc, plugins/plugin.h, src/utils.cc at HEAD 22c4d95 and the bf_pyhandler-gil / ft_pythonhandler-wave-fields / bf_robustness-errors packets; pool and output-file sections not re-read)

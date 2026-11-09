@@ -149,14 +149,19 @@ defects" were attributed to that misreading before it was caught. Both have been
 - `-k` is a regex searched in the demangled name (see `interceptor`); anchoring with `^` misses
   template kernels, whose demangled names begin with the return type (`void ...`).
 
-## `-d random` (2026-11-08, `8e18d9e`)
+## `-d` dispatch selection (2026-11-09, `ft_dispatch-selection`)
 
-Each dispatch the `-k` filter lets through is captured independently with probability 1/100
-(`RANDOM_DISPATCH_DISTRIBUTION`, `src/utils.cc` `randomDispatcher`); the filter is applied first
-(`interceptor.cc`, `filter_allows && canDispatch`). It is **not** "one random dispatch per kernel"
-(the old docs). Kernels with few dispatches are usually not captured; the end-of-run summary now
-lists every kernel random captured nothing of. Supervisor ruling (option A): keep the sampling;
-changing it is on Rene's deferred list. Suite 27.
+`-d all | pattern[:count[:stride]]`, items `N`, `A-B` (inclusive), `A-` (open); optional quoted
+`[...]`; no whitespace. Numbers are **per demangled kernel name per process, from 1**, counting
+every dispatch of the kernel (instrumented or not, clone present or not); `-k` picks the kernels.
+`count` = total copies incl. the first (empty = unbounded); default stride = max-min+1. Two
+parsers, one table: `omniprobe/api/dispatch_spec.py` (launcher `type=` → exit 2 before launch;
+Python API → `DispatchSpecError`) and `src/dispatch_spec.cc` (runtime `dispatchController`,
+`src/utils.cc`; malformed env → ERROR, nothing instrumented), both checked against
+`tests/dispatch_spec_cases.txt`. The launcher loads the module from `<root>/api/` (build tree has
+a `build/api` symlink). Output carries `kernel_dispatch` beside the global `dispatch_id` (see
+`handler-pipeline`). `-d random` was removed (its error points to `-d 1::100`); `-d 1` on several
+GPUs is now "first overall", not "first per GPU". Design and ruling: `done/ft_dispatch-selection`.
 
 ## Open Questions
 
@@ -170,3 +175,4 @@ None.
 2026-11-08 (Python API surface and BBA schema change from this session's commits; exit-status section not re-verified, resting on 2026-10-26)
 2026-11-08 (second session: configuration-error checks, ROCm resolution order and ROCM_PATH export, raw-chunk output forwarding; verified by reading omniprobe/omniprobe at 22c4d95 and bf_robustness-errors; exit-status section not re-read)
 - 2026-11-08 (third session): -d random section.
+- 2026-11-09: -d section rewritten for ft_dispatch-selection; verified by suite 27 on gfx950 at `bdd1bd3`.

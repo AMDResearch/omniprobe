@@ -8,6 +8,11 @@ refactors to improve naming consistency, architecture cleanliness, and test orga
 
 ## Active Work Areas (2026-11-08, end of third session)
 
+**2026-11-09 (gfx950):** `ft_dispatch-selection` (per-kernel `-d` specs, `kernel_dispatch` in output,
+`-d random` removed) and `bf_pyhandler-python-host-deadlock` (Python hosts no longer deadlock;
+exit waits for handlers) done and pushed (`fc288d7`). Full suite **28 suites**, 25 pass + 3 N/A on
+gfx950; gfx90a re-run pending. No packet active.
+
 **No packet is active; the supervisor's 2026-11-08 queue is done.** This session completed
 `rf_exact-arch-bitcode` with PR #38 (merged, lwitschen credited): exact-arch device bitcode with a
 legacy fallback, the arch read from Triton's triple, gfx950 supported end to end (dh_comms
@@ -19,9 +24,9 @@ legacy fallback, the arch read from Triton's triple, gfx950 supported end to end
 module-load 3/3 from a fresh clone; suites 3-5 needed their gitignored driver binaries rebuilt
 (`testing`). Making those binaries a build target would let a fresh checkout pass unaided (not queued).
 
-**Known follow-ups, not packets:** 1-/2-byte LDS phases on gfx950 unmeasured; `-d random` sampling semantics (Rene, deferred); PythonHandler interpreter teardown ownership (interpreter is
-deliberately never finalized); PythonHandler inside a Python host (Triton) untested — possible
-GIL deadlock at completion; a `--python-handler` launcher flag; docs name `OMNIPROBE_*`
+**Known follow-ups, not packets:** 1-/2-byte LDS phases on gfx950 unmeasured; PythonHandler interpreter teardown ownership (interpreter is
+deliberately never finalized; a Python host's exit now waits for handlers); PythonHandler GIL
+throughput with busy host threads (Rene's deferred list); a `--python-handler` launcher flag; docs name `OMNIPROBE_*`
 environment variables where the code reads `LOGDUR_*` (noted on the suspended
 `rf_rename-logduration-to-omniprobe`).
 

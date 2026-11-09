@@ -2,6 +2,11 @@
 
 ## State after the 2026-11-09 session (gfx950 node) — read first
 
+**Next session (supervisor, MI210 node):** reconfigure `build/` for gfx90a, delete
+`tests/library_filter_chain/build`, run the full suite (expect 28 suites, all pass) and
+`run_module_load_tests.sh`; later, merge oplds' `lds-bank-model` into main (supervisor coordinates).
+GIL-throughput slowdown is on Rene's deferred list (not now).
+
 Done and pushed (`fc288d7`): `ft_dispatch-selection` (-d takes per-kernel specs like `2,5`,
 `1-10`, `10-`, `1,3,4:3:100`, `1::100`; `-d random` removed; `kernel_dispatch` in all output;
 suite 27) and `bf_pyhandler-python-host-deadlock` (PythonHandler in a Python host: Triton and
