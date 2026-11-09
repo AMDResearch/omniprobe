@@ -16,3 +16,10 @@
   full suite 23 passed, 3 skipped (rocBLAS/hipBLASLt gfx90a-only), 0 failed, with suite 26
   run separately under the lock: 62/62. Library filter chain needs OMNIPROBE_ROOT set when
   BUILD_DIR is not <repo>/build (environment, not a regression).
+- 2026-11-09 (turn 3): kernelDB lookup uses the original kernel's ISA [read
+  interceptor.cc:1156/:983; meas: clones differ (no merging, dh_comms LDS traffic), originals
+  in the instrumented binary identical to the plain build 61/62, the 62nd by one v_cndmask].
+  LDS atomics instrumented (f69118b): plugin atomicrmw/cmpxchg on addrspace 3 as read_write;
+  handler atomic classes, float atomics -> serialized_lanes, atomic-optimizer (v_mbcnt)
+  -> one lane. Suite 26: 71/71 on gfx950; atomics fail on 3c4b771 (3 kernels). Full suite
+  23 pass / 3 skip / 0 fail. Report for Rene: report-lds-2026-11-09.md.

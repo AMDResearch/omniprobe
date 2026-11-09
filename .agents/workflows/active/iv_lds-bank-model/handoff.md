@@ -8,6 +8,9 @@ gfx950 measured and modelled (artifacts.md). Harness in dh_comms `tools/lds_bank
 Update (turn 2): handler uses kernelDB's DS instruction on gfx950 (87d9363); suite 26 has
 58 kernels, all equal to the counter on gfx950. gfx90a still size-based.
 
+Update (turn 3): atomics instrumented and modelled (gfx950); suite 26 71/71; report for
+Rene in report-lds-2026-11-09.md (gfx90a column TBD).
+
 ## Next
 
 1. On the MI210 node: `external/dh_comms/tools/lds_bank_probe/run_all.sh /tmp/lds-90a`;
