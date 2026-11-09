@@ -805,9 +805,21 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
   return true;
 }
 
+// The last source file read by show_line and by getCodeContext. Allocated once
+// and never destroyed, like cdna_lds: the last dispatch can report on
+// comms_runner while exit() runs exit handlers. As function-local statics,
+// whose destructors exit() runs, rocBLAS GEMM under MemoryAnalysis aborted in
+// show_line at exit in most runs (bf_report-during-exit).
+struct source_cache_t {
+  std::string fname;
+  std::vector<std::string> lines;
+};
+static source_cache_t &show_line_cache = *new source_cache_t;
+static source_cache_t &code_context_cache = *new source_cache_t;
+
 void show_line(const std::string &fname, uint16_t line, uint16_t column) {
-  static std::string cached_fname;
-  static std::vector<std::string> cached_lines;
+  std::string &cached_fname = show_line_cache.fname;
+  std::vector<std::string> &cached_lines = show_line_cache.lines;
 
   // If accessing a new file, clear the old cache and read new file
   if (fname != cached_fname) {
@@ -1009,8 +1021,8 @@ void renderJSON(std::vector<std::pair<std::string, T>>& fields, std::iostream& o
 
 // Function to get code context line for JSON output
 std::string getCodeContext(const std::string &fname, uint16_t line) {
-  static std::string cached_fname;
-  static std::vector<std::string> cached_lines;
+  std::string &cached_fname = code_context_cache.fname;
+  std::vector<std::string> &cached_lines = code_context_cache.lines;
 
   // If accessing a new file, clear the old cache and read new file
   if (fname != cached_fname) {
