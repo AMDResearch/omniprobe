@@ -57,6 +57,7 @@ THE SOFTWARE.
 #include <ctime>
 #include <algorithm>
 #include <regex>
+#include "inc/dispatch_spec.h"
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <link.h>
@@ -80,8 +81,6 @@ THE SOFTWARE.
 #define RH_PAGE_SIZE 0x1000
 #define RH_PAGE_MASK 0x0FFF
 
-
-#define RANDOM_DISPATCH_DISTRIBUTION 100
 
 using namespace std;
 
@@ -254,28 +253,24 @@ private:
     std::map<void *, getMessageHandlers_t> plugins_;
 };
 
-class randomDispatcher{
-public:
-    randomDispatcher(int distro);
-    ~randomDispatcher();
-    bool canDispatch();
-private:
-    std::mt19937 generator_;
-    std::uniform_int_distribution<int> distribution_;
-};
-
+// Which dispatches run instrumented (-d, LOGDUR_DISPATCHES). Dispatch numbers
+// count per kernel name, from 1, over every dispatch of the kernel; the spec
+// grammar is in inc/dispatch_spec.h. Not thread-safe: the interceptor calls it
+// under its mutex.
 class dispatchController{
 public:
     dispatchController();
-    ~dispatchController();
-    bool canDispatch(uint64_t kernel_object);
-    bool isRandom() const { return bRandomDispatch_; }
+    // The per-kernel number of this dispatch of the kernel called `name`.
+    uint64_t nextOrdinal(const std::string& name);
+    bool selected(uint64_t ordinal) const { return valid_ && spec_.contains(ordinal); }
+    // False if LOGDUR_DISPATCHES was malformed; then nothing is selected.
+    bool valid() const { return valid_; }
+    const std::string& error() const { return error_; }
 private:
-    bool bAllDispatch_;
-    bool bRandomDispatch_;
-    bool bOneDispatch_;
-    std::map<uint64_t, bool> dispatched_kernels_;
-    randomDispatcher randomDispatcher_;
+    dispatchSpec spec_;
+    bool valid_ = true;
+    std::string error_;
+    std::map<std::string, uint64_t> ordinals_;
 };
 
 

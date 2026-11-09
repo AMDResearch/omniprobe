@@ -178,8 +178,6 @@ private:
     std::string kernel_filter_;
     uint64_t filter_matched_ = 0;                        // guarded by uninstrumented_mutex_
     std::map<std::string, uint64_t> filter_excluded_;    // guarded by uninstrumented_mutex_
-    // -d random: name -> (dispatches eligible for capture, dispatches captured)
-    std::map<std::string, std::pair<uint64_t, uint64_t>> random_draws_; // guarded by uninstrumented_mutex_
     logDuration log_;
     coCache kernel_cache_;
     bool run_instrumented_;

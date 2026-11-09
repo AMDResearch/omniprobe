@@ -149,6 +149,7 @@ private:
     std::string strKernel_;
     uint64_t message_count_;
     uint64_t dispatch_id_;
+    uint64_t kernel_dispatch_;
     kernelDB::basicBlock *current_block_;
     uint64_t start_time_;
     std::map<waveIdentifier_t,wave_state_t, wave_cmp<waveIdentifier_t>> wave_states_;

@@ -45,6 +45,7 @@ private:
   size_t page_size_;
   std::string kernel_;
   uint64_t dispatch_id_;
+  uint64_t kernel_dispatch_;
   std::string location_;
   std::ostream *log_file_;
   //! Maps the lowest address on each page to the number of accesses to the page.

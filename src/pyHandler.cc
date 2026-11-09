@@ -20,6 +20,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 *******************************************************************************/
 #include "inc/pyHandler.h"
+#include "inc/kernel_dispatch.h"
 
 namespace {
 
@@ -119,14 +120,15 @@ pythonMessageHandler::pythonMessageHandler(const std::string& module_name, const
     if (error.empty()) {
         pKernel_ = PyUnicode_FromString(kernel.c_str());
         pDispatchId_ = PyLong_FromUnsignedLongLong(dispatch_id);
-        if (!pKernel_ || !pDispatchId_)
+        pKernelDispatch_ = PyLong_FromUnsignedLongLong(kernelDispatchOrdinal(dispatch_id));
+        if (!pKernel_ || !pDispatchId_ || !pKernelDispatch_)
             error = "Failed to create Python objects for the dispatch";
     }
     if (!error.empty()) {
         if (PyErr_Occurred())
             PyErr_Print();
         Py_CLEAR(pModule_); Py_CLEAR(pAddressFunc_); Py_CLEAR(pAddressWaveFunc_); Py_CLEAR(pTimingFunc_);
-        Py_CLEAR(pReportFunc_); Py_CLEAR(pKernel_); Py_CLEAR(pDispatchId_);
+        Py_CLEAR(pReportFunc_); Py_CLEAR(pKernel_); Py_CLEAR(pDispatchId_); Py_CLEAR(pKernelDispatch_);
         throw std::runtime_error(error);
     }
 }
@@ -143,6 +145,7 @@ pythonMessageHandler::~pythonMessageHandler()
     Py_CLEAR(pModule_);
     Py_CLEAR(pKernel_);
     Py_CLEAR(pDispatchId_);
+    Py_CLEAR(pKernelDispatch_);
 }
 
 // Calls func({"kernel": ..., "dispatch_id": ..., key: value}). Steals value.
@@ -160,6 +163,7 @@ void pythonMessageHandler::call(PyObject* func, const char* key, PyObject* value
     }
     PyDict_SetItemString(pDict, "kernel", pKernel_);
     PyDict_SetItemString(pDict, "dispatch_id", pDispatchId_);
+    PyDict_SetItemString(pDict, "kernel_dispatch", pKernelDispatch_);
     if (key) {
         PyDict_SetItemString(pDict, key, value);   // does not steal
         Py_DECREF(value);
@@ -181,7 +185,7 @@ void pythonMessageHandler::addressMessage(void *address)
     call(pAddressFunc_, "address", PyLong_FromUnsignedLongLong(reinterpret_cast<uintptr_t>(address)));
 }
 
-// Calls func(dict) after adding "kernel" and "dispatch_id". Steals dict. Caller
+// Calls func(dict) after adding "kernel", "dispatch_id" and "kernel_dispatch". Steals dict. Caller
 // holds the GIL.
 void pythonMessageHandler::callDict(PyObject* func, PyObject* dict)
 {
@@ -193,6 +197,7 @@ void pythonMessageHandler::callDict(PyObject* func, PyObject* dict)
     }
     PyDict_SetItemString(dict, "kernel", pKernel_);
     PyDict_SetItemString(dict, "dispatch_id", pDispatchId_);
+    PyDict_SetItemString(dict, "kernel_dispatch", pKernelDispatch_);
     PyObject* pValue = PyObject_CallFunctionObjArgs(func, dict, NULL);
     if (!pValue) {
         PyErr_Print();

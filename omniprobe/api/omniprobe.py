@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Callable, Optional, TypeVar
 
+from . import dispatch_spec
 from .results import (
     AddressRecord,
     AddressTrace,
@@ -101,9 +102,12 @@ class Omniprobe:
         kernel_filter : str or None
             Optional ECMAScript regex to limit which kernels are analysed.
         dispatches : str
-            Which dispatches to capture (``"all"``, ``"random"``, or ``"1"``).
-            ``"random"`` captures each dispatch with probability 1/100, so a
-            kernel with few dispatches is often not captured at all.
+            Which dispatches of each kernel to instrument, numbered per kernel
+            from 1: ``"all"`` (default), ``"1"``, ``"2,5"``, ``"1-10"``,
+            ``"10-"``, ``"1,3,4:3"`` (repeat 3 times), ``"1,3,4:3:100"``,
+            ``"1::100"`` (every 100th). See ``omniprobe -h`` or docs/usage.md.
+            A malformed spec raises ``DispatchSpecError`` (a ``ValueError``)
+            before anything is run.
 
         Returns
         -------
@@ -167,6 +171,7 @@ class Omniprobe:
                     KernelHeatmap(
                         kernel_name=entry.get("kernel", "<unknown>"),
                         dispatch_id=entry.get("dispatch_id", 0),
+                        kernel_dispatch=entry.get("kernel_dispatch", 0),
                         page_size=entry.get("page_size", 0),
                         pages=[
                             HeatmapPage(
@@ -212,6 +217,7 @@ class Omniprobe:
                     AddressRecord(
                         kernel_name=d.get("kernel_name", "<unknown>"),
                         dispatch_id=d.get("dispatch_id", 0),
+                        kernel_dispatch=d.get("kernel_dispatch", 0),
                         timestamp=d.get("timestamp", 0),
                         exec_mask=d.get("exec", 0),
                         active_lane_count=d.get("active_lane_count", 0),
@@ -260,6 +266,7 @@ class Omniprobe:
                     BBRecord(
                         kernel_name=d.get("kernel_name", "<unknown>"),
                         dispatch_id=d.get("dispatch_id", 0),
+                        kernel_dispatch=d.get("kernel_dispatch", 0),
                         timestamp=d.get("timestamp", 0),
                         exec_mask=d.get("exec", 0),
                         active_lane_count=d.get("active_lane_count", 0),
@@ -298,6 +305,7 @@ class Omniprobe:
         Returns the parsed result and omniprobe's combined stdout/stderr.
         Raises RuntimeError if omniprobe exits non-zero.
         """
+        dispatches = dispatch_spec.normalize(dispatches)
         with tempfile.NamedTemporaryFile(
             suffix=".json", prefix="omniprobe_", delete=False
         ) as tmp:
@@ -423,6 +431,7 @@ class Omniprobe:
                 KernelMemoryResult(
                     kernel_name=kernel_name,
                     dispatch_id=dispatch_id,
+                    kernel_dispatch=entry.get("kernel_dispatch", 0),
                     accesses=accesses,
                     unanalyzed_flat_accesses=entry.get("unanalyzed_flat_accesses", 0),
                     unattributed_accesses=entry.get("unattributed_accesses", 0),
@@ -462,6 +471,7 @@ class Omniprobe:
                 KernelBBResult(
                     kernel_name=kernel_name,
                     dispatch_id=dispatch_id,
+                    kernel_dispatch=entry.get("kernel_dispatch", 0),
                     basic_blocks=blocks,
                 )
             )

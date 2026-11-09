@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #include "inc/memory_analysis_handler.h"
+#include "inc/kernel_dispatch.h"
 
 #include "gpu_arch_constants.h"
 #include "utils.h"
@@ -139,7 +140,7 @@ void conflict_set::clear() {
   }
 }
 
-memory_analysis_handler_t::memory_analysis_handler_t(const std::string& kernel, uint64_t dispatch_id, const std::string& location,  bool verbose) : conflict_sets(), verbose_(verbose), kernel_(kernel), dispatch_id_(dispatch_id), location_(location),
+memory_analysis_handler_t::memory_analysis_handler_t(const std::string& kernel, uint64_t dispatch_id, const std::string& location,  bool verbose) : conflict_sets(), verbose_(verbose), kernel_(kernel), dispatch_id_(dispatch_id), kernel_dispatch_(kernelDispatchOrdinal(dispatch_id)), location_(location),
     rw2str_map{
           {dh_comms::memory_access::undefined, "unspecified memory operation"},
           {dh_comms::memory_access::read, "read"},
@@ -906,6 +907,7 @@ void memory_analysis_handler_t::report_json() {
   json_output << "{\n";
   json_output << "  \"kernel\": \"" << json_escape(kernel_) << "\",\n";
   json_output << "  \"dispatch_id\": " << dispatch_id_ << ",\n";
+  json_output << "  \"kernel_dispatch\": " << kernel_dispatch_ << ",\n";
 
   // Flat accesses array combining cache line and bank conflict data per source location
   json_output << "  \"accesses\": [\n";

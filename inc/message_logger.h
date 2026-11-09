@@ -48,6 +48,7 @@ public:
 private:
     std::string strKernel_;
     uint64_t dispatch_id_;
+    uint64_t kernel_dispatch_;
     std::string location_;
     bool verbose_;
     bool format_csv_;
