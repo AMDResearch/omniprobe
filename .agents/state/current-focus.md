@@ -417,6 +417,10 @@ the script — open, unmerged, and no fix for upstream; it does not explain #124
 
 ## Recent Decisions
 
+- 2026-11-09 leak-scan (oplds close): scanned 6aefd17..3ac6b8e (3 commits, 767 added lines, 3
+  messages, 502 tracked files, zero hits outside the baseline). The commit carrying this note is
+  outside that range: re-derive the range at push time.
+
 - 2026-11-08 (fourth session close): leak-scan scanned 113d53b..b213100 (1 commit, 19 added
   lines, 1 message, 471 tracked files), zero hits outside the baseline; exit 0. The commit carrying
   this entry is outside that range: re-derive the range when pushing.
