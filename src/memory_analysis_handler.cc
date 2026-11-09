@@ -582,8 +582,11 @@ bool memory_analysis_handler_t::handle_cache_line_count_analysis(const message_t
 // The DS instruction at the source location of an LDS access, from kernelDB:
 // same file, line and column, same direction. Prefers one whose bytes per
 // address equal the IR access size. Empty if there is none (or no kernelDB).
+// flat is set if a flat_* instruction is at that location: a flat access that
+// reached LDS (classified at run time, e.g. at -O0) has no DS instruction.
 static std::string lds_isa_instruction(const message_t &message, const std::string &kernel_name,
-                                       kernelDB::kernelDB *kdb, bool write, uint16_t ir_size) {
+                                       kernelDB::kernelDB *kdb, bool write, uint16_t ir_size, bool &flat) {
+  flat = false;
   if (kdb == nullptr)
     return "";
   auto hdr = message.wave_header();
@@ -592,9 +595,12 @@ static std::string lds_isa_instruction(const message_t &message, const std::stri
     for (const auto &inst : kdb->getInstructionsForLine(kernel_name, hdr.dwarf_line)) {
       std::string cls;
       uint16_t bytes;
-      if (inst.column_ != hdr.dwarf_column || !lds_class_for_isa(inst.inst_, cls, bytes) ||
-          (inst.inst_.rfind("ds_write", 0) == 0) != write ||
+      if (inst.column_ != hdr.dwarf_column ||
           std::hash<std::string>{}(kdb->getFileName(kernel_name, inst.path_id_)) != hdr.dwarf_fname_hash)
+        continue;
+      if (inst.inst_.rfind("flat_", 0) == 0)
+        flat = true;
+      if (!lds_class_for_isa(inst.inst_, cls, bytes) || (inst.inst_.rfind("ds_write", 0) == 0) != write)
         continue;
       if (bytes == ir_size)
         return inst.inst_;
@@ -622,7 +628,8 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
   // several IR accesses may be merged into one wider instruction (then only
   // the IR access at the start of the instruction's data counts it, so a
   // merged instruction is counted once).
-  std::string isa_instruction = lds_isa_instruction(message, kernel_name_, kdb_p_, write, data_size);
+  bool flat = false;
+  std::string isa_instruction = lds_isa_instruction(message, kernel_name_, kdb_p_, write, data_size, flat);
   std::string cls = lds_class_for_size(write, data_size);
   uint16_t isa_size = 0;
   if (!isa_instruction.empty()) {
@@ -634,12 +641,13 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
   uint16_t piece = data_size;
   if (lds_classes_from_isa(arch) && isa_size != 0)
     piece = isa_size;
-  // With line info but no DS instruction at this location, the access was
-  // merged into an instruction that carries another access's location (two
-  // loads on lines 11 and 12 become one ds_read_b64 at line 11); that access
-  // counts the instruction. Recorded with no conflicts.
+  // With line info but no DS (or flat) instruction at this location, the
+  // access was merged into an instruction that carries another access's
+  // location (two loads on lines 11 and 12 become one ds_read_b64 at line 11);
+  // that access counts the instruction. Recorded with no conflicts. Flat
+  // accesses to LDS keep the size-based class (not measured per instruction).
   bool merged_away = lds_classes_from_isa(arch) && kdb_p_ != nullptr && message.wave_header().dwarf_line != 0 &&
-                     isa_instruction.empty();
+                     isa_instruction.empty() && !flat;
   if (merged_away)
     ++merged_lds_;
 
