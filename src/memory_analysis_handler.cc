@@ -27,6 +27,7 @@
 #include "inc/json_output.h"
 
 #include <atomic>
+#include <regex>
 #include <cassert>
 #include <set>
 #include <string>
@@ -38,67 +39,113 @@
 namespace {
 using lane_ranges_t = std::vector<std::pair<std::size_t, std::size_t>>;
 
-// LDS geometry assumed by the bank-conflict analysis: for each access size,
-// reads and writes separately, the bank count and the groups of lanes served
-// in the same phase (see memory_analysis_handler.h). Measured with
-// tests/lds_conflict_sets/run.sh (pairwise SQ_LDS_BANK_CONFLICT); suite 26
-// compares the resulting counts with the hardware counter.
+// LDS geometry assumed by the bank-conflict analysis, per access class: the
+// bank count (bank = dword index mod banks) and the groups of lanes served in
+// the same cycle (see memory_analysis_handler.h). Measured with dh_comms
+// tools/lds_bank_probe (one DS instruction, per-lane addresses, per-dispatch
+// SQ_LDS_BANK_CONFLICT); suite 26 compares the resulting counts with the
+// hardware counter. Classes are named after the instruction whose behaviour
+// they describe:
+//   narrow       reads and writes of 1, 2 or 4 bytes; each address of
+//                ds_read2_b32/ds_write2_b32
+//   read_b64, read_b96, read_b128, write_b64, write_b96, write_b128
+//                also each address of ds_read2_b64/ds_write2_b64 (write_b64:
+//                on gfx950 the read2 form is served like the b64 write)
+//   read_b64_tr, read_b96_tr   gfx950 transpose loads
 struct lds_phases_t {
   std::size_t banks;
   std::vector<lane_ranges_t> groups;
 };
-struct lds_model_t {
-  std::map<std::size_t, lds_phases_t> reads;
-  std::map<std::size_t, lds_phases_t> writes;
-};
+using lds_model_t = std::map<std::string, lds_phases_t>;
+
+const lane_ranges_t lanes_0_31{{0, 32}}, lanes_32_63{{32, 64}};
+std::vector<lane_ranges_t> consecutive_lanes(std::size_t n) {
+  std::vector<lane_ranges_t> groups;
+  for (std::size_t a = 0; a < 64; a += n)
+    groups.push_back({{a, a + n}});
+  return groups;
+}
+// {0..3,20..23}, {4..7,16..19}, {8..11,28..31}, {12..15,24..27}, and +32
+const std::vector<lane_ranges_t> cdna_read_b128_groups{
+    {{0, 4}, {20, 24}},   {{4, 8}, {16, 20}},   {{8, 12}, {28, 32}},  {{12, 16}, {24, 28}},
+    {{32, 36}, {52, 56}}, {{36, 40}, {48, 52}}, {{40, 44}, {60, 64}}, {{44, 48}, {56, 60}}};
 
 // Allocated once and never destroyed: the handler of the last dispatch can
 // still be running on its own thread while exit() runs static destructors.
 // Function-local statics would also race on first use, since this library is
 // built with -fno-threadsafe-statics.
 //
-// CDNA1-3 (measured on gfx90a, 2026-11-08): 32 banks throughout. 16-byte
-// writes are served 8 consecutive lanes at a time, unlike 16-byte reads.
-const lds_model_t &cdna_lds = [] {
-  const lds_phases_t halves{32, {{{0, 32}}, {{32, 64}}}};
-  std::map<std::size_t, lds_phases_t> reads{
-      {1, halves},
-      {2, halves},
-      {4, halves},
-      {8, {32, {{{0, 16}}, {{16, 32}}, {{32, 48}}, {{48, 64}}}}},
-      {16,
-       {32,
-        {{{0, 4}, {20, 24}},
-         {{4, 8}, {16, 20}},
-         {{8, 12}, {28, 32}},
-         {{12, 16}, {24, 28}},
-         {{32, 36}, {52, 56}},
-         {{36, 40}, {48, 52}},
-         {{40, 44}, {60, 64}},
-         {{44, 48}, {56, 60}}}}}};
-  auto writes = reads;
-  writes[16] = {32,
-                {{{0, 8}}, {{8, 16}}, {{16, 24}}, {{24, 32}},
-                 {{32, 40}}, {{40, 48}}, {{48, 56}}, {{56, 64}}}};
-  return *new lds_model_t{reads, writes};
-}();
+// CDNA1-3 (measured on gfx90a, 2026-11-08, b32/b64/b128 only): 32 banks
+// throughout. 16-byte writes are served 8 consecutive lanes at a time, unlike
+// 16-byte reads. 12-byte accesses and read2/write2 are not measured yet.
+const lds_model_t &cdna_lds = *new lds_model_t{
+    {"narrow", {32, {lanes_0_31, lanes_32_63}}},
+    {"read_b64", {32, consecutive_lanes(16)}},
+    {"write_b64", {32, consecutive_lanes(16)}},
+    {"read_b128", {32, cdna_read_b128_groups}},
+    {"write_b128", {32, consecutive_lanes(8)}},
+};
 
-// CDNA4 (measured on gfx950/MI350, 2026-11-08). Writes and 4-byte reads as on
-// CDNA1-3. 8- and 16-byte reads use 64 banks, with 32- and 16-lane phases.
-// 1- and 2-byte accesses are not measured; they follow 4-byte.
-const lds_model_t &cdna4_lds = [] {
-  auto reads = cdna_lds.reads;
-  reads[8] = {64, {{{0, 32}}, {{32, 64}}}};
-  reads[16] = {64,
-               {{{0, 4}, {12, 16}, {20, 28}},
-                {{4, 12}, {16, 20}, {28, 32}},
-                {{32, 36}, {44, 48}, {52, 60}},
-                {{36, 44}, {48, 52}, {60, 64}}}};
-  return *new lds_model_t{reads, cdna_lds.writes};
-}();
+// CDNA4 (measured on gfx950/MI350X, 2026-11-09, every DS access class; the
+// model reproduces SQ_LDS_BANK_CONFLICT for all 109122 measured aligned
+// patterns). The LDS behaves as 64 banks of 4 bytes for ds_read_b64,
+// ds_read_b128 and the transpose loads, and as 32 banks (banks b and b+32 never
+// both in one cycle) for every other access.
+const lds_model_t &cdna4_lds = *new lds_model_t{
+    {"narrow", {32, {lanes_0_31, lanes_32_63}}},
+    {"read_b64", {64, {lanes_0_31, lanes_32_63}}},
+    {"read_b96", {32, cdna_read_b128_groups}},
+    {"read_b128",
+     {64,
+      {{{0, 4}, {12, 16}, {20, 28}},
+       {{4, 12}, {16, 20}, {28, 32}},
+       {{32, 36}, {44, 48}, {52, 60}},
+       {{36, 44}, {48, 52}, {60, 64}}}}},
+    {"write_b64", {32, consecutive_lanes(16)}},
+    {"write_b96", {32, consecutive_lanes(8)}},
+    {"write_b128", {32, consecutive_lanes(8)}},
+    {"read_b64_tr", {64, {lanes_0_31, lanes_32_63}}},
+    {"read_b96_tr", {64, consecutive_lanes(16)}},
+};
 
 const lds_model_t &lds_model(uint8_t arch) {
   return arch == dh_comms::gcnarch::gfx950 ? cdna4_lds : cdna_lds;
+}
+
+// Whether the access class of an LDS access is taken from the DS instruction
+// kernelDB finds at its source location. Only where every class is measured;
+// elsewhere the class follows from the IR access size alone.
+bool lds_classes_from_isa(uint8_t arch) { return arch == dh_comms::gcnarch::gfx950; }
+
+// Class for an IR access of <bytes> without ISA information.
+std::string lds_class_for_size(bool write, uint16_t bytes) {
+  if (bytes <= 4)
+    return "narrow";
+  return std::string(write ? "write_b" : "read_b") + std::to_string(8 * bytes);
+}
+
+// What a DS instruction does to the banks: its class and the bytes behind each
+// of its addresses. Returns false for instructions that are not LDS data
+// accesses this analysis models (atomics are not instrumented).
+// Never destroyed, like the models above.
+const std::regex &ds_data_access =
+    *new std::regex(R"(^ds_(read|write)(2st64|2)?_([biu])(8|16|32|64|96|128)(_tr_b[0-9]+)?(_d16(_hi)?)?$)");
+bool lds_class_for_isa(const std::string &mnemonic, std::string &cls, uint16_t &bytes) {
+  const std::regex &ds = ds_data_access;
+  std::smatch m;
+  if (!std::regex_match(mnemonic, m, ds))
+    return false;
+  bool write = m[1] == "write";
+  bytes = std::stoi(m[4]) / 8;
+  if (m[5].matched)
+    cls = bytes == 12 ? "read_b96_tr" : "read_b64_tr";
+  else if (bytes <= 4)
+    cls = "narrow";
+  else if (m[2].matched) // each address of read2/write2_b64 behaves like a b64 write
+    cls = "write_b64";
+  else
+    cls = lds_class_for_size(write, bytes);
+  return true;
 }
 } // namespace
 
@@ -115,13 +162,13 @@ conflict_set::conflict_set(const std::vector<std::pair<std::size_t, std::size_t>
     }
   }
 }
-bool conflict_set::register_access(size_t lane, uint64_t address) {
+bool conflict_set::register_access(size_t lane, uint64_t address, std::size_t bytes) {
   if (lanes.find(lane) == lanes.end()) { // lane is not in this conflict set
     return false;
   }
-  uint64_t dword = address / sizeof(uint32_t);
-  size_t bank = dword % banks.size();
-  banks[bank].insert(dword);
+  // Every dword the access touches; bytes of one dword never conflict.
+  for (uint64_t dword = address / sizeof(uint32_t); dword <= (address + bytes - 1) / sizeof(uint32_t); ++dword)
+    banks[dword % banks.size()].insert(dword);
   return true;
 }
 
@@ -532,6 +579,34 @@ bool memory_analysis_handler_t::handle_cache_line_count_analysis(const message_t
   return true;
 }
 
+// The DS instruction at the source location of an LDS access, from kernelDB:
+// same file, line and column, same direction. Prefers one whose bytes per
+// address equal the IR access size. Empty if there is none (or no kernelDB).
+static std::string lds_isa_instruction(const message_t &message, const std::string &kernel_name,
+                                       kernelDB::kernelDB *kdb, bool write, uint16_t ir_size) {
+  if (kdb == nullptr)
+    return "";
+  auto hdr = message.wave_header();
+  std::string first;
+  try {
+    for (const auto &inst : kdb->getInstructionsForLine(kernel_name, hdr.dwarf_line)) {
+      std::string cls;
+      uint16_t bytes;
+      if (inst.column_ != hdr.dwarf_column || !lds_class_for_isa(inst.inst_, cls, bytes) ||
+          (inst.inst_.rfind("ds_write", 0) == 0) != write ||
+          std::hash<std::string>{}(kdb->getFileName(kernel_name, inst.path_id_)) != hdr.dwarf_fname_hash)
+        continue;
+      if (bytes == ir_size)
+        return inst.inst_;
+      if (first.empty())
+        first = inst.inst_;
+    }
+  } catch (const std::exception &) {
+    // no instructions for this line
+  }
+  return first;
+}
+
 bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &message) {
   auto lane_ids_of_active_lanes = get_lane_ids_of_active_lanes(message.wave_header());
   assert(message.no_data_items() == lane_ids_of_active_lanes.size());
@@ -539,36 +614,65 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
   uint16_t data_size = (message.wave_header().user_data >> 6) & 0xffff;
   uint8_t arch = message.wave_header().arch;
   bool write = rw_kind == memory_access::write;
-  auto arch_sets = conflict_sets.find({arch, write});
-  if (arch_sets == conflict_sets.end()) {
-    const lds_model_t &model = lds_model(arch);
-    std::map<std::size_t, std::vector<conflict_set>> sets;
-    for (const auto &[size, phases] : write ? model.writes : model.reads)
-      for (const auto &lanes : phases.groups)
-        sets[size].emplace_back(lanes, phases.banks);
-    arch_sets = conflict_sets.emplace(std::make_pair(arch, write), std::move(sets)).first;
+
+  // Access class: from the DS instruction where it is known and the model
+  // covers every class, else from the IR size. The instruction can differ from
+  // the IR access: a wide IR access may be split into the two addresses of a
+  // read2/write2 (pieces of isa_size bytes, each an access of the class), and
+  // several IR accesses may be merged into one wider instruction (then only
+  // the IR access at the start of the instruction's data counts it, so a
+  // merged instruction is counted once).
+  std::string isa_instruction = lds_isa_instruction(message, kernel_name_, kdb_p_, write, data_size);
+  std::string cls = lds_class_for_size(write, data_size);
+  uint16_t isa_size = 0;
+  if (!isa_instruction.empty()) {
+    std::string isa_cls;
+    lds_class_for_isa(isa_instruction, isa_cls, isa_size);
+    if (lds_classes_from_isa(arch))
+      cls = isa_cls;
   }
-  auto &size_sets = arch_sets->second;
-  if (size_sets.find(data_size) == size_sets.end()) {
-    printf("bank conflict handling of %u-byte accesses not supported\n", data_size);
+  uint16_t piece = data_size;
+  if (lds_classes_from_isa(arch) && isa_size != 0)
+    piece = isa_size;
+
+  const lds_model_t &model = lds_model(arch);
+  auto phases = model.find(cls);
+  if (phases == model.end()) {
+    printf("bank conflict handling of %u-byte LDS %s (%s) not supported on this architecture\n", data_size,
+           write ? "writes" : "reads", isa_instruction.empty() ? "no ISA match" : isa_instruction.c_str());
     return false;
   }
-
-  for (size_t i = 0; i != message.no_data_items(); ++i) {
-    auto lane = lane_ids_of_active_lanes[i];
-    uint64_t address = *(const uint64_t *)message.data_item(i);
-    assert(address % data_size == 0); // we only handle naturally-aligned data
-    for (auto &cs : size_sets[data_size]) {
-      if (cs.register_access(lane, address)) {
-        break;
-      }
-    }
+  auto arch_sets = conflict_sets.find({arch, cls});
+  if (arch_sets == conflict_sets.end()) {
+    std::vector<conflict_set> sets;
+    for (const auto &lanes : phases->second.groups)
+      sets.emplace_back(lanes, phases->second.banks);
+    arch_sets = conflict_sets.emplace(std::make_pair(arch, cls), std::move(sets)).first;
   }
+  auto &sets = arch_sets->second;
 
   size_t bank_conflict_count = 0;
-  for (auto &cs : size_sets[data_size]) {
-    bank_conflict_count += cs.bank_conflict_count();
-    cs.clear();
+  bool merged_tail = piece > data_size && message.no_data_items() != 0 &&
+                     *(const uint64_t *)message.data_item(0) % piece != 0;
+  if (!merged_tail) {
+    // One pass over the lanes per piece; a merged access covers the
+    // instruction's whole data.
+    uint16_t pieces = piece < data_size ? data_size / piece : 1;
+    for (uint16_t p = 0; p != pieces; ++p) {
+      for (size_t i = 0; i != message.no_data_items(); ++i) {
+        auto lane = lane_ids_of_active_lanes[i];
+        uint64_t address = *(const uint64_t *)message.data_item(i) + p * piece;
+        for (auto &cs : sets) {
+          if (cs.register_access(lane, address, piece)) {
+            break;
+          }
+        }
+      }
+      for (auto &cs : sets) {
+        bank_conflict_count += cs.bank_conflict_count();
+        cs.clear();
+      }
+    }
   }
 
   if (verbose_) {
@@ -602,8 +706,7 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
   auto &accesses = lds_accesses[fname][line][column]; // reference to std::vector of lds_accesses_t
 
   size_t no_accesses = 1;
-  uint16_t isa_access_size = 0; // kernelDB currently doesn't handle LDS instructions yet.
-  std::string isa_instruction = "";
+  uint16_t isa_access_size = isa_size;
   lds_accesses_t current_access{{no_accesses, data_size, isa_access_size, rw_kind, isa_instruction},
                                 bank_conflict_count};
   auto it = std::find_if(accesses.begin(), accesses.end(), [&current_access](const memory_accesses_t &access) {
@@ -964,6 +1067,8 @@ void memory_analysis_handler_t::report_json() {
           json_output << "      \"access_type\": \"" << rw2str(access.rw_kind, rw2str_map) << "\",\n";
           json_output << "      \"execution_count\": " << access.no_accesses << ",\n";
           json_output << "      \"ir_bytes\": " << access.ir_access_size << ",\n";
+          json_output << "      \"isa_bytes\": " << access.isa_access_size << ",\n";
+          json_output << "      \"isa_instruction\": \"" << json_escape(access.isa_instruction) << "\",\n";
           json_output << "      \"excess_cache_lines\": 0,\n";
           json_output << "      \"bank_conflicts\": " << access.no_bank_conflicts << "\n";
           json_output << "    }";

@@ -25,6 +25,7 @@ THE SOFTWARE.
 #include "inc/kdb_message_handler_base.h"
 
 #include <map>
+#include <string>
 #include <set>
 #include <vector>
 
@@ -66,7 +67,7 @@ namespace dh_comms {
 class conflict_set {
 public:
   conflict_set(const std::vector<std::pair<std::size_t, std::size_t>> &fl_pairs, std::size_t no_banks);
-  bool register_access(size_t lane, uint64_t address);
+  bool register_access(size_t lane, uint64_t address, std::size_t bytes);
   size_t bank_conflict_count() const;
   void clear();
 
@@ -99,9 +100,9 @@ private:
   void report_json();
 
 private:
-  //! Per architecture (gcnarch) and access kind (write or not), maps each supported
-  //! memory access size to the conflict sets for that size. Built on first use.
-  std::map<std::pair<uint8_t, bool>, std::map<std::size_t, std::vector<conflict_set>>> conflict_sets;
+  //! Per architecture (gcnarch) and LDS access class (see lds_model in
+  //! memory_analysis_handler.cc), the conflict sets. Built on first use.
+  std::map<std::pair<uint8_t, std::string>, std::vector<conflict_set>> conflict_sets;
 
   struct memory_accesses_t {
     size_t no_accesses = 0;

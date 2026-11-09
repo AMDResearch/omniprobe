@@ -70,6 +70,88 @@ PATTERN_KERNELS(f4, b128_stride1, l)
 PATTERN_KERNELS(f4, b128_stride8, 8 * l)
 PATTERN_KERNELS(f4, b128_rwsplit, 8 * (l / 4) + 4 * ((l / 16) % 2) + (l % 4))
 
+// Classes added 2026-11-09 (gfx950 model per DS instruction):
+// 1- and 2-byte: bytes of one dword never conflict (b8_dword4: four lanes per
+// dword, eight dwords on one bank per half-wave).
+PATTERN_KERNELS(unsigned char, b8_stride1, l)
+PATTERN_KERNELS(unsigned char, b8_stride128, 128 * l)
+PATTERN_KERNELS(unsigned char, b8_dword4, (l % 4) + 128 * (l / 4))
+PATTERN_KERNELS(unsigned short, b16_stride64, 64 * l)
+// 12-byte: ds_read_b96/ds_write_b96 (a 3-vector occupies a 16-byte slot)
+typedef float f3 __attribute__((ext_vector_type(3)));
+PATTERN_KERNELS(f3, b96_stride1, l)
+PATTERN_KERNELS(f3, b96_stride8, 8 * l)
+PATTERN_KERNELS(f3, b96_rwsplit, 8 * (l / 4) + 4 * ((l / 16) % 2) + (l % 4))
+// Under-aligned wide elements, placed at an odd dword (8 bytes) or an odd
+// 8-byte unit (16 bytes) of a float array, so the compiler must split them:
+// 8 bytes at 4-byte alignment -> ds_read2_b32/ds_write2_b32, 16 bytes at
+// 8-byte alignment -> ds_read2_b64/ds_write2_b64. Element q starts at float
+// index (sizeof(T)/4) q + OFF.
+#define UNALIGNED_KERNELS(T, NAME, OFF, EXPR)                                  \
+  __global__ void read_##NAME(T *out) {                                        \
+    __shared__ float s[LDS_DWORDS];                                            \
+    for (unsigned i = threadIdx.x; i < LDS_DWORDS; i += 64)                    \
+      s[i] = (float)i;                                                         \
+    __syncthreads();                                                           \
+    unsigned l = threadIdx.x;                                                  \
+    unsigned idx = (sizeof(T) / 4) * (EXPR) + OFF;                             \
+    T acc = 0;                                                                 \
+    for (int k = 0; k < REPS; ++k) {                                           \
+      acc += *(T *)&s[idx];                                                    \
+      REPEAT_FENCE();                                                          \
+    }                                                                          \
+    out[blockIdx.x * 64 + l] = acc;                                            \
+  }                                                                            \
+  __global__ void write_##NAME(T *out) {                                       \
+    __shared__ float s[LDS_DWORDS];                                            \
+    unsigned l = threadIdx.x;                                                  \
+    unsigned idx = (sizeof(T) / 4) * (EXPR) + OFF;                             \
+    for (int k = 0; k < REPS; ++k) {                                           \
+      *(T *)&s[idx] = (T)(k + l);                                              \
+      REPEAT_FENCE();                                                          \
+    }                                                                          \
+    __syncthreads();                                                           \
+    out[blockIdx.x * 64 + l] = (T)s[l];                                        \
+  }
+typedef double d_a4 __attribute__((aligned(4)));
+UNALIGNED_KERNELS(d_a4, r2b32_stride1, 1, l)
+UNALIGNED_KERNELS(d_a4, r2b32_stride16, 1, 16 * l)
+typedef f4 f4_a8 __attribute__((aligned(8)));
+UNALIGNED_KERNELS(f4_a8, r2b64_stride1, 2, l)
+UNALIGNED_KERNELS(f4_a8, r2b64_stride8, 2, 8 * l)
+
+// Two adjacent 4-byte accesses per lane, which the compiler may merge into one
+// 8-byte instruction: element pair (2 idx, 2 idx + 1).
+#define PAIR_KERNELS(NAME, EXPR)                                               \
+  __global__ void read_##NAME(float *out) {                                    \
+    __shared__ float s[LDS_DWORDS];                                            \
+    for (unsigned i = threadIdx.x; i < LDS_DWORDS; i += 64)                    \
+      s[i] = (float)i;                                                         \
+    __syncthreads();                                                           \
+    unsigned l = threadIdx.x;                                                  \
+    unsigned idx = 2 * (EXPR);                                                 \
+    float acc = 0;                                                             \
+    for (int k = 0; k < REPS; ++k) {                                           \
+      acc += s[idx] * s[idx + 1];                                              \
+      REPEAT_FENCE();                                                          \
+    }                                                                          \
+    out[blockIdx.x * 64 + l] = acc;                                            \
+  }                                                                            \
+  __global__ void write_##NAME(float *out) {                                   \
+    __shared__ float s[LDS_DWORDS];                                            \
+    unsigned l = threadIdx.x;                                                  \
+    unsigned idx = 2 * (EXPR);                                                 \
+    for (int k = 0; k < REPS; ++k) {                                           \
+      s[idx] = (float)(k + l);                                                 \
+      s[idx + 1] = (float)(k - l);                                             \
+      REPEAT_FENCE();                                                          \
+    }                                                                          \
+    __syncthreads();                                                           \
+    out[blockIdx.x * 64 + l] = s[l];                                           \
+  }
+PAIR_KERNELS(pair_stride1, l)
+PAIR_KERNELS(pair_stride16, 16 * l)
+
 template <typename T> static void run(void (*k)(T *), const char *name) {
   T *d;
   if (hipMalloc(&d, BLOCKS * 64 * sizeof(T)) != hipSuccess) {
@@ -95,5 +177,9 @@ int main() {
   RUN(b64_stride1) RUN(b64_stride2) RUN(b64_split16) RUN(b64_split32)
   RUN(b64_stride16) RUN(b64_pad17)
   RUN(b128_stride1) RUN(b128_stride8) RUN(b128_rwsplit)
+  RUN(b8_stride1) RUN(b8_stride128) RUN(b8_dword4) RUN(b16_stride64)
+  RUN(b96_stride1) RUN(b96_stride8) RUN(b96_rwsplit)
+  RUN(r2b32_stride1) RUN(r2b32_stride16) RUN(r2b64_stride1) RUN(r2b64_stride8)
+  RUN(pair_stride1) RUN(pair_stride16)
   return 0;
 }
