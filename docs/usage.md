@@ -267,8 +267,6 @@ Requires `-i`.
 
 ## Dispatch capture
 
-### Dispatch capture
-
 `-d`/`--dispatches` selects which dispatches of each kernel run instrumented.
 Dispatches are numbered **per kernel, from 1**: the 5th dispatch of `kernel_a`
 is `kernel_a`'s 5th launch, however many other kernels ran in between. With
