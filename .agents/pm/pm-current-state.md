@@ -6,16 +6,16 @@ Omniprobe is a GPU kernel instrumentation toolkit for HIP/Triton. The project is
 development with a stable core (interceptor, handlers, instrumentation plugins) and ongoing
 refactors to improve naming consistency, architecture cleanliness, and test organization.
 
-## Active Work Areas (2026-11-09, oplds worktree, branch lds-bank-model)
+## Active Work Areas (2026-11-09, LDS bank model — done, merged)
 
-**`iv_lds-bank-model` active (worktree `.untracked/wt-lds`, not merged to main).**
-- gfx950 LDS measured per DS instruction (dh_comms `tools/lds_bank_probe`).
-- The handler takes the class from kernelDB's DS instruction.
-- LDS atomics are instrumented.
-- Suite 26: 74/74 on gfx950.
-- A kernelDB bug was found and fixed locally: DWARF end_sequence rows misattributed function
-  starts. kerneldb branch `lds-bank-model`, not pushed.
-- Next: MI210 (gfx90a) measurements, then gfx90a per-instruction classes.
+**`iv_lds-bank-model` done** (packet in `done/`; omniprobe main 6aefd17, dh_comms ad8f231,
+kerneldb be0af40).
+- LDS measured per DS instruction on gfx90a and gfx950 (dh_comms `tools/lds_bank_probe`);
+  the handler takes the class from kernelDB's DS instruction on both. gfx90a is 32 banks
+  throughout; it differs from gfx950 only in `ds_read_b64` and `ds_read_b128`.
+- LDS atomics are instrumented. Suite 26: 78/78 on both architectures.
+- kerneldb fix: DWARF end_sequence rows are no longer mapped as source locations.
+- Not measured: gfx908, gfx942 (size-based classes, gfx90a geometry).
 
 ## Active Work Areas (2026-11-08, end of third session)
 
@@ -35,7 +35,7 @@ legacy fallback, the arch read from Triton's triple, gfx950 supported end to end
 module-load 3/3 from a fresh clone; suites 3-5 needed their gitignored driver binaries rebuilt
 (`testing`). Making those binaries a build target would let a fresh checkout pass unaided (not queued).
 
-**Known follow-ups, not packets:** 1-/2-byte LDS phases on gfx950 unmeasured; PythonHandler interpreter teardown ownership (interpreter is
+**Known follow-ups, not packets:** PythonHandler interpreter teardown ownership (interpreter is
 deliberately never finalized; a Python host's exit now waits for handlers); PythonHandler GIL
 throughput with busy host threads (Rene's deferred list); a `--python-handler` launcher flag; docs name `OMNIPROBE_*`
 environment variables where the code reads `LOGDUR_*` (noted on the suspended

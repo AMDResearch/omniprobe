@@ -38,7 +38,8 @@ fails on the code before its fix:*
   per-wave `handleAddressWave` fields incl. partial exec; `handleTimeMessage` fields.*
 - *20 faulted dispatch (`fault_test.cpp`): a GPU-faulting kernel ends the run within 30 s with
   the app's status (3) and a warning naming the kernel, timing and `-i` modes; `--no-fault` run
-  has no abandonment warning.*
+  has no abandonment warning.* **It really faults the GPU: on a shared node other processes
+  then fault too. Leave it out of full-suite runs there (supervisor rule, 2026-11-09).**
 - *21 flat-pointer accesses (`flat_access_test.cpp` at `-O0` and `-O2`): same MemoryAnalysis
   findings; mixed-space wave stays unanalyzed.*
 - *22 BBInterval loop (`bb_interval_loop_test.cpp`): 10 and 1000 iterations exit 0 with real
@@ -211,7 +212,8 @@ first draft, because the condition it checked was gated off.
 
 ## Added 2026-11-08 (third session): suites 25-27 and hardware-specific notes
 
-- Suite 25 bitcode selection (compile-only), 26 LDS vs `SQ_LDS_BANK_CONFLICT` (needs rocprofv3),
+- Suite 25 bitcode selection (compile-only), 26 LDS vs `SQ_LDS_BANK_CONFLICT` (needs rocprofv3; 78 kernels; run under `flock -x
+  /tmp/gpu-measure.lock`),
   27 `-d random` (replaced 2026-11-09 by dispatch selection). Full suite = **27 suites**. `tests/lds_conflict_sets/run.sh` (~15 s) is a tool,
   not a suite.
 - gfx950 (MI350 VM, 1 GPU, fuseblk /work1): the full suite runs from an in-repo build tree; 24
