@@ -426,6 +426,7 @@ class Omniprobe:
                     accesses=accesses,
                     unanalyzed_flat_accesses=entry.get("unanalyzed_flat_accesses", 0),
                     unattributed_accesses=entry.get("unattributed_accesses", 0),
+                    merged_lds_accesses=entry.get("merged_lds_accesses", 0),
                 )
             )
         return result

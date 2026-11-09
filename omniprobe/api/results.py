@@ -44,12 +44,16 @@ class KernelMemoryResult:
     ``unattributed_accesses`` counts wave-level global accesses dropped because
     no ISA instruction was found for their source line; all of them when the
     binary has no debug info (build with -g).
+    ``merged_lds_accesses`` counts wave-level LDS accesses that the compiler
+    merged into a DS instruction carrying another access's source location
+    (gfx950); that access counts the instruction's bank conflicts.
     """
     kernel_name: str
     dispatch_id: int
     accesses: list[MemoryAccess] = field(default_factory=list)
     unanalyzed_flat_accesses: int = 0
     unattributed_accesses: int = 0
+    merged_lds_accesses: int = 0
 
 
 @dataclass

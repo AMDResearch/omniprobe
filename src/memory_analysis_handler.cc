@@ -634,6 +634,14 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
   uint16_t piece = data_size;
   if (lds_classes_from_isa(arch) && isa_size != 0)
     piece = isa_size;
+  // With line info but no DS instruction at this location, the access was
+  // merged into an instruction that carries another access's location (two
+  // loads on lines 11 and 12 become one ds_read_b64 at line 11); that access
+  // counts the instruction. Recorded with no conflicts.
+  bool merged_away = lds_classes_from_isa(arch) && kdb_p_ != nullptr && message.wave_header().dwarf_line != 0 &&
+                     isa_instruction.empty();
+  if (merged_away)
+    ++merged_lds_;
 
   const lds_model_t &model = lds_model(arch);
   auto phases = model.find(cls);
@@ -654,7 +662,7 @@ bool memory_analysis_handler_t::handle_bank_conflict_analysis(const message_t &m
   size_t bank_conflict_count = 0;
   bool merged_tail = piece > data_size && message.no_data_items() != 0 &&
                      *(const uint64_t *)message.data_item(0) % piece != 0;
-  if (!merged_tail) {
+  if (!merged_tail && !merged_away) {
     // One pass over the lanes per piece; a merged access covers the
     // instruction's whole data.
     uint16_t pieces = piece < data_size ? data_size / piece : 1;
@@ -1080,6 +1088,7 @@ void memory_analysis_handler_t::report_json() {
   json_output << "\n  ],\n";
   json_output << "  \"unanalyzed_flat_accesses\": " << unanalyzed_flat_ << ",\n";
   json_output << "  \"unattributed_accesses\": " << unattributed_ << ",\n";
+  json_output << "  \"merged_lds_accesses\": " << merged_lds_ << ",\n";
 
   // Metadata section
   json_output << "  \"metadata\": {\n";

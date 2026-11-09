@@ -152,6 +152,40 @@ UNALIGNED_KERNELS(f4_a8, r2b64_stride8, 2, 8 * l)
 PAIR_KERNELS(pair_stride1, l)
 PAIR_KERNELS(pair_stride16, 16 * l)
 
+// The same as pair_*, but written out (not through a macro) with the two
+// accesses on separate lines: the merged instruction carries only the first
+// line, and the access on the second line must not be counted again.
+template <unsigned STRIDE> __device__ inline void read_pairlines(float *out) {
+  __shared__ float s[LDS_DWORDS];
+  for (unsigned i = threadIdx.x; i < LDS_DWORDS; i += 64)
+    s[i] = (float)i;
+  __syncthreads();
+  unsigned idx = 2 * STRIDE * threadIdx.x;
+  float acc = 0;
+  for (int k = 0; k < REPS; ++k) {
+    float a = s[idx];
+    float b = s[idx + 1];
+    acc += a * b;
+    REPEAT_FENCE();
+  }
+  out[blockIdx.x * 64 + threadIdx.x] = acc;
+}
+template <unsigned STRIDE> __device__ inline void write_pairlines(float *out) {
+  __shared__ float s[LDS_DWORDS];
+  unsigned idx = 2 * STRIDE * threadIdx.x;
+  for (int k = 0; k < REPS; ++k) {
+    s[idx] = (float)(k + threadIdx.x);
+    s[idx + 1] = (float)(k - threadIdx.x);
+    REPEAT_FENCE();
+  }
+  __syncthreads();
+  out[blockIdx.x * 64 + threadIdx.x] = s[threadIdx.x];
+}
+__global__ void read_pairlines_stride1(float *out) { read_pairlines<1>(out); }
+__global__ void write_pairlines_stride1(float *out) { write_pairlines<1>(out); }
+__global__ void read_pairlines_stride16(float *out) { read_pairlines<16>(out); }
+__global__ void write_pairlines_stride16(float *out) { write_pairlines<16>(out); }
+
 template <typename T> static void run(void (*k)(T *), const char *name) {
   T *d;
   if (hipMalloc(&d, BLOCKS * 64 * sizeof(T)) != hipSuccess) {
@@ -180,6 +214,6 @@ int main() {
   RUN(b8_stride1) RUN(b8_stride128) RUN(b8_dword4) RUN(b16_stride64)
   RUN(b96_stride1) RUN(b96_stride8) RUN(b96_rwsplit)
   RUN(r2b32_stride1) RUN(r2b32_stride16) RUN(r2b64_stride1) RUN(r2b64_stride8)
-  RUN(pair_stride1) RUN(pair_stride16)
+  RUN(pair_stride1) RUN(pair_stride16) RUN(pairlines_stride1) RUN(pairlines_stride16)
   return 0;
 }

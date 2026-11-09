@@ -43,7 +43,7 @@ PATTERNS = {
 NEW_PATTERNS = ["b8_stride1", "b8_stride128", "b8_dword4", "b16_stride64",
                 "b96_stride1", "b96_stride8", "b96_rwsplit",
                 "r2b32_stride1", "r2b32_stride16", "r2b64_stride1", "r2b64_stride8",
-                "pair_stride1", "pair_stride16"]
+                "pair_stride1", "pair_stride16", "pairlines_stride1", "pairlines_stride16"]
 
 
 def phases(lanes_per_phase):

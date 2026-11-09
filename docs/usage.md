@@ -351,6 +351,14 @@ accesses dropped because no ISA instruction was found for their source line:
 all of them when the binary was built without `-g` (DWARF line info is how
 accesses are matched to instructions), so build with `-g`.
 
+LDS bank conflicts depend on the DS instruction, not only on the access size:
+on gfx950, `ds_read_b64`/`ds_read_b128` see 64 banks while other LDS accesses
+see 32, and `ds_read2`/`ds_write2` serve each address separately. On gfx950 the
+analysis takes the instruction from the code object (each LDS entry has
+`isa_instruction` and `isa_bytes`). When the compiler merges several accesses
+into one instruction, the access whose source location the instruction
+carries counts its conflicts; the others are counted in `merged_lds_accesses`.
+
 #### BasicBlockAnalysis JSON schema
 
 BasicBlockAnalysis needs a binary instrumented with the BBStart plugin
