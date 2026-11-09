@@ -178,9 +178,10 @@ run_suite "Bitcode selection" "${SCRIPT_DIR}/test_bitcode_selection.sh"
 # phases, and 16-byte read/write phases. Needs a GPU and rocprofv3.
 run_suite "LDS bank conflicts vs hardware" "${SCRIPT_DIR}/test_lds_bank_conflicts.sh"
 
-# Suite 27: -d random — every eligible kernel is captured or named in the
-# end-of-run warning; kernels excluded by -k are neither. Needs a GPU.
-run_suite "Random dispatch capture" "${SCRIPT_DIR}/test_dispatch_random.sh"
+# Suite 27: ft_dispatch-selection — -d specs (lists, ranges, repeats) select
+# dispatches per kernel; both spec parsers agree with dispatch_spec_cases.txt;
+# malformed specs are rejected; kernel_dispatch is reported. Needs a GPU.
+run_suite "Dispatch selection" "${SCRIPT_DIR}/test_dispatch_selection.sh"
 
 # Summary
 echo ""

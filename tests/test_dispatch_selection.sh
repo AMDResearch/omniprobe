@@ -196,6 +196,36 @@ else
     fail "no '(dispatch N, kernel dispatch K)' on the Found lines; see $WORK/ac6_MemoryAnalysis.log"
 fi
 
+begin "AC-6: BasicBlockAnalysis_json_reports_kernel_dispatch"
+BBAPP="$BUILD_DIR/tests/test_kernels/dual_kernel_bbstart_test"   # kernel_alpha, kernel_beta, once each
+"$OMNIPROBE" -i -a BasicBlockAnalysis -t json -o "$WORK/ac6_bba.json" -d 1 -- "$BBAPP" > "$WORK/ac6_bba.log" 2>&1
+got="$(records "$WORK/ac6_bba.json" 2>&1)"
+# kernel_alpha is dispatch 1, kernel_beta dispatch 2; each is its kernel's first.
+if [ "$got" = "1:1 2:1" ]; then
+    pass "dispatch_id:kernel_dispatch = $got"
+else
+    fail "dispatch_id:kernel_dispatch = $got"
+fi
+
+begin "AC-6: PythonHandler_dicts_carry_kernel_dispatch"
+cat > "$WORK/kd_handler.py" <<'PY'
+import json, os
+def handleAddressMessage(d):
+    pass
+def handleReport(d):
+    with open(os.environ["KD_EVIDENCE"], "a") as f:
+        f.write(json.dumps({"dispatch_id": d["dispatch_id"], "kernel_dispatch": d.get("kernel_dispatch", "none")}) + "\n")
+PY
+rm -f "$WORK/kd_evidence.jsonl"
+KD_EVIDENCE="$WORK/kd_evidence.jsonl" OMNIPROBE_PYTHON_HANDLER="$WORK/kd_handler.py" \
+    "$OMNIPROBE" -i -a PythonHandler -d 2 -- "$APP" > "$WORK/ac6_python.log" 2>&1
+got="$(records "$WORK/kd_evidence.jsonl" 2>&1)"
+if [ "$(echo "$got" | wc -w)" -eq 2 ] && ! echo " $got" | grep -qvE '^( [0-9]+:2)+$' && ! echo " $got " | grep -q ' 2:'; then
+    pass "dispatch_id:kernel_dispatch = $got"
+else
+    fail "dispatch_id:kernel_dispatch = $got"
+fi
+
 # --- AC-7: Python API -------------------------------------------------------
 begin "AC-7: python_api_dispatches"
 verdict="$(PYTHONPATH="$REPO_ROOT" python3 -I - "$OMNIPROBE" "$APP" "$WORK/ac7.ran" <<'PY' 2>&1
