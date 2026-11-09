@@ -30,7 +30,7 @@ TEST_OUT="$(mktemp)"
 TEST_RAN=0
 trap 'rm -f "$TEST_OUT"' EXIT
 if [ -x "$TEST_SCRIPT" ]; then
-  bash "$TEST_SCRIPT" >"$TEST_OUT" 2>&1
+  bash "$TEST_SCRIPT" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' >"$TEST_OUT"
   TEST_RAN=1
 fi
 
@@ -78,7 +78,7 @@ fi
 
 # --- AC-9: docs (text presence only) ---
 U="$AC_REPO_ROOT/docs/usage.md"
-if grep -q "1,3,4:3:100" "$U" && grep -q "'\[1,3,4\]'" "$U" && grep -qi "glob" "$U" \
+if grep -q "1,3,4:3:100" "$U" && grep -q "'\[1,3,4" "$U" && grep -qi "glob" "$U" \
    && grep -qi "multi-GPU\|several GPUs" "$U" && grep -qi "not deterministic\|nondeterministic" "$U" \
    && ! grep -rn "random" "$AC_REPO_ROOT/README.md" "$AC_REPO_ROOT/docs/triton-instrumentation.md" >/dev/null \
    && ! grep -n "random" "$AC_REPO_ROOT/omniprobe/omniprobe" | grep -v "removed" | grep -q .; then

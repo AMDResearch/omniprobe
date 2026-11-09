@@ -4,7 +4,7 @@
 
 - Workflow ID: ft_dispatch-selection
 - Workflow Type: feature
-- Lifecycle State: active
+- Lifecycle State: done
 - Owner / Current Executor: opdisp (worker), supervised
 - Intended Write Scope:
 - Dependencies On Other Active Workflows: none active. Overlaps `rf_rename-logduration-to-omniprobe`
