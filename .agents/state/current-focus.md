@@ -1,5 +1,14 @@
 # Current Focus
 
+## gfx90a validation — 2026-11-09 (opdisp, MI210 node) — read first
+
+Main 55de59a on gfx90a: 28/28 suites (suite 20 excluded on a shared node) + module-load 3/3.
+Two regressions fixed and pushed: (1) a report racing `exit()` since ff9eedb aborted rocBLAS GEMM
+(suite 5) — show_line's caches are now never destroyed; (2) coCache leaked every extracted code
+object to /tmp (`/tmp/fileXXXXXX`) — now unlinked at exit, suite 29. Deferred, not queued:
+source line numbers are `uint16_t` (lines > 65535 wrap); kernelDB's own `tmpnam` use; lock
+support (flock -s / -x, skip suite 20) in `run_all_tests.sh`; CMake target for suites 3-5 drivers.
+
 ## LDS bank model — done 2026-11-09 (oplds)
 
 `iv_lds-bank-model` is complete (packet in `done/`) and merged: omniprobe main 6aefd17,

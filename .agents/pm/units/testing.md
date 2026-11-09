@@ -255,6 +255,21 @@ Workflows whose write scope reaches into `tests/`. State (= directory under `.ag
 - Suite 26 reads hardware counters: run the full suite under `flock /tmp/gpu-measure.lock` on a
   shared node (~5 min on gfx950).
 
+## Added 2026-11-09 (MI210): suite 29, /tmp hygiene, shared-node runs
+
+- Suite 29 **Temporary code objects** (`test_temp_code_objects.sh`, app `temp_co_test`): coCache's
+  extracted code objects (`tmpnam()` → `/tmp/fileXXXXXX`; tmpnam ignores TMPDIR) are unlinked in
+  `~coCache`. Before the fix every instrumented run leaked one per binary; full suites with rocBLAS
+  filled a node's /tmp (~3,350 × ~97 MB). A killed run still leaks (suite 28 AC-5, killed by
+  `timeout` on purpose, leaves one). Do not sweep `/tmp/file*` by pattern: other users' and
+  workers' runs make the same names; identify files by content.
+- Suite 5 Test 3 (rocBLAS GEMM + Tensile filter) is the only test that catches a report racing
+  `exit()` (55de59a: 17/20 aborts before, 0/20 after). A synthetic FIFO-driven repro did not fail
+  on the unfixed code and was dropped. Suites 3-5 therefore matter on gfx90a.
+- Full suite = **29 suites**. 2026-11-09 on gfx90a (MI210 VM), main 55de59a: 28/28 with suite 20
+  excluded (shared node), plus module-load 3/3. Each suite ran under `flock -s`, suite 26 under
+  `flock -x`, through a scratch-only edit of `run_suite`; the runner itself has no lock support.
+
 `tests/run_all_tests.sh` is shared and append-only: each packet adds its own `run_suite` line and edits no other.
 
 ## Last Verified
