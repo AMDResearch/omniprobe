@@ -312,6 +312,12 @@ hsaInterceptor::~hsaInterceptor() {
     shutting_down_.store(true);
 
     signal_runner_.join();
+    {
+        // No more completions: comms_runner drains its queue and stops.
+        lock_guard<std::mutex> lock(checkin_mutex_);
+        signals_done_ = true;
+    }
+    checkin_cv_.notify_one();
     cache_watcher_.join();
     comms_runner_.join();
 
@@ -453,6 +459,10 @@ void hsaInterceptor::reportKernelDBFailure(const std::string& co_file, const std
 
 void hsaInterceptor::signalCompleted(const hsa_signal_t sig)
 {
+    // Checked in by comms_runner, outside mutex_: checking in waits for the
+    // dispatch's handlers, and a PythonHandler waits for the GIL, which a Python
+    // host may hold while it submits the next dispatch (which takes mutex_) or
+    // waits for a later dispatch to complete (which this thread signals).
     lock_guard<std::mutex> lock(mutex_);
     auto it = pending_signals_.find(sig);
     if (it != pending_signals_.end())
@@ -488,9 +498,10 @@ void hsaInterceptor::signalCompleted(const hsa_signal_t sig)
         }
         //Put this completion signal back in the pool for subsequent dispatches
         sig_pool_.push_back(sig);
-        if (ki.comms_obj_) {
-            comms_mgr_.checkinCommsObject(ki.agent_, ki.comms_obj_);
-        }
+        // Queued while mutex_ is held, so idle() never sees a dispatch that is
+        // neither pending nor queued.
+        if (ki.comms_obj_)
+            queueCheckin(ki.agent_, ki.comms_obj_);
     }
     else
     {
@@ -498,14 +509,62 @@ void hsaInterceptor::signalCompleted(const hsa_signal_t sig)
     }
 }
 
+void hsaInterceptor::queueCheckin(hsa_agent_t agent, dh_comms::dh_comms *comms)
+{
+    {
+        lock_guard<std::mutex> lock(checkin_mutex_);
+        checkin_queue_.emplace_back(agent, comms);
+    }
+    checkin_cv_.notify_one();
+}
+
+// The next comms object to check in; false once signal_runner has finished and
+// the queue is empty.
+bool hsaInterceptor::nextCheckin(std::pair<hsa_agent_t, dh_comms::dh_comms *>& item)
+{
+    std::unique_lock<std::mutex> lock(checkin_mutex_);
+    checkin_busy_ = false;   // the previous item, if any, is checked in
+    checkin_cv_.wait(lock, [this] { return !checkin_queue_.empty() || signals_done_; });
+    if (checkin_queue_.empty())
+        return false;
+    item = checkin_queue_.front();
+    checkin_queue_.pop_front();
+    checkin_busy_ = true;
+    return true;
+}
+
+bool hsaInterceptor::idle()
+{
+    lock_guard<std::mutex> lock(mutex_);
+    lock_guard<std::mutex> checkin_lock(checkin_mutex_);
+    return pending_signals_.empty() && checkin_queue_.empty() && !checkin_busy_;
+}
+
+// Waits until every dispatch so far has completed and been checked in (its
+// handlers have reported), or timeout_ms passes; 1 if idle. A Python host
+// calls this, through PythonHandler, before it finalizes its interpreter.
+extern "C" __attribute__((visibility("default"))) int omniprobe_wait_idle(unsigned timeout_ms)
+{
+    hsaInterceptor *me = hsaInterceptor::getInstanceIfExists();
+    if (!me)
+        return 1;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    while (!me->idle()) {
+        if (std::chrono::steady_clock::now() > deadline)
+            return 0;
+        usleep(1000);
+    }
+    return 1;
+}
+
+// Checks in finished dispatches' comms objects: stops their processing,
+// reports and deletes their handlers.
 void comms_runner(comms_mgr& mgr)
 {
-    //cerr << "Comms Runner\n";
     hsaInterceptor *me = hsaInterceptor::getInstance();
-    while (!me->shuttingdown())
-    {
-        usleep(500);
-    }
+    std::pair<hsa_agent_t, dh_comms::dh_comms *> item;
+    while (me->nextCheckin(item))
+        mgr.checkinCommsObject(item.first, item.second);
     cerr << "Comms Runner shutting down\n";
 }
 

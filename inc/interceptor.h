@@ -21,6 +21,8 @@ THE SOFTWARE.
 *******************************************************************************/
 #pragma once
 
+#include <condition_variable>
+#include <deque>
 #include <shared_mutex>
 #include <regex>
 #include <memory>
@@ -149,6 +151,10 @@ public:
 
     bool hasPendingSignals();
     void abandonPendingSignals();
+    void queueCheckin(hsa_agent_t agent, dh_comms::dh_comms *comms);
+    bool nextCheckin(std::pair<hsa_agent_t, dh_comms::dh_comms *>& item);
+    // True when no dispatch is pending and every finished one is checked in.
+    bool idle();
     void reportKernelDBFailure(const std::string& co_file, const std::string& what);
     void shutdown();
 protected:
@@ -170,6 +176,14 @@ private:
     std::vector<dh_comms::dh_comms *> buffers_;
     std::map<std::string, std::string> config_;
     std::map<hsa_signal_t, void *, hsa_cmp<hsa_signal_t>> kernargs_;
+    // Finished dispatches' comms objects, checked in by comms_runner rather than
+    // by signal_runner: checking in waits for the handlers (a PythonHandler for
+    // the GIL), and completing later dispatches must not wait behind that.
+    std::mutex checkin_mutex_;
+    std::condition_variable checkin_cv_;
+    std::deque<std::pair<hsa_agent_t, dh_comms::dh_comms *>> checkin_queue_;   // guarded by checkin_mutex_
+    bool signals_done_ = false;                                                  // guarded by checkin_mutex_
+    bool checkin_busy_ = false;                                                  // guarded by checkin_mutex_
     std::atomic<bool> shutting_down_;
     std::thread signal_runner_;
     std::thread cache_watcher_;

@@ -194,6 +194,24 @@ default handlers instead. Only this plugin links libpython.
 
 See `tests/python_handler/wave_handler.py` (per wave) and `tests/python_handler/stress_handler.py` (per lane) for complete examples.
 
+**When the application is itself Python** (Triton, PyTorch, a ctypes program),
+the handler runs in the application's interpreter and shares its GIL; module
+globals of the handler and of the application are separate modules in the same
+interpreter. This works, including back-to-back Triton launches, and at exit
+the application waits for the last dispatches' handlers before its interpreter
+shuts down. One pattern cannot work: an application that **holds the GIL while
+it waits for an instrumented kernel**, for example a C extension that launches
+and synchronizes without releasing the GIL (`ctypes.PyDLL`). A kernel that
+sends many messages waits for the handler to drain them, and the handler waits
+for the GIL. After 10 s omniprobe prints
+`omniprobe: WARNING: PythonHandler has waited 10 s for the Python GIL` and the
+run does not finish; release the GIL around the blocking call (`ctypes.CDLL`
+does), or use a C++ handler. A Python thread that keeps running bytecode while
+kernels execute slows the handler down, because every handler call waits for
+its turn at the GIL. The plugin is built against one Python version (the one
+CMake found); a host running a different version has been seen to work but is
+not supported.
+
 ## Instrumented mode
 
 ### Enabling instrumentation (`-i`, `--instrumented`)

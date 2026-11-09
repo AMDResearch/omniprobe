@@ -22,24 +22,129 @@ THE SOFTWARE.
 #include "inc/pyHandler.h"
 #include "inc/kernel_dispatch.h"
 
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <map>
+#include <thread>
+
 namespace {
+
+// Threads waiting for the GIL, by when they started. A host that holds the GIL
+// while it waits for an instrumented kernel cannot finish: the kernel waits for
+// its buffers to be drained, i.e. for this handler, which waits for the GIL.
+// Nothing here can break that cycle, but it should not be silent, so a monitor
+// thread warns once if any thread has waited GIL_WAIT_WARN_SECONDS.
+constexpr int GIL_WAIT_WARN_SECONDS = 10;
+std::mutex gil_waiters_mutex;
+std::map<std::thread::id, std::chrono::steady_clock::time_point> gil_waiters;
+
+void gil_wait_monitor()
+{
+    for (;;) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        auto now = std::chrono::steady_clock::now();
+        bool stuck = false;
+        {
+            std::lock_guard<std::mutex> lock(gil_waiters_mutex);
+            for (const auto& [id, since] : gil_waiters)
+                stuck = stuck || now - since >= std::chrono::seconds(GIL_WAIT_WARN_SECONDS);
+        }
+        if (stuck) {
+            fprintf(stderr, "omniprobe: WARNING: PythonHandler has waited %d s for the Python GIL. The host "
+                    "program probably holds it while it waits for the GPU (for example in a C extension "
+                    "that does not release the GIL around a synchronizing call); the instrumented kernel "
+                    "cannot finish until the handler runs. See docs/usage.md, PythonHandler.\n",
+                    GIL_WAIT_WARN_SECONDS);
+            return;
+        }
+    }
+}
 
 // Holds the GIL for its lifetime, on whatever thread constructs it.
 struct gil_lock {
-    PyGILState_STATE state = PyGILState_Ensure();
+    PyGILState_STATE state;
+    gil_lock()
+    {
+        if (PyGILState_Check()) {   // already held by this thread: no wait
+            state = PyGILState_Ensure();
+            return;
+        }
+        static std::once_flag monitor;
+        std::call_once(monitor, [] { std::thread(gil_wait_monitor).detach(); });
+        {
+            std::lock_guard<std::mutex> lock(gil_waiters_mutex);
+            gil_waiters[std::this_thread::get_id()] = std::chrono::steady_clock::now();
+        }
+        state = PyGILState_Ensure();
+        std::lock_guard<std::mutex> lock(gil_waiters_mutex);
+        gil_waiters.erase(std::this_thread::get_id());
+    }
     ~gil_lock() { PyGILState_Release(state); }
 };
 
+// In liblogDuration64.so (src/interceptor.cc); weak so the plugin loads without it.
+extern "C" int omniprobe_wait_idle(unsigned timeout_ms) __attribute__((weak));
+
+// Set once a Python host has started finalizing its interpreter: from then on
+// no handler touches Python (a thread taking the GIL of a finalizing
+// interpreter is terminated or hangs).
+std::atomic<bool> host_finalizing{false};
+
+bool python_usable()
+{
+#if PY_VERSION_HEX >= 0x030D0000
+    const bool finalizing = Py_IsFinalizing();
+#else
+    const bool finalizing = _Py_IsFinalizing();
+#endif
+    return !host_finalizing && Py_IsInitialized() && !finalizing;
+}
+
+// Registered with the host's atexit, which runs before its interpreter is torn
+// down: let every finished dispatch's handlers report first. The GIL is
+// released while waiting, because the handlers need it.
+PyObject* wait_for_handlers(PyObject*, PyObject*)
+{
+    int idle = 1;
+    Py_BEGIN_ALLOW_THREADS
+    if (omniprobe_wait_idle)
+        idle = omniprobe_wait_idle(60000);
+    Py_END_ALLOW_THREADS
+    if (!idle)
+        fprintf(stderr, "omniprobe: WARNING: PythonHandler: dispatches were still being processed 60 s after "
+                "the Python host began to exit; their reports are dropped\n");
+    host_finalizing = true;
+    Py_RETURN_NONE;
+}
+
+PyMethodDef wait_for_handlers_def = {"omniprobe_wait_for_handlers", wait_for_handlers, METH_NOARGS, nullptr};
+
 // Starts the interpreter once per process, unless the host already runs one (a
-// Triton/PyTorch application). Py_InitializeEx leaves the GIL held by this
+// Triton/PyTorch application), in which case the host's exit waits for the
+// handlers (wait_for_handlers). Py_InitializeEx leaves the GIL held by this
 // thread; release it, or no other thread can ever take it. Never finalized:
 // handlers are per dispatch, the interpreter is per process.
 void ensure_interpreter()
 {
     static std::once_flag once;
     std::call_once(once, [] {
-        if (Py_IsInitialized())
+        if (Py_IsInitialized()) {
+            PyGILState_STATE state = PyGILState_Ensure();
+            PyObject* atexit = PyImport_ImportModule("atexit");
+            PyObject* f = PyCFunction_New(&wait_for_handlers_def, nullptr);
+            PyObject* r = atexit && f ? PyObject_CallMethod(atexit, "register", "O", f) : nullptr;
+            if (!r) {
+                PyErr_Print();
+                fprintf(stderr, "omniprobe: WARNING: PythonHandler could not register its exit hook with the "
+                        "Python host; reports of the last dispatches may be lost at exit\n");
+            }
+            Py_XDECREF(r);
+            Py_XDECREF(f);
+            Py_XDECREF(atexit);
+            PyGILState_Release(state);
             return;
+        }
         Py_InitializeEx(0);   // 0: leave the host's signal handlers alone
         if (!Py_IsInitialized())
             throw std::runtime_error("Python initialization failed");
@@ -103,6 +208,8 @@ pythonMessageHandler::pythonMessageHandler(const std::string& module_name, const
     : module_name_(module_name)
 {
     ensure_interpreter();
+    if (!python_usable())
+        throw std::runtime_error("the Python host is exiting; dispatch not handled");
     gil_lock gil;
     std::string error;
     pModule_ = PyImport_ImportModule(resolve_module(module_name_).c_str());
@@ -135,7 +242,7 @@ pythonMessageHandler::pythonMessageHandler(const std::string& module_name, const
 
 pythonMessageHandler::~pythonMessageHandler()
 {
-    if (!Py_IsInitialized())   // the host finalized its own interpreter first
+    if (!python_usable())   // the host is finalizing its own interpreter
         return;
     gil_lock gil;
     Py_CLEAR(pAddressFunc_);
@@ -179,7 +286,7 @@ void pythonMessageHandler::call(PyObject* func, const char* key, PyObject* value
 
 void pythonMessageHandler::addressMessage(void *address)
 {
-    if (!pAddressFunc_)
+    if (!pAddressFunc_ || !python_usable())
         return;
     gil_lock gil;
     call(pAddressFunc_, "address", PyLong_FromUnsignedLongLong(reinterpret_cast<uintptr_t>(address)));
@@ -229,7 +336,7 @@ PyObject* pythonMessageHandler::waveDict(const pyWaveInfo& w)
 
 void pythonMessageHandler::addressWave(const pyAddressWave& w)
 {
-    if (!pAddressWaveFunc_)
+    if (!pAddressWaveFunc_ || !python_usable())
         return;
     gil_lock gil;
     PyObject* d = waveDict(w.wave);
@@ -264,7 +371,7 @@ void pythonMessageHandler::addressWave(const pyAddressWave& w)
 
 void pythonMessageHandler::timingMessage(const pyTimeInterval& t)
 {
-    if (!pTimingFunc_)
+    if (!pTimingFunc_ || !python_usable())
         return;
     gil_lock gil;
     PyObject* d = waveDict(t.wave);
@@ -278,7 +385,7 @@ void pythonMessageHandler::timingMessage(const pyTimeInterval& t)
 
 void pythonMessageHandler::report()
 {
-    if (!pReportFunc_)
+    if (!pReportFunc_ || !python_usable())
         return;
     gil_lock gil;
     call(pReportFunc_, nullptr, nullptr);
