@@ -14,6 +14,7 @@ Packet directories follow the pattern: `.agents/workflows/<state>/<workflow-id>/
 
 | Workflow ID | Type | State | Owner | Intended Write Scope | Dependencies / Overlap Notes | Blocker Status | Last Update |
 |-------------|------|-------|-------|----------------------|------------------------------|----------------|-------------|
+| ft_dispatch-selection | feature | active | opdisp | omniprobe launcher + api, src/ selection + handler output, tests/, docs/ (see dossier) | memory_analysis_handler.cc shared with oplds (lds-bank-model): ctor/JSON header only | None | 2026-11-09 |
 | rf_lazy-kerneldb-loading | refactor | suspended | unassigned | src/interceptor.cc | Overlaps with rf_rename-logduration (same file) | None | 2026-08-25 |
 | rf_rename-logduration-to-omniprobe | refactor | suspended | unassigned | src/, inc/, plugins/, omniprobe/, CMakeLists.txt, containers/, .github/ | Broad scope — overlaps with most other refactors | Open questions need user input | 2026-08-25 |
 | rf_clang-format-consistency | refactor | suspended | unassigned | .clang-format, CMakeLists.txt, scripts/git-hooks/ | None | Team coordination needed | 2026-08-25 |
