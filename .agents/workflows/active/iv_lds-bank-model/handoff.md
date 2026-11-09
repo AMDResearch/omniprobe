@@ -1,22 +1,33 @@
 # Handoff — iv_lds-bank-model
 
-## Current Status
+## Current Status (2026-11-09, end of the MI350 session)
 
-gfx950 measured and modelled (artifacts.md). Harness in dh_comms `tools/lds_bank_probe`
-(branch lds-bank-model, b3e2e8f). Handler not changed yet (supervisor: after both arches).
+- gfx950 is done.
+  - Every DS access class, including all atomics, is measured and modelled: dh_comms
+    `tools/lds_bank_probe`, branch `lds-bank-model` at 237b0e3, pushed.
+  - The handler uses kernelDB's DS instruction on gfx950. LDS atomics are instrumented.
+  - Suite 26 has 74 kernels, all equal to the counter on gfx950.
+  - Report for Rene: `report-lds-2026-11-09.md`. Its gfx90a column is TBD.
+- **kerneldb fix not pushed:**
+  - The fix is on branch `lds-bank-model` (be0af40) in this worktree's kerneldb submodule,
+    which has no pushable remote here (origin is the main checkout's submodule path). The
+    patch is `kerneldb-end-sequence.patch`.
+  - The omniprobe submodule pointer is NOT bumped.
+  - Without the fix, suite 26's `write_r2b64_stride8` fails (0 vs 120) on the current code
+    layout.
+  - The supervisor decides how kerneldb gets it.
 
-Update (turn 2): handler uses kernelDB's DS instruction on gfx950 (87d9363); suite 26 has
-58 kernels, all equal to the counter on gfx950. gfx90a still size-based.
+## Next (MI210 node)
 
-Update (turn 3): atomics instrumented and modelled (gfx950); suite 26 71/71; report for
-Rene in report-lds-2026-11-09.md (gfx90a column TBD).
-
-## Next
-
-1. On the MI210 node: `external/dh_comms/tools/lds_bank_probe/run_all.sh /tmp/lds-90a`;
-   the gfx90a entries in model.py are the old model (b96 unknown) and will show mismatches
-   where it is wrong; fix model.py from the data, copy results to .untracked/lds-meas/.
-2. Handler (src/memory_analysis_handler.cc): add 12-byte classes, read2/write2 (needs the
-   ISA instruction, not the IR size), sub-dword broadcast is already per dword; decide
-   atomics (are LDS atomics instrumented at all?); the per-arch table from model.py.
-   Extend suite 26 with kernels for the new classes; show it fails on the current code.
+1. Build: `cmake -S . -B /tmp/oplds/build -DCMAKE_HIP_ARCHITECTURES=gfx90a ...` (memory
+   `Omniprobe Build with Triton`). Apply the kerneldb patch if it is still not upstream:
+   `git -C external/kerneldb checkout lds-bank-model`.
+2. `external/dh_comms/tools/lds_bank_probe/run_all.sh /tmp/lds-90a`. The GFX90A entries in
+   model.py are the old model (b96, read2, atomics and transposes unknown) and will show
+   mismatches. Fit them from the data and copy the results to
+   `.untracked/lds-meas/gfx90a-<date>/`.
+3. Fill the gfx90a column of the report. Add gfx90a classes to `lds_model` and enable
+   `lds_classes_from_isa` for gfx90a. Rerun suite 26 (under the lock) and the full suite
+   (`/tmp/oplds/run_all_no26.sh` equivalent: run_all_tests.sh without suite 26, with
+   BUILD_DIR and OMNIPROBE_ROOT set).
+4. Check ikl's prediction: `i+(i>>4)` should also be 2-way on gfx90a.

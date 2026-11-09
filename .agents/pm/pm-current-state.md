@@ -6,6 +6,17 @@ Omniprobe is a GPU kernel instrumentation toolkit for HIP/Triton. The project is
 development with a stable core (interceptor, handlers, instrumentation plugins) and ongoing
 refactors to improve naming consistency, architecture cleanliness, and test organization.
 
+## Active Work Areas (2026-11-09, oplds worktree, branch lds-bank-model)
+
+**`iv_lds-bank-model` active (worktree `.untracked/wt-lds`, not merged to main).**
+- gfx950 LDS measured per DS instruction (dh_comms `tools/lds_bank_probe`).
+- The handler takes the class from kernelDB's DS instruction.
+- LDS atomics are instrumented.
+- Suite 26: 74/74 on gfx950.
+- A kernelDB bug was found and fixed locally: DWARF end_sequence rows misattributed function
+  starts. kerneldb branch `lds-bank-model`, not pushed.
+- Next: MI210 (gfx90a) measurements, then gfx90a per-instruction classes.
+
 ## Active Work Areas (2026-11-08, end of third session)
 
 **No packet is active; the supervisor's 2026-11-08 queue is done.** This session completed

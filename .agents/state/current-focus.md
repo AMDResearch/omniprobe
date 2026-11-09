@@ -1,5 +1,12 @@
 # Current Focus
 
+## oplds worktree (`.untracked/wt-lds`, branch `lds-bank-model`), 2026-11-09 — read first if you are oplds
+
+`iv_lds-bank-model` is active. gfx950 is done. Next is the MI210 (gfx90a) measurements; see
+the packet's `handoff.md`. The kerneldb end_sequence fix is local only (patch in the packet).
+Main is untouched by this branch; it merges when the supervisor says so (expect `.agents/`
+conflicts: keep both sides).
+
 ## State after the fourth 2026-11-08 session — read first
 
 **Final main `113d53b` verified on gfx90a** (MI210 VM, 1 GPU): fresh clone built in /tmp, full suite

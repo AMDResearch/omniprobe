@@ -23,3 +23,10 @@
   handler atomic classes, float atomics -> serialized_lanes, atomic-optimizer (v_mbcnt)
   -> one lane. Suite 26: 71/71 on gfx950; atomics fail on 3c4b771 (3 kernels). Full suite
   23 pass / 3 skip / 0 fail. Report for Rene: report-lds-2026-11-09.md.
+- 2026-11-09 (turn 4): remaining gfx950 atomics measured (dh_comms 237b0e3): float min/max
+  and f64 add/max follow the integer classes; only float add is lane-serial; mskor = cmpst_b32
+  class; cmpst_b64 = 8 lanes / 16 banks. No hangs or faults (aligned only). Handler and suite 26
+  extended (b32f9ba, 74 kernels). Found that kernelDB maps DWARF end_sequence rows (function
+  starts attributed to the previous function's last line; write_r2b64_stride8 0 vs hw 120):
+  fixed on local kerneldb branch lds-bank-model (be0af40, patch in packet); with it 74/74 and
+  the full suite green (23 pass / 3 skip / 0 fail). Report updated.

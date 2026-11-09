@@ -80,10 +80,11 @@ The tool is `external/dh_comms/tools/lds_bank_probe/`; its README has the detail
 | write b128 | `ds_write_b128` | 8 × 8 consecutive lanes | 128 B | 8 | *(TBD; old: same)* |
 | read2/write2 b32 (+st64) | each of the two addresses is a narrow access | narrow | 128 B | 4 | *(TBD)* |
 | read2/write2 b64 (+st64) | each address is a **write b64**-class access, for reads too | 4 × 16 | 128 B | 8 | *(TBD)* |
-| atomic 32-bit integer | add, max, wrxchg (rtn and no-rtn); wrxchg2 = 2 accesses | {0..31},{32..63}; one address conflicts | 128 B | 2 | *(TBD)* |
-| atomic 64-bit integer | add_u64, max_rtn_u64 | 4 × 16 | 128 B; one address conflicts | 4 | *(TBD)* |
-| atomic compare-swap 32 | `ds_cmpst_rtn_b32`; `ds_cmpst_b32` via suite 26 | 4 × 16 | **64 B (16 banks)** | 4 | *(TBD)* |
-| atomic float | `ds_add_f32`, `ds_pk_add_f16` | lane by lane, 3 cycles per active lane | never counted as a bank conflict | 3/lane | *(TBD)* |
+| atomic 32-bit | integer add, max, wrxchg (rtn and no-rtn); **float min/max_f32**; wrxchg2 = 2 accesses | {0..31},{32..63}; one address conflicts | 128 B | 2 | *(TBD)* |
+| atomic 64-bit | add_u64, max_rtn_u64; **add_f64, add_rtn_f64, max_f64** | 4 × 16 | 128 B; one address conflicts | 4 | *(TBD)* |
+| atomic two-data 32 | `ds_cmpst(_rtn)_b32`, `ds_mskor(_rtn)_b32` | 4 × 16 | **64 B (16 banks)** | 4 | *(TBD)* |
+| atomic compare-swap 64 | `ds_cmpst(_rtn)_b64` | 8 × 8 | **16 banks** | 8 | *(TBD)* |
+| atomic float add | `ds_add(_rtn)_f32`; gfx950: `ds_pk_add(_rtn)_f16`, `ds_pk_add_bf16` | lane by lane, 3 cycles per active lane | never counted as a bank conflict | 3/lane | *(TBD; pk_add n/a)* |
 | transpose b64 (gfx950 only) | `ds_read_b64_tr_b4/b8/b16` | {0..31},{32..63} | 256 B | 2 | n/a |
 | transpose b96 (gfx950 only) | `ds_read_b96_tr_b6` | 4 × 16 | 256 B | 4 | n/a |
 
@@ -135,7 +136,11 @@ aligned. The unaligned path is not modelled in Omniprobe.
    access 2-way conflicted on gfx950: a 32-lane group spans 33 dwords and wraps onto one
    bank. `i + (i >> 5)` is conflict-free. The same model predicts the same on gfx90a
    [inf, to be measured].
-8. **Original vs instrumented code** [read + meas]:
+8. **Original vs instrumented code** [read + meas]. The clone's DS *instructions* differ
+   from the original's, but each lane's *address* is the same in both. The bank-conflict
+   count depends on the addresses (from the clone's messages) and the instruction class
+   (from the original's ISA). So pairing them gives the conflicts of the uninstrumented
+   run, which is why the original's ISA is the right one to use.
    - The handler's kernelDB lookup uses the *original* kernel. The interceptor registers
      it under the dispatched kernel object's name (`src/interceptor.cc:1156`, `:983`).
    - The instrumented clones do have different DS code: they never merge loads, and they
@@ -144,11 +149,25 @@ aligned. The unaligned path is not modelled in Omniprobe.
      plain build: 61 of 62 kernels identical, the other differing by one `v_cndmask`.
    - So Omniprobe reports the conflicts of the code that runs without instrumentation.
 
+9. **kernelDB line attribution bug (pre-existing, found here)** [read + meas]. kernelDB
+   mapped DWARF *end_sequence* rows as source locations
+   (`external/kerneldb/src/addressMap.cc:347-351`). An end_sequence row carries the first
+   address after a function, which usually equals the next function's first address. So
+   the start of a function, up to its next line-table row, was attributed to the previous
+   function's last line. The same-address check then dropped the real row.
+   - On gfx950, `write_r2b64_stride8`'s `ds_write2_b64` instructions mapped to line 78
+     instead of 121, which made Omniprobe report 0 conflicts against the hardware's 120.
+   - Global accesses are matched through the same map, so they are affected the same way
+     (they end up unattributed).
+   - The fix is one check (skip end_sequence rows), on kerneldb branch `lds-bank-model`.
+     It is not pushed yet; the patch is in this packet.
+
 ## 5. Validation
 
-- **Suite 26** compares Omniprobe with `SQ_LDS_BANK_CONFLICT` on 71 pattern kernels. They
+- **Suite 26** compares Omniprobe with `SQ_LDS_BANK_CONFLICT` on 74 pattern kernels. They
   cover 1/2/4/8/12/16-byte reads and writes, read2/write2, merged pairs (in a macro and on
-  separate lines) and 9 atomic kernels. All 71 are equal on gfx950 [meas]. Each new group
+  separate lines) and 12 atomic kernels. All 74 are equal on gfx950 with the kernelDB fix
+  [meas]; without it, `write_r2b64_stride8` differs. Each new group
   of kernels fails on the code before its fix [meas]:
   - 13 kernels on `31d06c9` (12-byte accesses and read2/write2);
   - 2 on `87d9363` (merged accesses on separate lines);
@@ -190,8 +209,9 @@ aligned. The unaligned path is not modelled in Omniprobe.
 - **gfx90a:** run `run_all.sh` on the MI210, fill the last column, and switch gfx90a to
   per-instruction classes in the handler. Until then gfx90a keeps the 2026-11-08
   size-based model.
-- **Unmeasured atomics:** `ds_cmpst_b64`, `mskor`, float min/max, f64, bf16. The handler
-  does not analyze them.
+- **Atomics:** all kinds that exist on gfx950 are measured. `min_f64` is assumed to behave
+  like `max_f64` [inf]. The `v_mbcnt` test for compiler wave-reduced atomics is a
+  heuristic, but suite 26 checks it against hardware.
 - **Flat accesses that reach LDS** (`-O0`) keep the size-based model; they are not
   measured per instruction.
 - **Macros:** within a macro every access shares one source location. The handler then
