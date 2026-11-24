@@ -909,6 +909,64 @@ def add_general_group(parser):
     )
     return
 
+def add_sqtt_group(parser):
+    """Hardware counters per source line: SQTT site markers plus SPM (rocprofv3)."""
+    group = parser.add_argument_group(
+        "Hardware counters per source line (SQTT site markers + SPM, see docs/sqtt-spm-attribution.md)"
+    )
+    group.add_argument(
+        "--spm",
+        type=str,
+        nargs="+",
+        metavar="COUNTER",
+        dest="spm",
+        default=[],
+        help="\tRun the application under rocprofv3 with thread trace and SPM for these counters\n"
+             "\t(e.g. SQC_LDS_BANK_CONFLICT SQ_INSTS_LDS on gfx12, SQ_LDS_BANK_CONFLICT SQ_INSTS_LDS on gfx942),\n"
+             "\tthen attribute each counter to source lines. The code needs SQTT site markers.",
+    )
+    group.add_argument(
+        "--spm-interval",
+        type=int,
+        metavar="",
+        dest="spm_interval",
+        default=1024,
+        help="\tSPM sample interval in shader clock cycles. Default: 1024.",
+    )
+    group.add_argument(
+        "--samples-per-window",
+        type=int,
+        metavar="",
+        dest="samples_per_window",
+        default=2,
+        help="\tSPM samples merged into one fit window (more = less noise). Default: 2.",
+    )
+    group.add_argument(
+        "--att-shader-engine-mask",
+        type=str,
+        metavar="",
+        dest="att_se_mask",
+        default="0xFFFFFFFF",
+        help="\tShader engines to trace. SPM counts the whole GPU, so trace all of them. Default: 0xFFFFFFFF.",
+    )
+    group.add_argument(
+        "--sqtt-output",
+        type=str,
+        metavar="",
+        dest="sqtt_output",
+        default="",
+        help="\tDirectory for the capture and fit results. Default: omniprobe_sqtt_<timestamp>.",
+    )
+    group.add_argument(
+        "--rocprofv3",
+        type=str,
+        metavar="",
+        dest="rocprofv3",
+        default="",
+        help="\trocprofv3 to use. Default: $ROCM_PATH/bin/rocprofv3, then PATH.",
+    )
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description = "Command-line interface for running intra-kernel analytics on AMD Instinct GPUs",
         prog="omniprobe",
@@ -924,6 +982,7 @@ def parse_args():
     formatter_class=lambda prog: argparse.RawTextHelpFormatter(prog, max_help_position=40)
 
     add_general_group(parser)
+    add_sqtt_group(parser)
     parms = parser.parse_args()
     return parms
 
@@ -953,6 +1012,78 @@ def preflight(parms):
             print(f"omniprobe: ERROR: OMNIPROBE_PYTHON_HANDLER={module}: no such file.")
             sys.exit(1)
 
+def sqtt_tool_env(parms):
+    """Environment for the profiled application (extended by --sqtt-sites)."""
+    return {}
+
+
+def run_without_killing(cmd, env):
+    """Run cmd to completion. On Ctrl+C keep waiting: stopping an SPM capture
+    part way can leave the GPU in a bad state."""
+    process = subprocess.Popen(cmd, env=env)
+    while True:
+        try:
+            return process.wait()
+        except KeyboardInterrupt:
+            print("\nomniprobe: waiting for rocprofv3 to finish; stopping an SPM capture part way "
+                  "can hang the GPU.")
+
+
+def run_sqtt(parms):
+    """--spm: capture thread trace and SPM with rocprofv3, then run sqtt/counter_fit.py."""
+    if parms.instrumented:
+        print("omniprobe: ERROR: --spm cannot be combined with --instrumented.")
+        return 1
+    app = parms.remaining[1:] if parms.remaining and parms.remaining[0] == "--" else parms.remaining
+    if not app:
+        print("omniprobe: ERROR: --spm needs an application after --.")
+        return 1
+    rocprof = parms.rocprofv3
+    if not rocprof:
+        rocm = get_rocm_path() or "/opt/rocm"
+        candidate = os.path.join(rocm, "bin", "rocprofv3")
+        rocprof = candidate if os.path.isfile(candidate) else shutil.which("rocprofv3")
+    if not rocprof:
+        print("omniprobe: ERROR: rocprofv3 not found; use --rocprofv3.")
+        return 1
+    out = parms.sqtt_output or "omniprobe_sqtt_" + datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    if os.path.isdir(out) and os.listdir(out):
+        print(f"omniprobe: ERROR: {out} is not empty; choose another --sqtt-output.")
+        return 1
+    os.makedirs(out, exist_ok=True)
+    cmd = [
+        rocprof, "--att", "--att-shader-engine-mask", parms.att_se_mask,
+        "--kernel-trace", "--output-format", "json",
+        "--spm-beta-enabled=on", "--spm", *parms.spm,
+        "--spm-sample-interval-unit", "sclk_cycles", "--spm-sample-interval", str(parms.spm_interval),
+        "-d", out, "-o", "run", "--", *app,
+    ]
+    env = dict(os.environ)
+    env.update(sqtt_tool_env(parms))
+    console_log("omniprobe: " + " ".join(cmd))
+    returncode = run_without_killing(cmd, env)
+    if returncode != 0:
+        print(f"omniprobe: ERROR: rocprofv3 exited with status {returncode}.")
+        return returncode if returncode > 0 else 1
+    traces = sorted(glob.glob(os.path.join(out, "*.att")))
+    code_objects = sorted(glob.glob(os.path.join(out, "*_code_object_id_*.out")))
+    spm_json = os.path.join(out, "run_results.json")
+    if not traces or not os.path.isfile(spm_json):
+        print(f"omniprobe: ERROR: no thread trace or SPM results in {out}.")
+        return 1
+    fit = [sys.executable, os.path.join(root_dir, "sqtt", "counter_fit.py"), *traces, *code_objects,
+           "--spm-json", spm_json, "--samples-per-window", str(parms.samples_per_window)]
+    for counter in parms.spm:
+        fit += ["--counter", counter]
+    result = subprocess.run(fit, capture_output=True, text=True)
+    report = result.stdout + result.stderr
+    print(report, end="")
+    with open(os.path.join(out, "fit.txt"), "w") as f:
+        f.write(report)
+    print(f"\nomniprobe: capture and fit in {out}/ (fit.txt)")
+    return result.returncode
+
+
 def main():
     print("\nOmniprobe is developed by Advanced Micro Devices, Research and Advanced Development")
     print("Copyright (c) 2026 Advanced Micro Devices. All rights reserved.\n")
@@ -960,6 +1091,9 @@ def main():
     global analytics_config
     load_config_files()
     parms  = parse_args()
+    # --spm does not use the message handlers: dispatch before they are checked.
+    if parms.spm:
+        sys.exit(run_sqtt(parms))
     handlers = []
     for h in parms.handlers:
         if not h.endswith(".so"):

@@ -217,7 +217,10 @@ add_custom_target(build_tree_symlinks ALL
     COMMAND ${CMAKE_COMMAND} -E create_symlink
         ${CMAKE_SOURCE_DIR}/omniprobe/api
         ${CMAKE_BINARY_DIR}/api
-    COMMENT "Creating build/bin/omniprobe, build/config and build/api symlinks"
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+        ${CMAKE_SOURCE_DIR}/omniprobe/sqtt
+        ${CMAKE_BINARY_DIR}/sqtt
+    COMMENT "Creating build/bin/omniprobe, build/config, build/api and build/sqtt symlinks"
 )
 
 # Build tests
@@ -251,6 +254,8 @@ install(DIRECTORY ${ROOT_DIR}/omniprobe/config DESTINATION omniprobe FILES_MATCH
 # works against the install tree, and finds <prefix>/omniprobe/bin/omniprobe
 # without PATH being set.
 install(DIRECTORY ${ROOT_DIR}/omniprobe/api DESTINATION omniprobe FILES_MATCHING PATTERN "*.py" PATTERN "__pycache__" EXCLUDE)
+# SQTT site markers + SPM: hardware counters per source line (docs/sqtt-spm-attribution.md).
+install(DIRECTORY ${ROOT_DIR}/omniprobe/sqtt DESTINATION omniprobe FILES_MATCHING PATTERN "*.py" PATTERN "__pycache__" EXCLUDE)
 install(FILES ${ROOT_DIR}/LICENSE DESTINATION omniprobe/share/omniprobe)
 
 # Plugin install rules are inside add_instrumentation_plugins()
