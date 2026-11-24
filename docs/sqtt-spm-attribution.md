@@ -23,9 +23,10 @@ well determined as long as the lines do not always run in the same ratio.
 
 - **Site markers in the code.** One SQTT marker per instrumented instruction
   (`s_ttracedata`), plus a `.sqtt_funcmap` section mapping marker IDs to source
-  lines. They come from the sqtt-marker LLVM plugin when the code is compiled
-  (`SQTT_TRACE_SITES=lds`, or `SQTT_TRACE_ADDRESSES=lds`, with
-  `SQTT_SCOPE_CU=-1 SQTT_SCOPE_SIMD=-1` so every CU emits markers).
+  lines. Either add them at load time with `--sqtt-sites` (no rebuild; see
+  below), or compile with the sqtt-marker LLVM plugin (`SQTT_TRACE_SITES=lds`,
+  or `SQTT_TRACE_ADDRESSES=lds`, with `SQTT_SCOPE_CU=-1 SQTT_SCOPE_SIMD=-1` so
+  every CU emits markers).
 - **rocprof-trace-decoder with the marker API**
   ([ROCm/rocm-systems#13867](https://github.com/ROCm/rocm-systems/pull/13867)).
   Omniprobe finds its Python package and samples from `ROCPROF_TRACE_DECODER_SAMPLES`
@@ -39,12 +40,18 @@ well determined as long as the lines do not always run in the same ratio.
 ## Usage
 
 ```bash
-omniprobe --spm SQ_LDS_BANK_CONFLICT SQ_INSTS_LDS -- ./app    # gfx942
+# Unmodified binary: markers added at load time, one per basic block.
+omniprobe --sqtt-sites --per-block -k my_kernel --spm SQ_LDS_BANK_CONFLICT SQ_INSTS_LDS -- ./app    # gfx942
+# Code built with the sqtt-marker plugin.
 omniprobe --spm SQC_LDS_BANK_CONFLICT SQ_INSTS_LDS -- ./app   # gfx12
 ```
 
 | Option | Meaning |
 |---|---|
+| `--sqtt-sites` | Add site markers to GPU code objects as they load (see below). |
+| `--per-block` | With `--sqtt-sites`: one marker per basic block instead of per LDS instruction. |
+| `--sqtt-relayout` | With `--sqtt-sites`: lay marked kernels out again with the markers inline. |
+| `-k REGEX` | With `--sqtt-sites`: only mark kernels whose name matches (no spaces in the regex). |
 | `--spm COUNTER ...` | Counters to capture and attribute. Check `rocprofv3 -L` for the names your GPU supports with SPM. |
 | `--spm-interval N` | SPM sample interval in shader clock cycles (default 1024). |
 | `--samples-per-window N` | SPM samples merged into one fit window (default 2). |
@@ -57,6 +64,45 @@ The fit can be rerun on an existing capture with
 
 Do not interrupt a capture: stopping an SPM capture part way can leave the GPU
 in a bad state. omniprobe waits for rocprofv3 on Ctrl+C.
+
+## Site markers without rebuilding (`--sqtt-sites`)
+
+`--sqtt-sites` adds the markers to already-compiled GPU code objects as they
+are loaded, so prebuilt libraries and hand-written assembly kernels (e.g.
+Tensile, MIOpen) can be measured without a rebuild. It works on gfx9 (e.g.
+MI300) and gfx10+ (RDNA). `--sqtt-sites` without `--spm` runs the application
+with markers only, e.g. under a profiler started separately.
+
+A rocprofiler-sdk tool (`libsqttSiteInjector.so`) intercepts
+`hsa_code_object_reader_create_from_memory` and `_from_file` and runs
+`sqtt/sqtt_site_rewrite.py` on each GPU code object:
+
+- **In place (default):** each LDS instruction is replaced by a branch to a stub
+  that emits the marker, runs the instruction and branches back. Stubs go in
+  padding between functions or after `.text`; distant ones are reached through
+  hops. The original code never moves.
+- **Relayout** (`--sqtt-relayout`, and automatically when a stub is out of
+  reach): the kernel is laid out again after `.text` with the markers inline;
+  branches and PC-relative constants are re-aimed and the kernel descriptor
+  points at the new code.
+- **Per block** (`--per-block`): one marker per basic block, before its first
+  LDS instruction; same counts, far cheaper in hot loops.
+- Only instructions reachable from kernel entries are marked, following
+  computed jumps built from `s_getpc`, so data stored in `.text` is never
+  patched. On gfx9 the marker saves M0 in a free SGPR (found by liveness if
+  needed) and the kernel's SGPR allocation is raised when required.
+
+It never breaks the application: the rewriter verifies its output (every
+changed byte planned, every branch and PC-relative address lands where planned,
+ELF layout and kernel descriptors consistent), and the original code object is
+loaded whenever anything fails, the rewriter takes longer than
+`SQTT_SITE_TIMEOUT` seconds (default 600), or the runtime rejects the result.
+
+Tested: lds_conflict on gfx1201 and gfx942 (output identical in every mode);
+MIOpen Winograd convolution (hand-written assembly; verifies in every mode,
+0.22 ms unmarked, 0.22 ms with `--per-block`); 15 rocBLAS GEMMs on MI300X with
+every loaded code object rewritten (3.57 M sites, zero error). Large libraries
+take minutes to rewrite (about 3 minutes for 60 MB), so use `-k`.
 
 ## Reading the result
 

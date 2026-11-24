@@ -965,6 +965,34 @@ def add_sqtt_group(parser):
         default="",
         help="\trocprofv3 to use. Default: $ROCM_PATH/bin/rocprofv3, then PATH.",
     )
+    group.add_argument(
+        "--sqtt-sites",
+        type=bool,
+        action=argparse.BooleanOptionalAction,
+        metavar="",
+        dest="sqtt_sites",
+        default=False,
+        help="\tAdd SQTT site markers to GPU code objects as they are loaded: no rebuild, works on\n"
+             "\tprebuilt libraries and hand-written assembly kernels. Use -k to limit it to some kernels.",
+    )
+    group.add_argument(
+        "--per-block",
+        type=bool,
+        action=argparse.BooleanOptionalAction,
+        metavar="",
+        dest="sqtt_per_block",
+        default=False,
+        help="\tWith --sqtt-sites: one marker per basic block instead of per LDS instruction (much cheaper).",
+    )
+    group.add_argument(
+        "--sqtt-relayout",
+        type=bool,
+        action=argparse.BooleanOptionalAction,
+        metavar="",
+        dest="sqtt_relayout",
+        default=False,
+        help="\tWith --sqtt-sites: lay marked kernels out again with markers inline (no detours).",
+    )
 
 
 def parse_args():
@@ -1013,8 +1041,31 @@ def preflight(parms):
             sys.exit(1)
 
 def sqtt_tool_env(parms):
-    """Environment for the profiled application (extended by --sqtt-sites)."""
-    return {}
+    """Environment for the profiled application: with --sqtt-sites, the injector
+    (a rocprofiler-sdk tool) rewrites each GPU code object as it is loaded."""
+    if not parms.sqtt_sites:
+        return {}
+    injector = os.path.join(lib_dir, "libsqttSiteInjector.so")
+    if not os.path.isfile(injector):
+        print(f"omniprobe: ERROR: {injector} not found; build omniprobe with the sqttSiteInjector target.")
+        sys.exit(1)
+    args = []
+    if parms.kernels:
+        args += ["--kernel", parms.kernels]  # the injector splits SQTT_SITE_ARGS on whitespace
+    if parms.sqtt_per_block:
+        args.append("--per-block")
+    if parms.sqtt_relayout:
+        args.append("--relayout")
+    rocm = get_rocm_path()
+    if rocm:
+        args += ["--llvm", os.path.join(rocm, "llvm", "bin")]
+    tools = [t for t in os.environ.get("ROCP_TOOL_LIBRARIES", "").split(":") if t]
+    return {
+        "ROCP_TOOL_LIBRARIES": ":".join(tools + [injector]),
+        "SQTT_SITE_REWRITE": os.path.join(root_dir, "sqtt", "sqtt_site_rewrite.py"),
+        "SQTT_SITE_ARGS": " ".join(args),
+        "SQTT_SITE_PYTHON": sys.executable,
+    }
 
 
 def run_without_killing(cmd, env):
@@ -1036,8 +1087,13 @@ def run_sqtt(parms):
         return 1
     app = parms.remaining[1:] if parms.remaining and parms.remaining[0] == "--" else parms.remaining
     if not app:
-        print("omniprobe: ERROR: --spm needs an application after --.")
+        print("omniprobe: ERROR: --spm and --sqtt-sites need an application after --.")
         return 1
+    if not parms.spm:
+        # --sqtt-sites alone: run with markers, e.g. under a profiler started separately.
+        env = dict(os.environ)
+        env.update(sqtt_tool_env(parms))
+        return subprocess.run(app, env=env).returncode
     rocprof = parms.rocprofv3
     if not rocprof:
         rocm = get_rocm_path() or "/opt/rocm"
@@ -1091,8 +1147,8 @@ def main():
     global analytics_config
     load_config_files()
     parms  = parse_args()
-    # --spm does not use the message handlers: dispatch before they are checked.
-    if parms.spm:
+    # --spm and --sqtt-sites do not use the message handlers: dispatch before they are checked.
+    if parms.spm or parms.sqtt_sites:
         sys.exit(run_sqtt(parms))
     handlers = []
     for h in parms.handlers:

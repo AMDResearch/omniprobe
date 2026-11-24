@@ -91,6 +91,7 @@ See [docs/usage.md](docs/usage.md) for the complete reference with examples.
 | `-c`, `--cache-location` | Triton kernel cache directory | [Triton cache](docs/usage.md#triton-instrumentation) |
 | `--instrumentation-scope` | Limit instrumentation to specific source locations | [Scope](docs/usage.md#triton-instrumentation) |
 | `--spm` | Attribute hardware counters (SPM) to source lines using SQTT site markers | [Hardware counters per line](docs/sqtt-spm-attribution.md) |
+| `--sqtt-sites` | Add SQTT site markers at load time: no rebuild, works on prebuilt and assembly kernels | [Site markers without rebuilding](docs/sqtt-spm-attribution.md#site-markers-without-rebuilding---sqtt-sites) |
 
 ## Analyzers
 

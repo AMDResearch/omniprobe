@@ -198,3 +198,13 @@ target_link_options (
   PRIVATE
     -fgpu-rdc
 )
+
+# SQTT site markers added at load time (omniprobe --sqtt-sites): a
+# rocprofiler-sdk tool that rewrites each GPU code object as it is loaded with
+# omniprobe/sqtt/sqtt_site_rewrite.py. Independent of dh_comms and kernelDB.
+add_library(sqttSiteInjector SHARED ${LIB_DIR}/sqtt_site_injector.cc)
+set_target_properties(sqttSiteInjector PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+target_include_directories(sqttSiteInjector PRIVATE ${ROCM_ROOT_DIR}/include ${HSA_RUNTIME_INC_PATH})
+target_compile_definitions(sqttSiteInjector PRIVATE __HIP_PLATFORM_AMD__)
+target_link_libraries(sqttSiteInjector PRIVATE rocprofiler-sdk::rocprofiler-sdk)
+install(TARGETS sqttSiteInjector LIBRARY DESTINATION omniprobe/lib)
