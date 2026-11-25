@@ -993,6 +993,15 @@ def add_sqtt_group(parser):
         default=False,
         help="\tWith --sqtt-sites: lay marked kernels out again with markers inline (no detours).",
     )
+    group.add_argument(
+        "--sites",
+        type=str,
+        choices=["lds", "memory", "all"],
+        dest="sqtt_site_kinds",
+        default="lds",
+        help="\tWhich instructions are sites: lds, memory (global/flat/buffer, e.g. for cache counters)\n"
+             "\tor all. Used by --sqtt-sites and by the fit. Default: lds.",
+    )
 
 
 def parse_args():
@@ -1050,6 +1059,8 @@ def sqtt_tool_env(parms):
         print(f"omniprobe: ERROR: {injector} not found; build omniprobe with the sqttSiteInjector target.")
         sys.exit(1)
     args = []
+    for kind in (["lds", "memory"] if parms.sqtt_site_kinds == "all" else [parms.sqtt_site_kinds]):
+        args += ["--sites", kind]
     if parms.kernels:
         args += ["--kernel", parms.kernels]  # the injector splits SQTT_SITE_ARGS on whitespace
     if parms.sqtt_per_block:
@@ -1128,7 +1139,8 @@ def run_sqtt(parms):
         print(f"omniprobe: ERROR: no thread trace or SPM results in {out}.")
         return 1
     fit = [sys.executable, os.path.join(root_dir, "sqtt", "counter_fit.py"), *traces, *code_objects,
-           "--spm-json", spm_json, "--samples-per-window", str(parms.samples_per_window)]
+           "--spm-json", spm_json, "--samples-per-window", str(parms.samples_per_window),
+           "--sites", parms.sqtt_site_kinds]
     for counter in parms.spm:
         fit += ["--counter", counter]
     result = subprocess.run(fit, capture_output=True, text=True)

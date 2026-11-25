@@ -42,6 +42,8 @@ well determined as long as the lines do not always run in the same ratio.
 ```bash
 # Unmodified binary: markers added at load time, one per basic block.
 omniprobe --sqtt-sites --per-block -k my_kernel --spm SQ_LDS_BANK_CONFLICT SQ_INSTS_LDS -- ./app    # gfx942
+# L2 misses per global load line, markers added at load time.
+omniprobe --sqtt-sites --sites memory --per-block -k my_kernel --spm TCC_MISS TCC_REQ -- ./app
 # Code built with the sqtt-marker plugin.
 omniprobe --spm SQC_LDS_BANK_CONFLICT SQ_INSTS_LDS -- ./app   # gfx12
 ```
@@ -49,7 +51,8 @@ omniprobe --spm SQC_LDS_BANK_CONFLICT SQ_INSTS_LDS -- ./app   # gfx12
 | Option | Meaning |
 |---|---|
 | `--sqtt-sites` | Add site markers to GPU code objects as they load (see below). |
-| `--per-block` | With `--sqtt-sites`: one marker per basic block instead of per LDS instruction. |
+| `--per-block` | With `--sqtt-sites`: one marker per basic block instead of per site instruction. |
+| `--sites lds\|memory\|all` | Which instructions are sites: LDS (default), global memory (global/flat/buffer loads, stores, atomics; for cache counters) or both. Used by `--sqtt-sites` and the fit. |
 | `--sqtt-relayout` | With `--sqtt-sites`: lay marked kernels out again with the markers inline. |
 | `-k REGEX` | With `--sqtt-sites`: only mark kernels whose name matches (no spaces in the regex). |
 | `--spm COUNTER ...` | Counters to capture and attribute. Check `rocprofv3 -L` for the names your GPU supports with SPM. |
@@ -124,6 +127,17 @@ first and late ones mostly the second. Measured results:
 | gfx1201 (31 expected) | 30.8–31.4 | about 0 |
 | gfx942 (all shader engines traced, three runs) | 29–38 | about 0 |
 
+`tests/sqtt/cache_miss.hip` has two global load lines with known L2
+behaviour: line 51 reads a 64 KiB buffer that stays in L2, line 56 gives
+every lane its own 128-byte line of a 1 GiB buffer (one L2 miss per lane).
+Measured on MI300X (gfx942) with markers added at load time
+(`--sqtt-sites --sites memory --per-block`, 16,384 workgroups):
+
+| Counter | Line 56 per wave load (64 expected) | Line 51 |
+|---|---|---|
+| `TCC_MISS` | 58.2–58.8 | 0.3 |
+| `TCC_REQ` | 62.0–62.4 | 0.8 |
+
 `tests/sqtt/test_counter_fit.py` tests the fit, the grouping and the SPM
 timeline handling without a GPU.
 
@@ -132,5 +146,11 @@ timeline handling without a GPU.
 - MI300 delivers one SPM stream per XCC, so counter instances sample on
   several timelines; each sample's delta is spread over the windows its own
   interval overlaps.
+- On MI300, SQ counters (sampled per shader engine) appear about 1k
+  realtime ticks earlier against the markers than TCC counters, so SQ
+  counters that change faster than that fit poorly with small windows. In
+  `cache_miss`, `SQ_INSTS_VMEM_RD` is exactly one per load in total but only
+  fits per line (1.13 and 0.92) with windows of about 1 ms
+  (`--samples-per-window 2048`); TCC counters are not affected.
 - The fit assumes the traced work is the work SPM counts; trace all shader
   engines (the default here) and emit markers on every CU.

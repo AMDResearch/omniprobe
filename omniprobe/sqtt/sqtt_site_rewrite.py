@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Insert SQTT site markers into an already-compiled AMDGPU code object.
 
-Marks LDS instructions without recompiling. Each selected instruction is
+Marks LDS or global-memory instructions without recompiling. Each selected instruction is
 replaced in place by a branch to a stub that emits the marker, runs the
 original instruction and branches back:
 
@@ -103,7 +103,23 @@ SITE_KINDS = {
         (re.compile(r"ds_(store|write)"), "lds_store"),
         (re.compile(r"ds_(?!.*permute)"), "lds_atomic"),
     ],
+    # Global memory through the vector caches (TCP/L1, TCC/L2). Kind names match
+    # the decoder's address-trace kinds, so counter_fit.py --sites memory uses them.
+    # scratch_* (private memory) and cache-control instructions are left out.
+    "memory": [
+        (re.compile(r"(global|flat)_atomic"), "atomic"),
+        (re.compile(r"(global|flat)_load"), "load"),
+        (re.compile(r"(global|flat)_store"), "store"),
+        (re.compile(r"buffer_atomic"), "buffer_atomic"),
+        (re.compile(r"buffer_load"), "buffer_load"),
+        (re.compile(r"buffer_store"), "buffer_store"),
+    ],
 }
+
+
+def site_category(kind: str) -> str:
+    """lds or memory, for a site kind from SITE_KINDS."""
+    return "lds" if kind.startswith("lds") else "memory"
 
 # Instructions after which execution never falls through.
 TERMINATORS = re.compile(r"^(s_endpgm\w*|s_branch|s_setpc_b64|s_code_end)$")
@@ -1706,9 +1722,12 @@ def rewrite(args) -> int:
         for insn, kind in sites:
             k = index_of[insn.addr]
             block = leader_list[bisect.bisect_right(leader_list, k) - 1] if leader_list else -1
-            first = first_of_block.setdefault(block, insn.addr)
+            # LDS and global-memory sites of one block get separate markers.
+            first = first_of_block.setdefault((block, site_category(kind)), insn.addr)
             block_members.setdefault(first, []).append((insn, kind))
-        sites = [(insn, "lds_block") for insn, _ in sites if insn.addr in block_members]
+        sites = [
+            (insn, f"{site_category(kind)}_block") for insn, kind in sites if insn.addr in block_members
+        ]
 
     # Marker IDs: one-instruction markers (IDs 1..MAX_IMM_ID, gfx10+) go to the
     # sites in the most deeply nested loops, where marker cost matters most.
@@ -2425,9 +2444,9 @@ def rewrite(args) -> int:
     hops = sum(len(p.forward) + len(p.back) for p in placements)
     print(
         f"{len(marked)} of {len(sites)} sites marked"
-        + (f" (blocks covering {sum(len(v) for v in block_members.values())} LDS instructions)" if block_members else "")
+        + (f" (blocks covering {sum(len(v) for v in block_members.values())} site instructions)" if block_members else "")
         + (f" ({len(skipped)} skipped)" if skipped else "")
-        + (f"; {unreached} unreachable LDS instructions left alone" if unreached else "")
+        + (f"; {unreached} unreachable site instructions left alone" if unreached else "")
         + f"; {len(marked) - m0_sites} imm, {m0_sites} via M0"
         + ((f" saved in s{spare}" if spare is not None else " saved in per-site dead SGPRs") if m0_sites else "")
         + f"; stubs: {in_islands} in islands, {len(placements) - in_islands} in pool"
@@ -2463,7 +2482,8 @@ def main() -> int:
         "--sites",
         action="append",
         choices=sorted(SITE_KINDS),
-        help="Instruction categories to mark (default: lds).",
+        help="Instruction categories to mark: lds, memory (global/flat/buffer loads, stores, "
+        "atomics); repeat for both (default: lds).",
     )
     parser.add_argument(
         "--kernel",
@@ -2488,9 +2508,9 @@ def main() -> int:
     parser.add_argument(
         "--per-block",
         action="store_true",
-        help="One marker per basic block (before its first LDS instruction) instead of one per "
-        "LDS instruction; instructions in a block always run together. Funcmap rows "
-        "site_lds_block@<all lines in the block>.",
+        help="One marker per basic block and category (before its first LDS or memory "
+        "instruction) instead of one per instruction; instructions in a block always run "
+        "together. Funcmap rows site_lds_block@ or site_memory_block@<all lines in the block>.",
     )
     parser.add_argument(
         "--relayout",

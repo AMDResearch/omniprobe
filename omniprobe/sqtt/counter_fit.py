@@ -364,7 +364,9 @@ def main() -> int:
             kind = name[len(SITE_PREFIX) :]
             # lds_block: one marker for all LDS instructions of a basic block
             # (sqtt_site_rewrite.py --per-block).
-            if kind == "lds_block" and kinds & LDS_KINDS:
+            if (kind == "lds_block" and kinds & LDS_KINDS) or (
+                kind == "memory_block" and kinds & GLOBAL_KINDS
+            ):
                 pass
             elif kind not in kinds or (args.loads_only and "store" in kind):
                 continue
